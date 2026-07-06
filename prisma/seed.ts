@@ -1,12 +1,23 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import bcrypt from "bcryptjs";
 
 const url = process.env.DATABASE_URL ?? "file:./dev.db";
-console.log("Connecting to:", url);
-const adapter = new PrismaBetterSqlite3({ url });
-const prisma = new PrismaClient({ adapter });
+console.log("Connecting to:", url.startsWith("postgresql") ? url.split("@")[1] : url);
+
+function createClient() {
+  if (url.startsWith("file:")) {
+    const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
+    const adapter = new PrismaBetterSqlite3({ url });
+    return new PrismaClient({ adapter } as any);
+  }
+  const { Pool } = require("pg");
+  const { PrismaPg } = require("@prisma/adapter-pg");
+  const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  const adapter = new PrismaPg(pool);
+  return new PrismaClient({ adapter } as any);
+}
+const prisma = createClient();
 
 async function main() {
   console.log("Seeding database...");
