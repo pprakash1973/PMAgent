@@ -15,10 +15,19 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: { code: "NO_FILE", message: "No file uploaded" } }, { status: 400 });
 
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    const supported = ["pdf", "doc", "docx", "txt", "md"];
+
+    // .doc (old binary Word) is NOT supported by mammoth — only .docx is
+    if (ext === "doc") {
+      return NextResponse.json(
+        { error: { code: "UNSUPPORTED_FORMAT", message: "Old .doc format is not supported. Please save your file as .docx (Word 2007 or later) and try again." } },
+        { status: 400 }
+      );
+    }
+
+    const supported = ["pdf", "docx", "txt", "md"];
     if (!supported.includes(ext)) {
       return NextResponse.json(
-        { error: { code: "UNSUPPORTED_FORMAT", message: `Unsupported file type .${ext}. Use PDF, DOCX, DOC, or TXT.` } },
+        { error: { code: "UNSUPPORTED_FORMAT", message: `Unsupported file type .${ext}. Supported formats: PDF, DOCX, TXT.` } },
         { status: 400 }
       );
     }
@@ -31,17 +40,24 @@ export async function POST(req: NextRequest) {
       const pdfParse = require("pdf-parse");
       const result = await pdfParse(buffer);
       text = result.text;
-    } else if (ext === "docx" || ext === "doc") {
-      const mammoth = await import("mammoth");
+    } else if (ext === "docx") {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mammoth = require("mammoth");
       const result = await mammoth.extractRawText({ buffer });
+      if (result.messages?.some((m: any) => m.type === "error")) {
+        console.warn("mammoth warnings:", result.messages);
+      }
       text = result.value;
     } else {
-      // txt / md
+      // txt / md — plain UTF-8
       text = buffer.toString("utf-8");
     }
 
     if (!text.trim()) {
-      return NextResponse.json({ error: { code: "EMPTY_FILE", message: "Could not extract any text from the file." } }, { status: 400 });
+      return NextResponse.json(
+        { error: { code: "EMPTY_FILE", message: "Could not extract any text from the file. Make sure the document contains readable text (not just images or scans)." } },
+        { status: 400 }
+      );
     }
 
     // Truncate to 12000 chars for AI processing
@@ -62,6 +78,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("parse-requirements error:", err);
-    return NextResponse.json({ error: { code: "SERVER_ERROR", message: err.message || "Failed to parse file" } }, { status: 500 });
+    const msg = err?.message || "Failed to parse file";
+    return NextResponse.json(
+      { error: { code: "SERVER_ERROR", message: `Parse error: ${msg}` } },
+      { status: 500 }
+    );
   }
 }
