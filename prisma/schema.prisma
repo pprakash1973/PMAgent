@@ -1,0 +1,336 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Organization {
+  id           String        @id @default(cuid())
+  name         String
+  tier         String        @default("standard")
+  createdAt    DateTime      @default(now())
+  users        User[]
+  businessUnits BusinessUnit[]
+  roles        Role[]
+}
+
+model BusinessUnit {
+  id       String       @id @default(cuid())
+  orgId    String
+  name     String
+  org      Organization @relation(fields: [orgId], references: [id])
+  projects Project[]
+}
+
+model Role {
+  id          String       @id @default(cuid())
+  orgId       String
+  name        String
+  permissions Json
+  org         Organization @relation(fields: [orgId], references: [id])
+  users       User[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  orgId         String
+  email         String    @unique
+  fullName      String
+  passwordHash  String?
+  role          String    @default("pm")
+  roleId        String?
+  mfaEnabled    Boolean   @default(false)
+  mfaSecret     String?
+  emailVerified DateTime?
+  approved      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  org                Organization           @relation(fields: [orgId], references: [id])
+  roleRef            Role?                  @relation(fields: [roleId], references: [id])
+  ownedProjects      Project[]              @relation("PMOwner")
+  accounts           Account[]
+  sessions           Session[]
+  artifactVersions   ArtifactVersion[]
+  reqDocs            RequirementsDocument[]
+  artifactSelections ArtifactSelection[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Project {
+  id                    String    @id @default(cuid())
+  orgId                 String
+  buId                  String?
+  pmOwnerId             String
+  name                  String
+  code                  String
+  customer              String?
+  projectType           String    @default("fixed_price")
+  methodology           String    @default("waterfall")
+  engagementMode        String    @default("detailed")
+  externalExecutionTool String?
+  industry              String?
+  projectSize           String?
+  budget                Float?
+  currency              String    @default("USD")
+  deliveryModel         String?
+  teamSize              Int?
+  startDate             DateTime?
+  endDate               DateTime?
+  status                String    @default("draft")
+  healthStatus          String    @default("green")
+  description           String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+
+  bu                 BusinessUnit?          @relation(fields: [buId], references: [id])
+  pmOwner            User                   @relation("PMOwner", fields: [pmOwnerId], references: [id])
+  artifacts          Artifact[]
+  risks              Risk[]
+  issues             Issue[]
+  changeRequests     ChangeRequest[]
+  milestones         Milestone[]
+  statusReports      StatusReport[]
+  sprints            Sprint[]
+  integrationLinks   IntegrationLink[]
+  requirementsDocs   RequirementsDocument[]
+  artifactSelections ArtifactSelection[]
+
+  @@unique([orgId, code])
+}
+
+model RequirementsDocument {
+  id                   String    @id @default(cuid())
+  projectId            String
+  fileName             String
+  fileFormat           String
+  storageUri           String
+  versionNumber        Int       @default(1)
+  supersedesId         String?
+  extractedContent     Json?
+  extractionConfidence Float?
+  ocrApplied           Boolean   @default(false)
+  pmConfirmed          Boolean   @default(false)
+  uploadedById         String
+  createdAt            DateTime  @default(now())
+  deletedAt            DateTime?
+
+  project      Project               @relation(fields: [projectId], references: [id])
+  uploadedBy   User                  @relation(fields: [uploadedById], references: [id])
+  supersedes   RequirementsDocument? @relation("Versions", fields: [supersedesId], references: [id])
+  supersededBy RequirementsDocument[] @relation("Versions")
+  artifacts    Artifact[]
+}
+
+model ArtifactSelection {
+  id              String    @id @default(cuid())
+  projectId       String
+  artifactType    String
+  selectionStatus String    @default("available")
+  selectedById    String?
+  sourceReqId     String?
+  selectedAt      DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  project    Project @relation(fields: [projectId], references: [id])
+  selectedBy User?   @relation(fields: [selectedById], references: [id])
+
+  @@unique([projectId, artifactType])
+}
+
+model Artifact {
+  id             String    @id @default(cuid())
+  projectId      String
+  artifactType   String
+  phase          String
+  status         String    @default("draft")
+  currentVersion Int       @default(1)
+  sourceReqId    String?
+  content        Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project   Project               @relation(fields: [projectId], references: [id])
+  sourceReq RequirementsDocument? @relation(fields: [sourceReqId], references: [id])
+  versions  ArtifactVersion[]
+}
+
+model ArtifactVersion {
+  id            String   @id @default(cuid())
+  artifactId    String
+  versionNumber Int
+  content       Json
+  source        String
+  editedById    String?
+  createdAt     DateTime @default(now())
+
+  artifact Artifact @relation(fields: [artifactId], references: [id])
+  editedBy User?    @relation(fields: [editedById], references: [id])
+}
+
+model Risk {
+  id          String    @id @default(cuid())
+  projectId   String
+  riskId      String?
+  description String    @db.Text
+  category    String?
+  probability String    @default("medium")
+  impact      String    @default("medium")
+  status      String    @default("open")
+  owner       String?
+  mitigation  String?   @db.Text
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
+model Issue {
+  id          String    @id @default(cuid())
+  projectId   String
+  issueId     String?
+  description String    @db.Text
+  severity    String    @default("medium")
+  status      String    @default("open")
+  owner       String?
+  resolution  String?   @db.Text
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
+model ChangeRequest {
+  id             String   @id @default(cuid())
+  projectId      String
+  crId           String?
+  description    String   @db.Text
+  impactAnalysis String?  @db.Text
+  approvalStatus String   @default("pending")
+  requestedBy    String?
+  approvedBy     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
+model Milestone {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  dueDate   DateTime
+  status    String   @default("pending")
+  notes     String?
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
+model StatusReport {
+  id          String    @id @default(cuid())
+  projectId   String
+  reportDate  DateTime  @default(now())
+  ragStatus   String    @default("green")
+  aiSummary   String?   @db.Text
+  rawInput    Json?
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  project     Project      @relation(fields: [projectId], references: [id])
+  healthScore HealthScore?
+}
+
+model HealthScore {
+  id             String   @id @default(cuid())
+  statusReportId String   @unique
+  spi            Float?
+  cpi            Float?
+  riskExposure   Float?
+  teamHealth     Float?
+  compositeScore Float?
+  ragStatus      String?
+  createdAt      DateTime @default(now())
+
+  statusReport StatusReport @relation(fields: [statusReportId], references: [id])
+}
+
+model Sprint {
+  id           String   @id @default(cuid())
+  projectId    String
+  sprintNumber Int
+  startDate    DateTime
+  endDate      DateTime
+  goal         String?
+  status       String   @default("planned")
+
+  project      Project       @relation(fields: [projectId], references: [id])
+  backlogItems BacklogItem[]
+}
+
+model BacklogItem {
+  id          String  @id @default(cuid())
+  sprintId    String
+  title       String
+  type        String  @default("story")
+  storyPoints Int?
+  status      String  @default("todo")
+  assignee    String?
+
+  sprint Sprint @relation(fields: [sprintId], references: [id])
+}
+
+model IntegrationLink {
+  id          String   @id @default(cuid())
+  projectId   String
+  provider    String
+  externalRef String?
+  authStatus  String   @default("pending")
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+}
