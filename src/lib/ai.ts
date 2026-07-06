@@ -85,7 +85,7 @@ Return JSON with: summary (string), ragStatus (green/amber/red), healthScore (0-
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected response");
 
-  return extractJson(content.text);
+  return extractJson(content.text) as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[] };
 }
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {

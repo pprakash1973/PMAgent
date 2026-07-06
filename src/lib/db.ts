@@ -1,17 +1,15 @@
 import { PrismaClient } from "@prisma/client";
 
-function createPrisma() {
+function createPrisma(): PrismaClient {
   const url = process.env.DATABASE_URL!;
 
   if (url?.startsWith("file:")) {
-    // Local SQLite dev
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
     const adapter = new PrismaBetterSqlite3({ url });
     return new PrismaClient({ adapter } as any);
   }
 
-  // Production PostgreSQL
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Pool } = require("pg");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -21,6 +19,16 @@ function createPrisma() {
   return new PrismaClient({ adapter } as any);
 }
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-export const prisma = globalForPrisma.prisma ?? createPrisma();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+function getClient(): PrismaClient {
+  const g = globalThis as any;
+  if (!g._prisma) g._prisma = createPrisma();
+  return g._prisma;
+}
+
+// Lazy proxy — PrismaClient is only instantiated on first actual DB call,
+// not at module load time (prevents build-time crashes).
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_, prop) {
+    return (getClient() as any)[prop];
+  },
+});
