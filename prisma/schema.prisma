@@ -1,9 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
 }
 
 model Organization {
@@ -65,12 +66,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -107,7 +108,7 @@ model Project {
   endDate               DateTime?
   status                String    @default("draft")
   healthStatus          String    @default("green")
-  description           String?   @db.Text
+  description           String?  
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime?
@@ -201,13 +202,13 @@ model Risk {
   id          String    @id @default(cuid())
   projectId   String
   riskId      String?
-  description String    @db.Text
+  description String   
   category    String?
   probability String    @default("medium")
   impact      String    @default("medium")
   status      String    @default("open")
   owner       String?
-  mitigation  String?   @db.Text
+  mitigation  String?  
   dueDate     DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -219,11 +220,11 @@ model Issue {
   id          String    @id @default(cuid())
   projectId   String
   issueId     String?
-  description String    @db.Text
+  description String   
   severity    String    @default("medium")
   status      String    @default("open")
   owner       String?
-  resolution  String?   @db.Text
+  resolution  String?  
   dueDate     DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -235,8 +236,8 @@ model ChangeRequest {
   id             String   @id @default(cuid())
   projectId      String
   crId           String?
-  description    String   @db.Text
-  impactAnalysis String?  @db.Text
+  description    String  
+  impactAnalysis String? 
   approvalStatus String   @default("pending")
   requestedBy    String?
   approvedBy     String?
@@ -262,7 +263,7 @@ model StatusReport {
   projectId   String
   reportDate  DateTime  @default(now())
   ragStatus   String    @default("green")
-  aiSummary   String?   @db.Text
+  aiSummary   String?  
   rawInput    Json?
   submittedAt DateTime?
   createdAt   DateTime  @default(now())

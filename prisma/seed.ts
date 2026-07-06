@@ -1,19 +1,22 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
+const url = process.env.DATABASE_URL ?? "file:./dev.db";
+console.log("Connecting to:", url);
+const adapter = new PrismaBetterSqlite3({ url });
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log("Seeding database...");
 
-  // Organization
   const org = await prisma.organization.upsert({
     where: { id: "seed-org-1" },
     create: { id: "seed-org-1", name: "Acme Delivery Co.", tier: "enterprise" },
     update: {},
   });
 
-  // Users
   const hash = await bcrypt.hash("Password123!", 12);
 
   const pm = await prisma.user.upsert({
@@ -22,7 +25,7 @@ async function main() {
     update: {},
   });
 
-  const dm = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: "dm@pmAgent.dev" },
     create: { orgId: org.id, email: "dm@pmAgent.dev", fullName: "Bob Delivery", passwordHash: hash, role: "delivery_manager" },
     update: {},
@@ -40,7 +43,6 @@ async function main() {
     update: {},
   });
 
-  // Sample project
   const bu = await prisma.businessUnit.upsert({
     where: { id: "seed-bu-1" },
     create: { id: "seed-bu-1", orgId: org.id, name: "Digital Transformation" },
@@ -73,37 +75,28 @@ async function main() {
     update: {},
   });
 
-  // Milestones
-  await prisma.milestone.createMany({
-    data: [
-      { projectId: project.id, name: "Requirements Sign-off", dueDate: new Date("2026-02-28"), status: "achieved" },
-      { projectId: project.id, name: "Design Approval", dueDate: new Date("2026-04-30"), status: "achieved" },
-      { projectId: project.id, name: "UAT Start", dueDate: new Date("2026-09-01"), status: "pending" },
-      { projectId: project.id, name: "Go-Live", dueDate: new Date("2026-12-01"), status: "pending" },
-    ],
-    skipDuplicates: true,
-  });
+  for (const m of [
+    { name: "Requirements Sign-off", dueDate: new Date("2026-02-28"), status: "achieved" },
+    { name: "Design Approval", dueDate: new Date("2026-04-30"), status: "achieved" },
+    { name: "UAT Start", dueDate: new Date("2026-09-01"), status: "pending" },
+    { name: "Go-Live", dueDate: new Date("2026-12-01"), status: "pending" },
+  ]) {
+    await prisma.milestone.create({ data: { projectId: project.id, ...m } }).catch(() => {});
+  }
 
-  // Risks
-  await prisma.risk.createMany({
-    data: [
-      { projectId: project.id, riskId: "R-001", description: "Key SAP consultant departure risk — single point of failure on integration module", probability: "medium", impact: "high", status: "open", owner: "Alice PM", mitigation: "Cross-train backup consultant and document all integration specs" },
-      { projectId: project.id, riskId: "R-002", description: "Data migration from legacy system may exceed 4-week estimate due to data quality issues", probability: "high", impact: "medium", status: "open", owner: "Alice PM", mitigation: "Start data profiling sprint immediately; flag to client" },
-      { projectId: project.id, riskId: "R-003", description: "Client stakeholder availability for UAT sessions is at risk during holiday period", probability: "medium", impact: "medium", status: "open", owner: "Alice PM" },
-    ],
-    skipDuplicates: true,
-  });
+  for (const r of [
+    { riskId: "R-001", description: "Key SAP consultant departure risk — single point of failure on integration module", probability: "medium", impact: "high", owner: "Alice PM", mitigation: "Cross-train backup consultant and document all integration specs" },
+    { riskId: "R-002", description: "Data migration from legacy system may exceed 4-week estimate due to data quality issues", probability: "high", impact: "medium", owner: "Alice PM", mitigation: "Start data profiling sprint immediately; flag to client" },
+    { riskId: "R-003", description: "Client stakeholder availability for UAT sessions is at risk during holiday period", probability: "medium", impact: "medium", owner: "Alice PM" },
+  ]) {
+    await prisma.risk.create({ data: { projectId: project.id, ...r } }).catch(() => {});
+  }
 
-  // Issues
-  await prisma.issue.createMany({
-    data: [
-      { projectId: project.id, issueId: "I-001", description: "Legacy API not returning complete product catalog — 1,200 SKUs missing", severity: "high", status: "in_progress", owner: "Alice PM" },
-    ],
-    skipDuplicates: true,
-  });
+  await prisma.issue.create({
+    data: { projectId: project.id, issueId: "I-001", description: "Legacy API not returning complete product catalog — 1,200 SKUs missing", severity: "high", status: "in_progress", owner: "Alice PM" },
+  }).catch(() => {});
 
-  // Artifact selections
-  const { ARTIFACT_CATALOG, DEFAULT_DETAILED_ARTIFACTS } = await import("../src/lib/utils");
+  const { ARTIFACT_CATALOG, DEFAULT_DETAILED_ARTIFACTS } = await import("../src/lib/utils.js");
   for (const entry of ARTIFACT_CATALOG) {
     await prisma.artifactSelection.upsert({
       where: { projectId_artifactType: { projectId: project.id, artifactType: entry.type } },
@@ -116,12 +109,9 @@ async function main() {
     });
   }
 
-  console.log("Seed complete!");
-  console.log("\nLogin credentials:");
-  console.log("  PM:             pm@pmAgent.dev / Password123!");
-  console.log("  Delivery Mgr:   dm@pmAgent.dev / Password123!");
-  console.log("  Delivery Head:  head@pmAgent.dev / Password123!");
-  console.log("  Admin:          admin@pmAgent.dev / Password123!");
+  console.log("\n✅ Seed complete!");
+  console.log("  pm@pmAgent.dev / dm@pmAgent.dev / head@pmAgent.dev / admin@pmAgent.dev");
+  console.log("  Password: Password123!");
 }
 
 main()
