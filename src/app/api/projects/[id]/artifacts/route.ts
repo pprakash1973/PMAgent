@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { generateArtifact } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 
+export const maxDuration = 300;
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });

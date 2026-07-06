@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
 import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye } from "lucide-react";
+import { ArtifactDocument } from "@/components/artifact-document";
 import { cn } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,6 +77,12 @@ export function ArtifactPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {generating && (
+          <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+            Generating <span className="font-medium">{generating.replace(/_/g, " ")}</span> — this takes 20–40 seconds…
+          </div>
+        )}
         {phases.map((phase) => {
           const phaseItems = (showAll ? catalog : catalog.filter((c) => activeTypes.includes(c.type) || localArtifacts.some((a) => a.artifactType === c.type))).filter((c) => c.phase === phase);
           if (phaseItems.length === 0) return null;
@@ -111,18 +118,16 @@ export function ArtifactPanel({
                             size="sm"
                             className="h-7 px-2 text-xs gap-1"
                             onClick={() => generate(entry.type)}
-                            disabled={isGenerating}
+                            disabled={!!generating}
                           >
                             {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                            {artifact ? "Regenerate" : "Generate"}
+                            {isGenerating ? "Generating…" : artifact ? "Regenerate" : "Generate"}
                           </Button>
                         </div>
                       </div>
                       {isExpanded && artifact?.content && (
-                        <div className="border-t border-slate-200 bg-slate-50 p-3">
-                          <pre className="text-xs text-slate-600 overflow-x-auto whitespace-pre-wrap max-h-64">
-                            {JSON.stringify(artifact.content, null, 2)}
-                          </pre>
+                        <div className="border-t border-slate-200 p-3">
+                          <ArtifactDocument artifactType={artifact.artifactType} content={artifact.content} />
                         </div>
                       )}
                     </div>

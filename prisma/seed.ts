@@ -17,7 +17,7 @@ async function main() {
     update: {},
   });
 
-  const hash = await bcrypt.hash("Password123!", 12);
+  const hash = await bcrypt.hash("Password123!", 10);
 
   const pm = await prisma.user.upsert({
     where: { email: "pm@pmAgent.dev" },

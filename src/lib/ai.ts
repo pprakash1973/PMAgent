@@ -4,15 +4,29 @@ export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+function extractJson(text: string): Record<string, unknown> {
+  // Try ```json ... ``` block first
+  const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (fenced) return JSON.parse(fenced[1]);
+
+  // Find the outermost { ... } by tracking brace depth
+  let depth = 0, start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "{") { if (depth++ === 0) start = i; }
+    else if (text[i] === "}") { if (--depth === 0 && start !== -1) return JSON.parse(text.slice(start, i + 1)); }
+  }
+  throw new Error("AI did not return valid JSON");
+}
+
 export async function generateArtifact(
   artifactType: string,
   projectContext: Record<string, unknown>,
   requirements?: string
 ): Promise<Record<string, unknown>> {
-  const systemPrompt = `You are an expert Project Management Office (PMO) AI assistant.
-Generate professional, PMBOK-aligned project management artifacts.
-Always return valid JSON matching the requested artifact schema.
-Base your output strictly on the provided project context and requirements — do not fabricate figures.`;
+  const systemPrompt = `You are a PMO AI assistant. Generate concise, PMBOK-aligned project management artifacts.
+Return ONLY valid JSON — no prose, no markdown outside the JSON block.
+Be concise: arrays should have 3-5 items max unless the schema requires more.
+Base output strictly on the provided project context — do not fabricate figures.`;
 
   const prompt = buildArtifactPrompt(artifactType, projectContext, requirements);
 
@@ -26,12 +40,7 @@ Base your output strictly on the provided project context and requirements — d
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected AI response type");
 
-  const jsonMatch = content.text.match(/```json\n?([\s\S]*?)\n?```/) ||
-    content.text.match(/(\{[\s\S]*\})/);
-
-  if (!jsonMatch) throw new Error("AI did not return valid JSON");
-
-  return JSON.parse(jsonMatch[1]);
+  return extractJson(content.text);
 }
 
 export async function generateProjectFromNL(description: string): Promise<Record<string, unknown>> {
@@ -52,11 +61,7 @@ deliveryModel, teamSize, startDate (ISO), endDate (ISO), description, clarifying
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected response");
 
-  const jsonMatch = content.text.match(/```json\n?([\s\S]*?)\n?```/) ||
-    content.text.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch) throw new Error("No JSON in response");
-
-  return JSON.parse(jsonMatch[1]);
+  return extractJson(content.text);
 }
 
 export async function generateStatusSummary(
@@ -80,11 +85,7 @@ Return JSON with: summary (string), ragStatus (green/amber/red), healthScore (0-
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected response");
 
-  const jsonMatch = content.text.match(/```json\n?([\s\S]*?)\n?```/) ||
-    content.text.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch) throw new Error("No JSON in response");
-
-  return JSON.parse(jsonMatch[1]);
+  return extractJson(content.text);
 }
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
@@ -105,11 +106,7 @@ constraints (array), assumptions (array), timeline (string), budgetSignals (stri
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected response");
 
-  const jsonMatch = content.text.match(/```json\n?([\s\S]*?)\n?```/) ||
-    content.text.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch) throw new Error("No JSON in response");
-
-  return JSON.parse(jsonMatch[1]);
+  return extractJson(content.text);
 }
 
 export async function chatCommand(
