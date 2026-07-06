@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
     "bcryptjs",
     "pg",
     "@prisma/adapter-pg",
+    "pdf-parse",
+    "mammoth",
   ],
 };
 

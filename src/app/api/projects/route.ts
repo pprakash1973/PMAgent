@@ -24,6 +24,11 @@ const createSchema = z.object({
   endDate: z.string().optional(),
   description: z.string().optional(),
   externalExecutionTool: z.string().optional(),
+  // Requirements doc fields (from file upload flow)
+  requirementsText: z.string().optional(),
+  requirementsFileName: z.string().optional(),
+  requirementsFileFormat: z.string().optional(),
+  requirementsExtracted: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function GET() {
@@ -123,7 +128,25 @@ export async function POST(req: NextRequest) {
       })),
     });
 
-    return NextResponse.json(project, { status: 201 });
+    // Save requirements document if file was uploaded
+    if (data.requirementsText && data.requirementsFileName) {
+      await prisma.requirementsDocument.create({
+        data: {
+          projectId: project.id,
+          fileName: data.requirementsFileName,
+          fileFormat: data.requirementsFileFormat || "txt",
+          storageUri: `inline:${project.id}`,
+          extractedContent: (data.requirementsExtracted ?? { rawText: data.requirementsText }) as object,
+          pmConfirmed: true,
+          uploadedById: user.id,
+        },
+      });
+    }
+
+    return NextResponse.json(
+      { ...project, hasRequirements: !!data.requirementsText },
+      { status: 201 }
+    );
   } catch (err) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: { code: "VALIDATION", message: err.issues[0]?.message || "Validation error" } }, { status: 400 });

@@ -1,10 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
-import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye } from "lucide-react";
+import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye, Sparkles } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
 import { cn } from "@/lib/utils";
 
@@ -28,8 +29,36 @@ export function ArtifactPanel({
   const [localArtifacts, setLocalArtifacts] = useState(artifacts);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [autoGenQueue, setAutoGenQueue] = useState<string[]>([]);
+  const [autoGenDone, setAutoGenDone] = useState(false);
+  const searchParams = useSearchParams();
 
   const activeTypes = selections.filter((s) => s.selectionStatus === "active").map((s) => s.artifactType);
+
+  // Auto-generate core artifacts when ?autoGenerate=1 is in URL
+  useEffect(() => {
+    if (searchParams.get("autoGenerate") !== "1" || autoGenDone) return;
+    const coreTypes = ["project_charter", "stakeholder_register", "risk_register", "wbs"];
+    const toGenerate = coreTypes.filter((t) => !localArtifacts.some((a) => a.artifactType === t));
+    if (toGenerate.length > 0) {
+      setAutoGenQueue(toGenerate);
+      setShowAll(true);
+    } else {
+      setAutoGenDone(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Process auto-gen queue one at a time
+  useEffect(() => {
+    if (autoGenQueue.length === 0 || generating) return;
+    const next = autoGenQueue[0];
+    setAutoGenQueue((q) => q.slice(1));
+    generate(next).then(() => {
+      if (autoGenQueue.length <= 1) setAutoGenDone(true);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGenQueue, generating]);
   const visibleCatalog = showAll ? catalog : catalog.filter((c) => activeTypes.includes(c.type) || localArtifacts.some((a) => a.artifactType === c.type));
   const displayCatalog = showAll ? catalog : visibleCatalog.length > 0 ? visibleCatalog : catalog.slice(0, 5);
 
@@ -60,6 +89,8 @@ export function ArtifactPanel({
     }
   }
 
+  const isAutoGenerating = autoGenQueue.length > 0 || (searchParams.get("autoGenerate") === "1" && !autoGenDone && generating !== null);
+
   const phases = ["initiation", "planning", "execution", "monitoring", "closure"];
 
   return (
@@ -77,7 +108,18 @@ export function ArtifactPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {generating && (
+        {isAutoGenerating && (
+          <div className="flex items-center gap-2 text-xs text-purple-800 bg-purple-50 border border-purple-200 rounded-md px-3 py-2">
+            <Sparkles className="w-3 h-3 shrink-0 text-purple-500" />
+            Auto-generating core artifacts from your requirements document…&nbsp;
+            <span className="font-medium">
+              {generating ? generating.replace(/_/g, " ") : ""}&nbsp;
+              {autoGenQueue.length > 0 ? `(${autoGenQueue.length} remaining)` : ""}
+            </span>
+            <Loader2 className="w-3 h-3 animate-spin ml-auto shrink-0" />
+          </div>
+        )}
+        {!isAutoGenerating && generating && (
           <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
             <Loader2 className="w-3 h-3 animate-spin shrink-0" />
             Generating <span className="font-medium">{generating.replace(/_/g, " ")}</span> — this takes 20–40 seconds…
