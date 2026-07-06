@@ -1,36 +1,168 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PM Agent — AI-Powered PMO Platform
 
-## Getting Started
+Enterprise project management office (PMO) platform where AI performs the majority of routine PM work — artifact generation, tracking, reporting, prediction, and recommendation — while human PMs validate and approve.
 
-First, run the development server:
+Built from [PRD v2.1](../PM_Agent_PRD_Enterprise_v2.md).
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 14 (App Router) |
+| Language | TypeScript |
+| Database | PostgreSQL via Prisma 7 |
+| Auth | NextAuth v5 (credentials + Google OAuth) |
+| AI | Anthropic Claude API (claude-sonnet-4-6) |
+| UI | Tailwind CSS v4 + Radix UI primitives |
+| Deployment | Vercel (frontend + API) + Railway (PostgreSQL) |
+| Email | Resend |
+
+## Features (MVP)
+
+- **3-persona RBAC**: Project Manager · Delivery Manager · Delivery Head · Admin
+- **Dual engagement modes**: Detailed (full tracking in PM Agent) or Governance (client tools + lightweight reporting)
+- **AI artifact generation**: 22-artifact catalog — Charter, RAID, WBS, Milestones, RACI, Status Reports, and more
+- **Natural-language project creation**: describe your project in plain text; AI infers all structured fields
+- **AI copilot chat**: contextual assistant per project for on-demand commands
+- **Weekly status reporting**: structured form → AI-generated executive summary + RAG score + recommendations
+- **Portfolio dashboard**: health distribution, at-risk projects, SPI/CPI, upcoming milestones
+- **Executive dashboard**: org-wide delivery health, budget roll-up, trend view
+- **Artifact versioning**: every edit (AI, manual, or upload) creates an immutable version
+
+## Quick Start (Local)
+
+### Prerequisites
+- Node.js 20+
+- PostgreSQL database
+
+### Setup
+
+```bash
+git clone https://github.com/pprakash1973/PMAgent.git
+cd PMAgent
+
+npm install
+
+# Copy and configure environment
+cp .env.example .env.local
+# Edit .env.local — set DATABASE_URL, NEXTAUTH_SECRET, ANTHROPIC_API_KEY
+```
+
+### Environment Variables
+
+```env
+DATABASE_URL="postgresql://user:pass@host:5432/pm_agent?schema=public"
+NEXTAUTH_SECRET="your-32-char-secret"
+NEXTAUTH_URL="http://localhost:3000"
+ANTHROPIC_API_KEY="sk-ant-..."
+
+# Optional
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+RESEND_API_KEY=""
+EMAIL_FROM="noreply@yourdomain.com"
+```
+
+### Database
+
+```bash
+# Push schema to your PostgreSQL database
+npm run db:push
+
+# Seed with demo users and sample project
+npm run db:seed
+```
+
+### Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# → http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Demo Logins (after seeding)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Role | Email | Password |
+|---|---|---|
+| Project Manager | pm@pmAgent.dev | Password123! |
+| Delivery Manager | dm@pmAgent.dev | Password123! |
+| Delivery Head | head@pmAgent.dev | Password123! |
+| Admin | admin@pmAgent.dev | Password123! |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Deploy to Vercel + Railway
 
-To learn more about Next.js, take a look at the following resources:
+### 1. Railway — PostgreSQL
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Create a [Railway](https://railway.app) project
+2. Add a PostgreSQL service
+3. Copy the `DATABASE_URL` from Railway
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. Vercel — App Deployment
 
-## Deploy on Vercel
+1. Import this repo at [vercel.com/new](https://vercel.com/new)
+2. Add environment variables in Vercel dashboard:
+   - `DATABASE_URL` (from Railway)
+   - `NEXTAUTH_SECRET` (generate: `openssl rand -base64 32`)
+   - `NEXTAUTH_URL` (your Vercel domain, e.g. `https://pm-agent.vercel.app`)
+   - `ANTHROPIC_API_KEY`
+3. Deploy — Vercel auto-runs `prisma generate && next build`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 3. Migrate Database
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+After first deploy, run from Railway shell or locally with production `DATABASE_URL`:
+
+```bash
+npm run db:push
+npm run db:seed   # optional demo data
+```
+
+---
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── api/                   # REST API routes
+│   │   ├── auth/              # NextAuth + register
+│   │   ├── projects/          # CRUD + artifacts + status + risks
+│   │   ├── portfolio/         # Delivery Manager aggregates
+│   │   └── chat/              # AI copilot endpoint
+│   ├── dashboard/
+│   │   ├── page.tsx           # PM home dashboard
+│   │   ├── projects/          # Project list + detail + new
+│   │   ├── portfolio/         # Delivery Manager view
+│   │   └── executive/         # Delivery Head view
+│   ├── login/                 # Auth pages
+│   └── register/
+├── components/
+│   ├── ui/                    # Button, Card, Badge, Input, Select, Toaster…
+│   ├── sidebar.tsx            # Role-aware navigation
+│   ├── artifact-panel.tsx     # Artifact generation + viewer
+│   ├── chat-panel.tsx         # AI copilot sidebar
+│   └── status-form.tsx        # Weekly status + AI summary
+├── lib/
+│   ├── ai.ts                  # Anthropic Claude integration
+│   ├── auth.ts                # NextAuth config
+│   ├── db.ts                  # Prisma client singleton
+│   └── utils.ts               # Helpers, artifact catalog, constants
+└── middleware.ts              # Auth guard
+
+prisma/
+├── schema.prisma              # 23-model database schema
+├── seed.ts                    # Demo users + sample project
+└── prisma.config.ts           # Prisma 7 config (datasource URL)
+```
+
+## Roadmap
+
+See [PRD Section 19](../PM_Agent_PRD_Enterprise_v2.md#19-release-roadmap-mvp--v2--v3):
+
+- **V2**: Predictive engine (schedule/cost/risk), document upload & reconcile, Jira/ADO/Teams integrations, conversational chat commands
+- **V3**: Executive AI reporting, Power BI/SAP integrations, advanced portfolio insights, SOC 2 Type II
+
+## License
+
+Private — Enterprise Edition
