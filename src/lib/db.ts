@@ -4,11 +4,14 @@ function createPrisma(): PrismaClient {
   const url = process.env.DATABASE_URL!;
 
   if (url?.startsWith("file:")) {
+    // Local SQLite — optional dependency, only available in dev
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
     const adapter = new PrismaBetterSqlite3({ url });
     return new PrismaClient({ adapter } as any);
   }
+
+  if (!url) throw new Error("DATABASE_URL is not set");
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Pool } = require("pg");
