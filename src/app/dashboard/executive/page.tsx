@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency, methodologyLabel } from "@/lib/utils";
 import { TrendingUp, DollarSign, Users, BarChart3, AlertTriangle } from "lucide-react";
+import { HealthDonut, BudgetBar, MethodologyBar, RiskBar } from "@/components/executive-charts";
 
 export default async function ExecutivePage() {
   const session = await auth();
@@ -29,6 +30,24 @@ export default async function ExecutivePage() {
   })();
 
   const totalTeam = projects.reduce((s, p) => s + (p.teamSize || 0), 0);
+
+  // Chart data
+  const budgetData = projects
+    .filter((p) => p.budget)
+    .sort((a, b) => (b.budget ?? 0) - (a.budget ?? 0))
+    .map((p) => ({ name: p.name.length > 20 ? p.name.slice(0, 18) + "…" : p.name, value: p.budget! }));
+
+  const methodologyCounts: Record<string, number> = {};
+  for (const p of projects) {
+    const label = methodologyLabel(p.methodology);
+    methodologyCounts[label] = (methodologyCounts[label] ?? 0) + 1;
+  }
+  const methodologyData = Object.entries(methodologyCounts).map(([name, value]) => ({ name, value }));
+
+  const riskData = projects
+    .filter((p) => p._count.risks > 0)
+    .sort((a, b) => b._count.risks - a._count.risks)
+    .map((p) => ({ name: p.name.length > 20 ? p.name.slice(0, 18) + "…" : p.name, value: p._count.risks }));
 
   return (
     <div className="p-8 space-y-8">
@@ -60,28 +79,48 @@ export default async function ExecutivePage() {
         ))}
       </div>
 
-      {/* Health distribution visual */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Portfolio Health Distribution</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="flex-1 h-6 rounded-full overflow-hidden bg-slate-100 flex">
-              {health.green > 0 && <div className="bg-green-500 h-full transition-all" style={{ width: `${(health.green / projects.length) * 100}%` }} />}
-              {health.amber > 0 && <div className="bg-amber-500 h-full transition-all" style={{ width: `${(health.amber / projects.length) * 100}%` }} />}
-              {health.red > 0 && <div className="bg-red-500 h-full transition-all" style={{ width: `${(health.red / projects.length) * 100}%` }} />}
-            </div>
-          </div>
-          <div className="flex gap-6 text-sm">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-green-500 inline-block" />{health.green} On Track</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />{health.amber} At Risk</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500 inline-block" />{health.red} Critical</span>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Charts row */}
+      <div className="grid grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Portfolio Health Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <HealthDonut green={health.green} amber={health.amber} red={health.red} />
+          </CardContent>
+        </Card>
 
-      {/* Projects by health */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Methodology Breakdown</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MethodologyBar data={methodologyData} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Budget by Project</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BudgetBar data={budgetData} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Open Risk Exposure by Project</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RiskBar data={riskData} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Critical / At-Risk projects */}
       {[
         { label: "Critical Projects", status: "red", color: "border-red-500" },
         { label: "At-Risk Projects", status: "amber", color: "border-amber-500" },
@@ -146,6 +185,11 @@ export default async function ExecutivePage() {
                     <td className="px-4 py-3">{p._count.risks}</td>
                   </tr>
                 ))}
+                {projects.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">No projects in portfolio yet</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
