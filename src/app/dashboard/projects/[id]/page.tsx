@@ -13,6 +13,7 @@ import {
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { ChatPanel } from "@/components/chat-panel";
 import { StatusForm } from "@/components/status-form";
+import { BurndownDownloadButton } from "@/components/burndown-download-button";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -69,6 +70,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <BurndownDownloadButton projectId={id} />
             <Link href={`/dashboard/projects/${id}/settings`}>
               <Button variant="outline" size="icon"><Settings className="w-4 h-4" /></Button>
             </Link>
