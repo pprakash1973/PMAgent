@@ -1,12 +1,46 @@
 "use client";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Download, Printer } from "lucide-react";
+import { Printer, Download, Loader2, FileSpreadsheet, Presentation, FileText } from "lucide-react";
+import { toast } from "@/components/ui/toaster";
+import { ARTIFACT_FORMAT } from "@/lib/utils";
 
-type Props = { artifactType: string; content: Record<string, unknown> };
+type Props = { artifactType: string; content: Record<string, unknown>; projectId: string };
 
-export function ArtifactDocument({ artifactType, content }: Props) {
+const FORMAT_META = {
+  xlsx: { label: "Download Excel", Icon: FileSpreadsheet, color: "text-green-700" },
+  pptx: { label: "Download PowerPoint", Icon: Presentation, color: "text-orange-600" },
+  docx: { label: "Download Word", Icon: FileText, color: "text-blue-700" },
+};
+
+export function ArtifactDocument({ artifactType, content, projectId }: Props) {
   const docRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+  const format = ARTIFACT_FORMAT[artifactType] ?? "docx";
+  const meta = FORMAT_META[format];
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/artifacts/${artifactType}/export`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] ?? `${artifactType}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Downloaded!", description: `${artifactType.replace(/_/g, " ")} saved.` });
+    } catch (err: any) {
+      toast({ title: "Download failed", description: err.message, variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   function handlePrint() {
     const win = window.open("", "_blank");
@@ -23,17 +57,10 @@ export function ArtifactDocument({ artifactType, content }: Props) {
         td { padding: 5px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; font-size: 11px; }
         tr:nth-child(even) td { background: #f8fafc; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 600; }
-        .badge-red { background: #fee2e2; color: #991b1b; }
-        .badge-amber { background: #fef3c7; color: #92400e; }
-        .badge-green { background: #d1fae5; color: #065f46; }
-        .badge-blue { background: #dbeafe; color: #1e40af; }
-        .badge-gray { background: #f3f4f6; color: #374151; }
-        ul { margin: 4px 0 8px 20px; padding: 0; }
-        li { margin-bottom: 3px; }
+        ul { margin: 4px 0 8px 20px; padding: 0; } li { margin-bottom: 3px; }
         p { margin: 4px 0 8px; line-height: 1.5; }
         .field-row { display: flex; gap: 8px; margin-bottom: 6px; }
         .field-label { font-weight: 600; min-width: 140px; color: #374151; }
-        .field-value { color: #1a1a1a; }
       </style></head><body>
       ${docRef.current?.innerHTML ?? ""}
       </body></html>`);
@@ -48,7 +75,19 @@ export function ArtifactDocument({ artifactType, content }: Props) {
     <div className="space-y-2">
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handlePrint}>
-          <Printer className="w-3 h-3" /> Print / Save PDF
+          <Printer className="w-3 h-3" /> Print / PDF
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className={`h-7 text-xs gap-1 ${meta.color}`}
+          onClick={handleDownload}
+          disabled={downloading}
+        >
+          {downloading
+            ? <Loader2 className="w-3 h-3 animate-spin" />
+            : <meta.Icon className="w-3 h-3" />}
+          {downloading ? "Generating…" : meta.label}
         </Button>
       </div>
       <div ref={docRef} className="bg-white border border-slate-200 rounded-md p-6 text-sm text-slate-800 space-y-4 max-h-[600px] overflow-y-auto">
@@ -80,8 +119,6 @@ function RenderValue({ value, depth, keyName }: { value: unknown; depth: number;
 
   if (Array.isArray(value)) {
     if (value.length === 0) return <span className="text-slate-400">None</span>;
-
-    // If array of objects → render as table
     if (typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
       const keys = Object.keys(value[0] as object).filter((k) => !SKIP_KEYS.has(k));
       return (
@@ -105,8 +142,6 @@ function RenderValue({ value, depth, keyName }: { value: unknown; depth: number;
         </div>
       );
     }
-
-    // Array of primitives → bullet list
     return (
       <ul className="list-disc list-inside space-y-0.5 text-slate-700">
         {(value as unknown[]).map((item, i) => (
@@ -121,9 +156,7 @@ function RenderValue({ value, depth, keyName }: { value: unknown; depth: number;
     if (depth === 0) {
       return (
         <div className="space-y-5">
-          {entries.map(([k, v]) => (
-            <Section key={k} label={formatKey(k)} value={v} depth={depth} />
-          ))}
+          {entries.map(([k, v]) => <Section key={k} label={formatKey(k)} value={v} depth={depth} />)}
         </div>
       );
     }

@@ -168,6 +168,17 @@ keys are role names and values are R/A/C/I/-)}).`,
     weekly_status: `Generate a Weekly Status Report template with: reportingPeriod, overallStatus (RAG),
 executiveSummary, accomplishments (array), plannedActivities (array), risks (array of {description, status}),
 issues (array of {description, status}), milestoneStatus (array), financialStatus, resourceStatus, decisions (array).`,
+
+    monthly_status: `Generate a Monthly Status Report with: reportingPeriod, overallStatus (RAG), executiveSummary,
+keyAchievements (array), kpis object (spi, cpi, budgetSpent, budgetRemaining, percentComplete, teamUtilisation),
+milestoneStatus (array of {name, dueDate, status}), risks (array of {description, impact, status}),
+nextMonthPlan (array), decisions (array), escalations (array).`,
+
+    initiation_deck: `Generate a Project Initiation Deck for stakeholder presentation with: projectTitle, projectDescription,
+objectives (array of strings), scope (object with inScope array and outOfScope array), deliverables (array of strings),
+stakeholders (array of {name, role, interest}), budget (string), timeline (string),
+risks (array of strings — top 5 only), assumptions (array of strings), constraints (array of strings),
+approvalSignatures (array of {role}).`,
   };
 
   const schema = templates[artifactType] || `Generate a ${artifactType.replace(/_/g, " ")} artifact in structured JSON format.`;

@@ -169,7 +169,7 @@ export function ArtifactPanel({
                       </div>
                       {isExpanded && artifact?.content && (
                         <div className="border-t border-slate-200 p-3">
-                          <ArtifactDocument artifactType={artifact.artifactType} content={artifact.content} />
+                          <ArtifactDocument artifactType={artifact.artifactType} content={artifact.content} projectId={projectId} />
                         </div>
                       )}
                     </div>

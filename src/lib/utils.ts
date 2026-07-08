@@ -38,6 +38,7 @@ export function methodologyLabel(m: string) {
 
 export const ARTIFACT_CATALOG = [
   // Initiation
+  { type: "initiation_deck", label: "Project Initiation Deck", phase: "initiation" },
   { type: "project_charter", label: "Project Charter", phase: "initiation" },
   { type: "business_case", label: "Business Case", phase: "initiation" },
   { type: "stakeholder_register", label: "Stakeholder Register", phase: "initiation" },
@@ -65,6 +66,29 @@ export const ARTIFACT_CATALOG = [
   { type: "lessons_learned", label: "Lessons Learned", phase: "closure" },
   { type: "closure_report", label: "Closure Report", phase: "closure" },
 ];
+
+// Output format per artifact type
+export const ARTIFACT_FORMAT: Record<string, "xlsx" | "pptx" | "docx"> = {
+  // PowerPoint
+  initiation_deck: "pptx",
+  weekly_status:   "pptx",
+  monthly_status:  "pptx",
+  // Excel
+  stakeholder_register: "xlsx",
+  wbs:              "xlsx",
+  milestone_plan:   "xlsx",
+  resource_plan:    "xlsx",
+  cost_plan:        "xlsx",
+  raid_register:    "xlsx",
+  risk_register:    "xlsx",
+  raci_matrix:      "xlsx",
+  action_log:       "xlsx",
+  issue_register:   "xlsx",
+  decision_log:     "xlsx",
+  assumption_log:   "xlsx",
+  benefits_register:"xlsx",
+  // Word (everything else)
+};
 
 export const DEFAULT_DETAILED_ARTIFACTS = [
   "project_charter", "stakeholder_register", "wbs", "milestone_plan",

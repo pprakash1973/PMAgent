@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
     "@prisma/adapter-pg",
     "pdf-parse",
     "mammoth",
+    "pptxgenjs",
+    "docx",
   ],
 };
 
