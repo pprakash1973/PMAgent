@@ -1,13 +1,28 @@
 "use client";
 import { usePathname, useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useState } from "react";
 
-function LeftRail() {
+// Role-based visibility. pm sees projects only; delivery_manager also sees the
+// portfolio; delivery_head (and admin) additionally see the executive view.
+const CAN_PORTFOLIO = ["delivery_manager", "delivery_head", "admin"];
+const CAN_EXECUTIVE = ["delivery_head", "admin"];
+
+function initialsOf(name: string) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "PM";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function LeftRail({ role, userName }: { role: string; userName: string }) {
   const path = usePathname();
   const isWorkspace = path.includes("/projects/") && !path.includes("/new");
   const isPortfolio = path.includes("/portfolio");
   const isExec = path.includes("/executive");
+  const showPortfolio = CAN_PORTFOLIO.includes(role);
+  const showExecutive = CAN_EXECUTIVE.includes(role);
 
   function railBtn(active: boolean, href: string, icon: React.ReactNode, label: string) {
     return (
@@ -47,21 +62,44 @@ function LeftRail() {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/></svg>,
         "Projects"
       )}
-      {railBtn(isPortfolio, "/dashboard/portfolio",
+      {showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 13h5v8H3zM10 8h5v13h-5zM17 3h4v18h-4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>,
         "Portfolio"
       )}
-      {railBtn(isExec, "/dashboard/executive",
+      {showExecutive && railBtn(isExec, "/dashboard/executive",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 19V5M4 19h16M8 15l3.5-4 3 2.5L20 7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
         "Executive"
       )}
 
       <div style={{ flex: 1 }} />
-      <div style={{
-        width: 34, height: 34, borderRadius: "50%", background: "#3a3f4d",
-        color: "#dfe2e8", display: "flex", alignItems: "center", justifyContent: "center",
-        font: "600 12px 'IBM Plex Sans'", marginBottom: 4,
-      }}>PM</div>
+
+      {/* Sign out */}
+      <button
+        onClick={() => signOut({ callbackUrl: "/login" })}
+        title="Sign out"
+        aria-label="Sign out"
+        style={{
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          gap: 5, width: 56, height: 52, borderRadius: 14, cursor: "pointer",
+          background: "transparent", border: "none", color: "#9aa0ad",
+          fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "9.5px", fontWeight: 600,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#fff"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#9aa0ad"; }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 17l5-5-5-5M20 12H9M9 4H6a2 2 0 00-2 2v12a2 2 0 002 2h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        Sign out
+      </button>
+
+      {/* User avatar */}
+      <div
+        title={userName}
+        style={{
+          width: 34, height: 34, borderRadius: "50%", background: "#3a3f4d",
+          color: "#dfe2e8", display: "flex", alignItems: "center", justifyContent: "center",
+          font: "600 12px 'IBM Plex Sans'", marginTop: 6, marginBottom: 2,
+        }}
+      >{initialsOf(userName)}</div>
     </div>
   );
 }
@@ -135,13 +173,17 @@ function DockedAIBar() {
 export function AppShell({
   children,
   topBarContent,
+  role,
+  userName,
 }: {
   children: React.ReactNode;
   topBarContent?: React.ReactNode;
+  role: string;
+  userName: string;
 }) {
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
-      <LeftRail />
+      <LeftRail role={role} userName={userName} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <TopBar>{topBarContent}</TopBar>
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>

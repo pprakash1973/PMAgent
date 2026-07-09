@@ -1,7 +1,10 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { formatDate, formatCurrency, methodologyLabel } from "@/lib/utils";
+
+const CAN_PORTFOLIO = ["delivery_manager", "delivery_head", "admin"];
 
 function ragColor(s: string) {
   if (s === "green") return "#158a5a";
@@ -22,6 +25,7 @@ function ragLabel(s: string) {
 export default async function PortfolioPage() {
   const session = await auth();
   const user = session!.user as any;
+  if (!CAN_PORTFOLIO.includes(user.role)) redirect("/dashboard/projects");
 
   const projects = await prisma.project.findMany({
     where: { orgId: user.orgId, deletedAt: null },

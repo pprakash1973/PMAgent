@@ -1,8 +1,11 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, methodologyLabel } from "@/lib/utils";
 import { HealthDonut, BudgetBar, MethodologyBar, RiskBar } from "@/components/executive-charts";
+
+const CAN_EXECUTIVE = ["delivery_head", "admin"];
 
 function ragColor(s: string) {
   if (s === "green") return "#158a5a";
@@ -23,6 +26,7 @@ function ragLabel(s: string) {
 export default async function ExecutivePage() {
   const session = await auth();
   const user = session!.user as any;
+  if (!CAN_EXECUTIVE.includes(user.role)) redirect("/dashboard/projects");
 
   const projects = await prisma.project.findMany({
     where: { orgId: user.orgId, deletedAt: null },
