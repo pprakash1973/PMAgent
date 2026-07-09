@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
     "mammoth",
     "pptxgenjs",
     "docx",
+    "jszip",
   ],
 };
 

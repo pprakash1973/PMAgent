@@ -1,11 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
-import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye, Sparkles } from "lucide-react";
+import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye, Sparkles, Plus } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
 import { cn } from "@/lib/utils";
 
@@ -26,12 +26,15 @@ export function ArtifactPanel({
   catalog: CatalogEntry[];
 }) {
   const [generating, setGenerating] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
   const [localArtifacts, setLocalArtifacts] = useState(artifacts);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [autoGenQueue, setAutoGenQueue] = useState<string[]>([]);
   const [autoGenDone, setAutoGenDone] = useState(false);
   const searchParams = useSearchParams();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetRef = useRef<string | null>(null);
 
   const activeTypes = selections.filter((s) => s.selectionStatus === "active").map((s) => s.artifactType);
 
@@ -89,12 +92,61 @@ export function ArtifactPanel({
     }
   }
 
+  async function uploadArtifact(artifactType: string, file: File) {
+    setUploading(artifactType);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/projects/${projectId}/artifacts/${artifactType}/upload`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Upload failed");
+      }
+      const artifact = await res.json();
+      setLocalArtifacts((prev) => {
+        const idx = prev.findIndex((a) => a.artifactType === artifactType);
+        if (idx >= 0) { const copy = [...prev]; copy[idx] = artifact; return copy; }
+        return [...prev, artifact];
+      });
+      setExpanded(artifactType);
+      toast({ title: "Artifact updated!", description: `AI merged your uploaded file into ${artifactType.replace(/_/g, " ")}` });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message || "Please try again", variant: "destructive" });
+    } finally {
+      setUploading(null);
+      uploadTargetRef.current = null;
+    }
+  }
+
+  function handleUploadClick(artifactType: string) {
+    uploadTargetRef.current = artifactType;
+    fileInputRef.current?.click();
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const target = uploadTargetRef.current;
+    e.target.value = "";
+    if (file && target) uploadArtifact(target, file);
+  }
+
   const isAutoGenerating = autoGenQueue.length > 0 || (searchParams.get("autoGenerate") === "1" && !autoGenDone && generating !== null);
 
   const phases = ["initiation", "planning", "execution", "monitoring", "closure"];
 
   return (
     <Card>
+      {/* Hidden file input for artifact upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".xlsx,.xls,.csv,.pdf,.docx,.pptx,.txt"
+        onChange={handleFileChange}
+      />
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-2">
@@ -155,6 +207,17 @@ export function ArtifactPanel({
                               {isExpanded ? "Hide" : "View"}
                             </Button>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs gap-1 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+                            onClick={() => handleUploadClick(entry.type)}
+                            disabled={!!uploading || !!generating}
+                            title="Upload edited file — AI will merge it into this artifact"
+                          >
+                            {uploading === entry.type ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                            {uploading === entry.type ? "Merging…" : "Upload"}
+                          </Button>
                           <Button
                             variant={artifact ? "outline" : "default"}
                             size="sm"

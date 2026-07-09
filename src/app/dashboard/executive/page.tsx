@@ -1,10 +1,24 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import { formatCurrency, methodologyLabel } from "@/lib/utils";
-import { TrendingUp, DollarSign, Users, BarChart3, AlertTriangle } from "lucide-react";
 import { HealthDonut, BudgetBar, MethodologyBar, RiskBar } from "@/components/executive-charts";
+
+function ragColor(s: string) {
+  if (s === "green") return "#158a5a";
+  if (s === "amber") return "#c17d12";
+  return "#cf3f3a";
+}
+function ragBg(s: string) {
+  if (s === "green") return "#e3f3ea";
+  if (s === "amber") return "#fbf0da";
+  return "#fbe4e2";
+}
+function ragLabel(s: string) {
+  if (s === "green") return "On Track";
+  if (s === "amber") return "At Risk";
+  return "Critical";
+}
 
 export default async function ExecutivePage() {
   const session = await auth();
@@ -31,169 +45,129 @@ export default async function ExecutivePage() {
 
   const totalTeam = projects.reduce((s, p) => s + (p.teamSize || 0), 0);
 
-  // Chart data
-  const budgetData = projects
-    .filter((p) => p.budget)
-    .sort((a, b) => (b.budget ?? 0) - (a.budget ?? 0))
+  const budgetData = projects.filter((p) => p.budget).sort((a, b) => (b.budget ?? 0) - (a.budget ?? 0))
     .map((p) => ({ name: p.name.length > 20 ? p.name.slice(0, 18) + "…" : p.name, value: p.budget! }));
 
   const methodologyCounts: Record<string, number> = {};
-  for (const p of projects) {
-    const label = methodologyLabel(p.methodology);
-    methodologyCounts[label] = (methodologyCounts[label] ?? 0) + 1;
-  }
+  for (const p of projects) { const label = methodologyLabel(p.methodology); methodologyCounts[label] = (methodologyCounts[label] ?? 0) + 1; }
   const methodologyData = Object.entries(methodologyCounts).map(([name, value]) => ({ name, value }));
 
-  const riskData = projects
-    .filter((p) => p._count.risks > 0)
-    .sort((a, b) => b._count.risks - a._count.risks)
+  const riskData = projects.filter((p) => p._count.risks > 0).sort((a, b) => b._count.risks - a._count.risks)
     .map((p) => ({ name: p.name.length > 20 ? p.name.slice(0, 18) + "…" : p.name, value: p._count.risks }));
 
+  const atRisk = projects.filter((p) => p.healthStatus === "amber" || p.healthStatus === "red");
+
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Executive Overview</h1>
-        <p className="text-slate-500 text-sm mt-1">Organization-wide delivery health and financial performance</p>
+    <div style={{ padding: "26px 28px 48px" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1d24" }}>Executive Overview</div>
+        <div style={{ fontSize: 13, color: "#8a909c", marginTop: 3 }}>Organization-wide delivery health and financial performance</div>
       </div>
 
-      {/* Top metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* KPI strip */}
+      <div style={{ display: "flex", gap: 14, marginBottom: 22 }}>
         {[
-          { label: "Delivery Health", value: `${healthPct}%`, sub: `${health.green} green · ${health.amber} amber · ${health.red} red`, icon: TrendingUp, color: "text-green-600" },
-          { label: "Total Portfolio Budget", value: totalBudget ? formatCurrency(totalBudget) : "—", sub: `${projects.length} active projects`, icon: DollarSign, color: "text-blue-600" },
-          { label: "Avg. Schedule Perf. (SPI)", value: avgSPI, sub: "Across reporting projects", icon: BarChart3, color: "text-purple-600" },
-          { label: "Total Resources", value: totalTeam > 0 ? `${totalTeam}` : "—", sub: "People across all projects", icon: Users, color: "text-orange-600" },
-        ].map((m) => (
-          <Card key={m.label}>
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-3">
-                <m.icon className={`w-8 h-8 ${m.color} shrink-0`} />
-                <div>
-                  <p className="text-2xl font-bold text-slate-900">{m.value}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{m.label}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{m.sub}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          { label: "Delivery Health", value: `${healthPct}%`, sub: `${health.green} on track`, color: "#158a5a", bg: "#e3f3ea" },
+          { label: "Portfolio Budget", value: totalBudget ? formatCurrency(totalBudget) : "—", sub: `${projects.length} projects`, color: "#4f5bd5", bg: "#eef0fc" },
+          { label: "Avg. SPI", value: avgSPI, sub: "Schedule performance index", color: Number(avgSPI) >= 1 ? "#158a5a" : "#c17d12", bg: Number(avgSPI) >= 1 ? "#e3f3ea" : "#fbf0da" },
+          { label: "Total Resources", value: totalTeam > 0 ? `${totalTeam}` : "—", sub: "People across all projects", color: "#8a2be2", bg: "#f4eeff" },
+        ].map(k => (
+          <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 14, padding: "16px 18px" }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: k.color, fontFamily: "'IBM Plex Mono',monospace" }}>{k.value}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: k.color, marginTop: 3 }}>{k.label}</div>
+            <div style={{ fontSize: 11.5, color: "#5b616e", marginTop: 2 }}>{k.sub}</div>
+          </div>
         ))}
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Portfolio Health Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <HealthDonut green={health.green} amber={health.amber} red={health.red} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Methodology Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MethodologyBar data={methodologyData} />
-          </CardContent>
-        </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 22 }}>
+        <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "18px 20px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Portfolio Health Distribution</div>
+          <HealthDonut green={health.green} amber={health.amber} red={health.red} />
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "18px 20px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Methodology Breakdown</div>
+          <MethodologyBar data={methodologyData} />
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "18px 20px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Budget by Project</div>
+          <BudgetBar data={budgetData} />
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "18px 20px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Open Risk Exposure</div>
+          <RiskBar data={riskData} />
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Budget by Project</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BudgetBar data={budgetData} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Open Risk Exposure by Project</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <RiskBar data={riskData} />
-          </CardContent>
-        </Card>
+      {/* AI Insights */}
+      <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: "1px solid #cfd4f5", borderRadius: 14, padding: "18px 20px", marginBottom: 22 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <span style={{ color: "#4f5bd5", fontSize: 16 }}>✦</span>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: "#4f5bd5", textTransform: "uppercase" as const }}>AI Executive Insights</span>
+        </div>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" as const }}>
+          {atRisk.length === 0 && <p style={{ fontSize: 13, color: "#3a3f52", lineHeight: 1.6, margin: 0 }}>Portfolio is in good health — {health.green} of {projects.length} projects on track. No critical interventions required at this time.</p>}
+          {atRisk.length > 0 && <p style={{ fontSize: 13, color: "#3a3f52", lineHeight: 1.6, margin: 0 }}>{atRisk.length} project{atRisk.length > 1 ? "s" : ""} ({atRisk.map(p => p.name).join(", ")}) require{atRisk.length === 1 ? "s" : ""} attention. Review status reports and escalate schedule/budget risks before next steering committee.</p>}
+        </div>
       </div>
 
-      {/* Critical / At-Risk projects */}
-      {[
-        { label: "Critical Projects", status: "red", color: "border-red-500" },
-        { label: "At-Risk Projects", status: "amber", color: "border-amber-500" },
-      ].map(({ label, status, color }) => {
-        const list = projects.filter((p) => p.healthStatus === status);
-        if (!list.length) return null;
-        return (
-          <div key={status}>
-            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              {label} ({list.length})
-            </h2>
-            <div className="grid gap-3">
-              {list.map((p) => (
-                <Card key={p.id} className={`border-l-4 ${color}`}>
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-slate-900">{p.name}</span>
-                        <Badge variant={p.healthStatus as any}>{p.healthStatus.toUpperCase()}</Badge>
-                      </div>
-                      <p className="text-sm text-slate-500">{p.pmOwner.fullName} · {methodologyLabel(p.methodology)}</p>
-                      {p.statusReports[0]?.aiSummary && (
-                        <p className="text-xs text-slate-400 mt-1 max-w-xl line-clamp-2">{p.statusReports[0].aiSummary}</p>
-                      )}
-                    </div>
-                    <div className="text-right text-sm space-y-1">
-                      {p.budget && <p className="font-medium">{formatCurrency(p.budget, p.currency)}</p>}
-                      <p className="text-slate-400 text-xs">{p._count.risks} open risks</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+      {/* At-risk table */}
+      {atRisk.length > 0 && (
+        <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, overflow: "hidden", marginBottom: 22 }}>
+          <div style={{ padding: "12px 18px", borderBottom: "1px solid #eceef2", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>Interventions Required</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#cf3f3a", background: "#fbe4e2", borderRadius: 999, padding: "2px 9px" }}>{atRisk.length}</span>
           </div>
-        );
-      })}
+          {atRisk.map((p, i) => (
+            <Link key={p.id} href={`/dashboard/projects/${p.id}`} style={{ textDecoration: "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderTop: i === 0 ? "none" : "1px solid #eceef2", borderLeft: `4px solid ${ragColor(p.healthStatus)}` }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5, color: "#1a1d24" }}>{p.name}</div>
+                  <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 2 }}>{p.pmOwner.fullName}</div>
+                  {p.statusReports[0]?.aiSummary && <div style={{ fontSize: 11.5, color: "#5b616e", marginTop: 3, maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.statusReports[0].aiSummary}</div>}
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 999, padding: "4px 11px" }}>{ragLabel(p.healthStatus)}</span>
+                {p.budget && <span style={{ fontSize: 12, fontWeight: 500, color: "#5b616e", whiteSpace: "nowrap" as const }}>{formatCurrency(p.budget, p.currency)}</span>}
+                <span style={{ fontSize: 12, color: "#8a909c" }}>{p._count.risks} risks</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Full portfolio table */}
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Complete Portfolio</h2>
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {["Project", "Owner", "Method", "Budget", "Health", "SPI", "CPI", "Risks"].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {projects.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-900">{p.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{p.pmOwner.fullName}</td>
-                    <td className="px-4 py-3 text-slate-600">{methodologyLabel(p.methodology)}</td>
-                    <td className="px-4 py-3 text-slate-600">{p.budget ? formatCurrency(p.budget, p.currency) : "—"}</td>
-                    <td className="px-4 py-3"><Badge variant={p.healthStatus as any}>{p.healthStatus.toUpperCase()}</Badge></td>
-                    <td className="px-4 py-3">{p.statusReports[0]?.healthScore?.spi?.toFixed(2) ?? "—"}</td>
-                    <td className="px-4 py-3">{p.statusReports[0]?.healthScore?.cpi?.toFixed(2) ?? "—"}</td>
-                    <td className="px-4 py-3">{p._count.risks}</td>
-                  </tr>
+      <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid #eceef2", fontSize: 14, fontWeight: 600 }}>Complete Portfolio</div>
+        <div style={{ overflowX: "auto" as const }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "#f7f8fa" }}>
+                {["Project", "Owner", "Method", "Budget", "Health", "SPI", "CPI", "Risks"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "9px 16px", fontSize: 10, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase" as const, whiteSpace: "nowrap" as const }}>{h}</th>
                 ))}
-                {projects.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">No projects in portfolio yet</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map(p => (
+                <tr key={p.id} style={{ borderTop: "1px solid #eceef2" }}>
+                  <td style={{ padding: "13px 16px", fontWeight: 600, color: "#1a1d24" }}>{p.name}</td>
+                  <td style={{ padding: "13px 16px", color: "#5b616e" }}>{p.pmOwner.fullName}</td>
+                  <td style={{ padding: "13px 16px", color: "#5b616e" }}>{methodologyLabel(p.methodology)}</td>
+                  <td style={{ padding: "13px 16px", color: "#5b616e", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12 }}>{p.budget ? formatCurrency(p.budget, p.currency) : "—"}</td>
+                  <td style={{ padding: "13px 16px" }}><span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 6, padding: "3px 9px" }}>{ragLabel(p.healthStatus)}</span></td>
+                  <td style={{ padding: "13px 16px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: "#5b616e" }}>{p.statusReports[0]?.healthScore?.spi?.toFixed(2) ?? "—"}</td>
+                  <td style={{ padding: "13px 16px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: "#5b616e" }}>{p.statusReports[0]?.healthScore?.cpi?.toFixed(2) ?? "—"}</td>
+                  <td style={{ padding: "13px 16px", color: p._count.risks > 3 ? "#cf3f3a" : "#5b616e" }}>{p._count.risks}</td>
+                </tr>
+              ))}
+              {projects.length === 0 && (
+                <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center" as const, color: "#8a909c", fontSize: 13 }}>No projects yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

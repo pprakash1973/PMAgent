@@ -1,10 +1,23 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { formatDate, formatCurrency, methodologyLabel } from "@/lib/utils";
-import { BarChart3, AlertTriangle, CheckCircle2, TrendingDown } from "lucide-react";
+
+function ragColor(s: string) {
+  if (s === "green") return "#158a5a";
+  if (s === "amber") return "#c17d12";
+  return "#cf3f3a";
+}
+function ragBg(s: string) {
+  if (s === "green") return "#e3f3ea";
+  if (s === "amber") return "#fbf0da";
+  return "#fbe4e2";
+}
+function ragLabel(s: string) {
+  if (s === "green") return "On Track";
+  if (s === "amber") return "At Risk";
+  return "Critical";
+}
 
 export default async function PortfolioPage() {
   const session = await auth();
@@ -14,7 +27,7 @@ export default async function PortfolioPage() {
     where: { orgId: user.orgId, deletedAt: null },
     include: {
       pmOwner: { select: { fullName: true } },
-      milestones: { where: { status: "pending" }, orderBy: { dueDate: "asc" }, take: 2 },
+      milestones: { where: { status: "pending" }, orderBy: { dueDate: "asc" }, take: 1 },
       statusReports: { orderBy: { reportDate: "desc" }, take: 1, include: { healthScore: true } },
       _count: { select: { risks: true, issues: true } },
     },
@@ -26,119 +39,110 @@ export default async function PortfolioPage() {
     const h = p.healthStatus as keyof typeof health;
     if (h in health) health[h]++;
   }
-
   const atRisk = projects.filter((p) => p.healthStatus === "amber" || p.healthStatus === "red");
 
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Portfolio Overview</h1>
-        <p className="text-slate-500 text-sm mt-1">{projects.length} active projects across your delivery portfolio</p>
+    <div style={{ padding: "26px 28px 48px" }}>
+      {/* Header */}
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1d24" }}>Portfolio Overview</div>
+        <div style={{ fontSize: 13, color: "#8a909c", marginTop: 3 }}>{projects.length} active projects · as of today</div>
       </div>
 
-      {/* Health distribution */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6 flex items-center gap-3">
-            <BarChart3 className="w-8 h-8 text-blue-500" />
-            <div><p className="text-2xl font-bold">{projects.length}</p><p className="text-sm text-slate-500">Total Projects</p></div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 flex items-center gap-3">
-            <CheckCircle2 className="w-8 h-8 text-green-500" />
-            <div><p className="text-2xl font-bold text-green-700">{health.green}</p><p className="text-sm text-slate-500">On Track</p></div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 flex items-center gap-3">
-            <AlertTriangle className="w-8 h-8 text-amber-500" />
-            <div><p className="text-2xl font-bold text-amber-700">{health.amber}</p><p className="text-sm text-slate-500">At Risk</p></div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 flex items-center gap-3">
-            <TrendingDown className="w-8 h-8 text-red-500" />
-            <div><p className="text-2xl font-bold text-red-700">{health.red}</p><p className="text-sm text-slate-500">Critical</p></div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* At-risk projects */}
-      {atRisk.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
-            Projects Requiring Attention
-          </h2>
-          <div className="grid gap-3">
-            {atRisk.map((p) => (
-              <Link key={p.id} href={`/dashboard/projects/${p.id}`}>
-                <Card className="hover:shadow-md transition-shadow cursor-pointer border-l-4" style={{ borderLeftColor: p.healthStatus === "red" ? "#dc2626" : "#f59e0b" }}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-slate-900">{p.name}</span>
-                          <Badge variant={p.healthStatus as any}>{p.healthStatus.toUpperCase()}</Badge>
-                        </div>
-                        <p className="text-sm text-slate-500">{p.pmOwner.fullName} · {methodologyLabel(p.methodology)}</p>
-                        {p.statusReports[0]?.aiSummary && (
-                          <p className="text-xs text-slate-400 mt-1 line-clamp-1">{p.statusReports[0].aiSummary}</p>
-                        )}
-                      </div>
-                      <div className="text-right text-sm space-y-1">
-                        <p className="text-slate-500">{p._count.risks} risks · {p._count.issues} issues</p>
-                        {p.statusReports[0]?.healthScore && (
-                          <div className="text-xs text-slate-400">
-                            {p.statusReports[0].healthScore.spi && `SPI: ${p.statusReports[0].healthScore.spi}`}
-                            {p.statusReports[0].healthScore.cpi && ` · CPI: ${p.statusReports[0].healthScore.cpi}`}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+      {/* KPI strip */}
+      <div style={{ display: "flex", gap: 14, marginBottom: 22 }}>
+        {[
+          { label: "Total Projects", value: projects.length, color: "#4f5bd5", bg: "#eef0fc" },
+          { label: "On Track", value: health.green, color: "#158a5a", bg: "#e3f3ea" },
+          { label: "At Risk", value: health.amber, color: "#c17d12", bg: "#fbf0da" },
+          { label: "Critical", value: health.red, color: "#cf3f3a", bg: "#fbe4e2" },
+        ].map(k => (
+          <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 14, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={{ fontSize: 28, fontWeight: 700, color: k.color, fontFamily: "'IBM Plex Mono',monospace" }}>{k.value}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 500, color: k.color }}>{k.label}</span>
           </div>
+        ))}
+      </div>
+
+      {/* At-risk highlight */}
+      {atRisk.length > 0 && (
+        <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, marginBottom: 22, overflow: "hidden" }}>
+          <div style={{ padding: "12px 18px", borderBottom: "1px solid #eceef2", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>Needs Attention</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#cf3f3a", background: "#fbe4e2", borderRadius: 999, padding: "2px 9px" }}>{atRisk.length}</span>
+          </div>
+          {atRisk.map((p, i) => (
+            <Link key={p.id} href={`/dashboard/projects/${p.id}`} style={{ textDecoration: "none" }}>
+              <div style={{
+                display: "flex", alignItems: "center", gap: 14, padding: "14px 18px",
+                borderTop: i === 0 ? "none" : "1px solid #eceef2",
+                borderLeft: `4px solid ${ragColor(p.healthStatus)}`,
+                background: "#fff",
+                transition: "background .1s",
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5, color: "#1a1d24" }}>{p.name}</div>
+                  <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 2 }}>{p.pmOwner.fullName} · {methodologyLabel(p.methodology)}</div>
+                  {p.statusReports[0]?.aiSummary && (
+                    <div style={{ fontSize: 11.5, color: "#5b616e", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 520 }}>{p.statusReports[0].aiSummary}</div>
+                  )}
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 999, padding: "4px 11px" }}>
+                  {ragLabel(p.healthStatus)}
+                </span>
+                <div style={{ textAlign: "right", minWidth: 80 }}>
+                  <div style={{ fontSize: 12, color: "#5b616e" }}>{p._count.risks} risks</div>
+                  <div style={{ fontSize: 11.5, color: "#8a909c" }}>{p._count.issues} issues</div>
+                </div>
+              </div>
+            </Link>
+          ))}
         </div>
       )}
 
       {/* All projects table */}
-      <div>
-        <h2 className="text-lg font-semibold mb-3">All Projects</h2>
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {["Project", "PM Owner", "Methodology", "Mode", "Health", "SPI", "CPI", "Risks", "End Date"].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {projects.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50 cursor-pointer">
-                    <td className="px-4 py-3">
-                      <Link href={`/dashboard/projects/${p.id}`} className="font-medium text-slate-900 hover:text-blue-700">{p.name}</Link>
-                      <p className="text-xs text-slate-400">{p.code}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{p.pmOwner.fullName}</td>
-                    <td className="px-4 py-3 text-slate-600">{methodologyLabel(p.methodology)}</td>
-                    <td className="px-4 py-3"><Badge variant="secondary" className="text-xs">{p.engagementMode === "high_level" ? "Governance" : "Detailed"}</Badge></td>
-                    <td className="px-4 py-3"><Badge variant={p.healthStatus as any}>{p.healthStatus.toUpperCase()}</Badge></td>
-                    <td className="px-4 py-3 text-slate-600">{p.statusReports[0]?.healthScore?.spi?.toFixed(2) ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{p.statusReports[0]?.healthScore?.cpi?.toFixed(2) ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-600">{p._count.risks}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(p.endDate)}</td>
-                  </tr>
+      <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: "12px 18px 10px", borderBottom: "1px solid #eceef2", fontSize: 14, fontWeight: 600 }}>All Projects</div>
+        <div style={{ overflowX: "auto" as const }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: "#f7f8fa" }}>
+                {["Project", "PM Owner", "Methodology", "Mode", "Health", "SPI", "CPI", "Risks", "End Date"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "9px 16px", fontSize: 10, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.length === 0 && (
+                <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "#8a909c", fontSize: 13 }}>No projects yet. <Link href="/dashboard/projects/new" style={{ color: "#4f5bd5" }}>Create your first project →</Link></td></tr>
+              )}
+              {projects.map((p) => (
+                <tr key={p.id} style={{ borderTop: "1px solid #eceef2" }}>
+                  <td style={{ padding: "13px 16px" }}>
+                    <Link href={`/dashboard/projects/${p.id}`} style={{ fontWeight: 600, color: "#1a1d24", textDecoration: "none" }}>{p.name}</Link>
+                    <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, color: "#8a909c" }}>{p.code}</div>
+                  </td>
+                  <td style={{ padding: "13px 16px", color: "#5b616e" }}>{p.pmOwner.fullName}</td>
+                  <td style={{ padding: "13px 16px", color: "#5b616e" }}>{methodologyLabel(p.methodology)}</td>
+                  <td style={{ padding: "13px 16px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#5b616e", background: "#f2f4f7", borderRadius: 6, padding: "3px 9px" }}>
+                      {p.engagementMode === "high_level" ? "Governance" : "Detailed"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "13px 16px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 6, padding: "3px 9px" }}>
+                      {ragLabel(p.healthStatus)}
+                    </span>
+                  </td>
+                  <td style={{ padding: "13px 16px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: "#5b616e" }}>{p.statusReports[0]?.healthScore?.spi?.toFixed(2) ?? "—"}</td>
+                  <td style={{ padding: "13px 16px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: "#5b616e" }}>{p.statusReports[0]?.healthScore?.cpi?.toFixed(2) ?? "—"}</td>
+                  <td style={{ padding: "13px 16px", color: p._count.risks > 3 ? "#cf3f3a" : "#5b616e" }}>{p._count.risks}</td>
+                  <td style={{ padding: "13px 16px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: "#5b616e" }}>{formatDate(p.endDate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

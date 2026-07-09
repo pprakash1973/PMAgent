@@ -248,6 +248,5 @@ export async function buildPptx(artifactType: string, content: any, projectName:
       buildInitiationDeck(pptx, content, projectName);
   }
 
-  const buf: ArrayBuffer = await pptx.write({ outputType: "arraybuffer" });
-  return Buffer.from(buf);
+  return await pptx.write("nodebuffer") as Buffer;
 }

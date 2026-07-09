@@ -62,6 +62,7 @@ export const ARTIFACT_CATALOG = [
   // Monitoring
   { type: "weekly_status", label: "Weekly Status Report", phase: "monitoring" },
   { type: "monthly_status", label: "Monthly Status Report", phase: "monitoring" },
+  { type: "change_log", label: "Change Control Register", phase: "monitoring" },
   // Closure
   { type: "lessons_learned", label: "Lessons Learned", phase: "closure" },
   { type: "closure_report", label: "Closure Report", phase: "closure" },
@@ -87,6 +88,7 @@ export const ARTIFACT_FORMAT: Record<string, "xlsx" | "pptx" | "docx"> = {
   decision_log:     "xlsx",
   assumption_log:   "xlsx",
   benefits_register:"xlsx",
+  change_log:       "xlsx",
   // Word (everything else)
 };
 
