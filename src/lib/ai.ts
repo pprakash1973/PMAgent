@@ -15,6 +15,19 @@ function extractJson(text: string): Record<string, unknown> {
   throw new Error("AI did not return valid JSON");
 }
 
+// Guards every JSON-producing AI call against silent truncation: if the model
+// hit its token ceiling the JSON is incomplete, so fail loudly instead of
+// persisting a half-parsed document.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseAIJson(message: any, label: string): Record<string, unknown> {
+  const content = message.content[0];
+  if (!content || content.type !== "text") throw new Error("Unexpected AI response type");
+  if (message.stop_reason === "max_tokens") {
+    throw new Error(`AI response for "${label}" was truncated (hit token limit). Try a smaller input.`);
+  }
+  return extractJson(content.text);
+}
+
 const PMI_SYSTEM_PROMPT = `You are a senior PMO AI assistant with deep expertise in:
 - PMBOK® Guide 6th Edition (process groups, knowledge areas, ITTOs)
 - PMBOK® Guide 7th Edition (12 principles, 8 performance domains)
@@ -46,18 +59,13 @@ export async function generateArtifact(
     messages: [{ role: "user", content: prompt }],
   });
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected AI response type");
-  if (message.stop_reason === "max_tokens") {
-    throw new Error(`Artifact "${artifactType}" exceeded token budget — output was truncated`);
-  }
-  return extractJson(content.text);
+  return parseAIJson(message, `artifact:${artifactType}`);
 }
 
 export async function generateProjectFromNL(description: string): Promise<Record<string, unknown>> {
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2048,
+    max_tokens: 8000,
     system: `You are a senior PMO AI. Extract structured project fields from a natural language description or requirements document.
 Return JSON with these fields (infer from context; leave null if not found):
 - name (string): project name
@@ -88,9 +96,7 @@ Return JSON with these fields (infer from context; leave null if not found):
     ],
   });
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response");
-  return extractJson(content.text);
+  return parseAIJson(message, "project-from-document");
 }
 
 export async function generateStatusSummary(
@@ -99,7 +105,7 @@ export async function generateStatusSummary(
 ): Promise<{ summary: string; ragStatus: string; healthScore: number; recommendations: string[] }> {
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 1024,
+    max_tokens: 4000,
     system: `You are a PMO AI. Generate an executive status summary from the PM's raw status inputs.
 Apply PMBOK Monitoring & Controlling (4.5) principles: analyze schedule variance, cost variance, and scope health.
 Do not introduce figures not present in the inputs.
@@ -112,15 +118,13 @@ Return JSON with: summary (string), ragStatus (green/amber/red), healthScore (0-
     ],
   });
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response");
-  return extractJson(content.text) as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[] };
+  return parseAIJson(message, "status-summary") as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[] };
 }
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2048,
+    max_tokens: 8000,
     system: `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
 Return JSON with:
 - goals (array of strings): business/project goals
@@ -137,14 +141,12 @@ Return JSON with:
     messages: [
       {
         role: "user",
-        content: `Extract requirements from this document:\n\n${text.slice(0, 8000)}\n\nReturn JSON only.`,
+        content: `Extract requirements from this document:\n\n${text.slice(0, 12000)}\n\nReturn JSON only.`,
       },
     ],
   });
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response");
-  return extractJson(content.text);
+  return parseAIJson(message, "requirements-extraction");
 }
 
 export async function chatCommand(
