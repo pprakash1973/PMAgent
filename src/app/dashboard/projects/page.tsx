@@ -1,11 +1,23 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { formatDate, formatCurrency, methodologyLabel } from "@/lib/utils";
-import { Plus, FolderKanban } from "lucide-react";
+
+function ragColor(s: string) {
+  if (s === "green") return "#158a5a";
+  if (s === "amber") return "#c17d12";
+  return "#cf3f3a";
+}
+function ragBg(s: string) {
+  if (s === "green") return "#e3f3ea";
+  if (s === "amber") return "#fbf0da";
+  return "#fbe4e2";
+}
+function ragLabel(s: string) {
+  if (s === "green") return "On Track";
+  if (s === "amber") return "At Risk";
+  return "Critical";
+}
 
 export default async function ProjectsPage() {
   const session = await auth();
@@ -25,66 +37,104 @@ export default async function ProjectsPage() {
   });
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div style={{ padding: "26px 28px 48px" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
-          <p className="text-slate-500 text-sm mt-1">{projects.length} project{projects.length !== 1 ? "s" : ""}</p>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1d24" }}>Projects</div>
+          <div style={{ fontSize: 13, color: "#8a909c", marginTop: 3 }}>
+            {projects.length} project{projects.length !== 1 ? "s" : ""} in your portfolio
+          </div>
         </div>
-        <Link href="/dashboard/projects/new">
-          <Button><Plus className="w-4 h-4" />New Project</Button>
+        <Link href="/dashboard/projects/new" style={{ textDecoration: "none" }}>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 16px",
+            background: "#4f5bd5", color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 600,
+            boxShadow: "0 2px 6px rgba(79,91,213,.3)",
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg>
+            New Project
+          </span>
         </Link>
       </div>
 
       {projects.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <FolderKanban className="w-16 h-16 text-slate-200 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-slate-700 mb-2">No projects yet</h3>
-            <p className="text-slate-400 mb-6">Create your first project to get started</p>
-            <Link href="/dashboard/projects/new">
-              <Button><Plus className="w-4 h-4" />Create Project</Button>
-            </Link>
-          </CardContent>
-        </Card>
+        <div style={{
+          background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14,
+          padding: "56px 24px", textAlign: "center" as const,
+        }}>
+          <div style={{
+            width: 60, height: 60, borderRadius: 16, margin: "0 auto 18px",
+            background: "#eef0fc", display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#4f5bd5" strokeWidth="1.7" /><path d="M3 9h18M8 4v5" stroke="#4f5bd5" strokeWidth="1.7" /></svg>
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#1a1d24", marginBottom: 6 }}>No projects yet</div>
+          <div style={{ fontSize: 13, color: "#8a909c", marginBottom: 22 }}>Create your first project to get started</div>
+          <Link href="/dashboard/projects/new" style={{ textDecoration: "none" }}>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 16px",
+              background: "#4f5bd5", color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 600,
+            }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg>
+              Create Project
+            </span>
+          </Link>
+        </div>
       ) : (
-        <div className="grid gap-4">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {projects.map((project) => (
-            <Link key={project.id} href={`/dashboard/projects/${project.id}`}>
-              <Card className="hover:shadow-md transition-all cursor-pointer group">
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-6">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-slate-900 group-hover:text-blue-700 transition-colors">{project.name}</h3>
-                        <Badge variant={project.healthStatus as any}>{project.healthStatus.toUpperCase()}</Badge>
-                        <Badge variant="secondary" className="text-xs">
-                          {project.engagementMode === "high_level" ? "Governance" : "Detailed"}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-slate-500">
-                        {project.code} · {project.customer || "Internal"} · {methodologyLabel(project.methodology)}
-                      </p>
-                      {project.description && (
-                        <p className="text-sm text-slate-400 mt-1 line-clamp-1">{project.description}</p>
-                      )}
-                      <div className="flex items-center gap-5 mt-2 text-xs text-slate-400">
-                        <span>{project._count.artifacts} artifacts</span>
-                        <span>{project._count.risks} risks</span>
-                        <span>{project._count.issues} issues</span>
-                        {project.budget && <span>{formatCurrency(project.budget, project.currency)}</span>}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0 space-y-1">
-                      <Badge variant="outline" className="text-xs capitalize">{project.status}</Badge>
-                      <p className="text-xs text-slate-400">{project.pmOwner.fullName}</p>
-                      {project.endDate && (
-                        <p className="text-xs text-slate-400">Due {formatDate(project.endDate)}</p>
-                      )}
-                    </div>
+            <Link key={project.id} href={`/dashboard/projects/${project.id}`} style={{ textDecoration: "none" }}>
+              <div style={{
+                background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14,
+                padding: "18px 20px", display: "flex", alignItems: "flex-start", gap: 20,
+                borderLeft: `4px solid ${ragColor(project.healthStatus)}`,
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5 }}>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: "#1a1d24" }}>{project.name}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(project.healthStatus), background: ragBg(project.healthStatus), borderRadius: 999, padding: "3px 10px" }}>
+                      {ragLabel(project.healthStatus)}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#5b616e", background: "#f2f4f7", borderRadius: 999, padding: "3px 10px" }}>
+                      {project.engagementMode === "high_level" ? "Governance" : "Detailed"}
+                    </span>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="mono" style={{ fontSize: 12, color: "#8a909c" }}>
+                    {project.code} · {project.customer || "Internal"} · {methodologyLabel(project.methodology)}
+                  </div>
+                  {project.description && (
+                    <div style={{ fontSize: 12.5, color: "#5b616e", marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, maxWidth: 560 }}>
+                      {project.description}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
+                    {[
+                      { label: "artifacts", value: project._count.artifacts },
+                      { label: "risks", value: project._count.risks },
+                      { label: "issues", value: project._count.issues },
+                    ].map(s => (
+                      <span key={s.label} style={{ fontSize: 12, color: "#5b616e" }}>
+                        <span className="mono" style={{ fontWeight: 600, color: "#1a1d24" }}>{s.value}</span> {s.label}
+                      </span>
+                    ))}
+                    {project.budget && (
+                      <span className="mono" style={{ fontSize: 12, color: "#158a5a", fontWeight: 600 }}>
+                        {formatCurrency(project.budget, project.currency)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" as const, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: "#5b616e", border: "1px solid #d3d7de", borderRadius: 999, padding: "3px 10px", textTransform: "capitalize" as const }}>
+                    {project.status}
+                  </span>
+                  <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 8 }}>{project.pmOwner.fullName}</div>
+                  {project.endDate && (
+                    <div className="mono" style={{ fontSize: 11, color: "#8a909c", marginTop: 2 }}>Due {formatDate(project.endDate)}</div>
+                  )}
+                </div>
+              </div>
             </Link>
           ))}
         </div>
