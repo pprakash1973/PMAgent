@@ -41,13 +41,16 @@ export async function generateArtifact(
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 4096,
+    max_tokens: 16000,
     system: PMI_SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
   });
 
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected AI response type");
+  if (message.stop_reason === "max_tokens") {
+    throw new Error(`Artifact "${artifactType}" exceeded token budget — output was truncated`);
+  }
   return extractJson(content.text);
 }
 
