@@ -36,10 +36,11 @@ export async function POST(req: NextRequest) {
     let text = "";
 
     if (ext === "pdf") {
-      // pdf-parse reads a test file on require() in some environments — require the lib path directly to skip it
+      // pdf-parse v2 — class-based API: new PDFParse({ data }).getText()
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require("pdf-parse/lib/pdf-parse");
-      const result = await pdfParse(buffer);
+      const { PDFParse } = require("pdf-parse");
+      const parser = new PDFParse({ data: buffer });
+      const result = await parser.getText();
       text = result.text;
     } else if (ext === "docx") {
       // eslint-disable-next-line @typescript-eslint/no-require-imports

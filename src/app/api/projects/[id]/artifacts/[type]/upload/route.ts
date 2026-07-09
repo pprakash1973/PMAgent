@@ -23,9 +23,11 @@ async function extractFileText(file: File): Promise<string> {
   const buffer = Buffer.from(arrayBuffer);
 
   if (ext === "pdf") {
-    const pdfParse = require("pdf-parse");
-    const data = await pdfParse(buffer);
-    return data.text;
+    // pdf-parse v2 — class-based API
+    const { PDFParse } = require("pdf-parse");
+    const parser = new PDFParse({ data: buffer });
+    const result = await parser.getText();
+    return result.text;
   }
 
   if (ext === "docx") {
