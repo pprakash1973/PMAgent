@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
-import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye, Sparkles, Plus } from "lucide-react";
+import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye, Sparkles, Plus, Trash2 } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +27,7 @@ export function ArtifactPanel({
 }) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [localArtifacts, setLocalArtifacts] = useState(artifacts);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -118,6 +119,30 @@ export function ArtifactPanel({
     } finally {
       setUploading(null);
       uploadTargetRef.current = null;
+    }
+  }
+
+  async function deleteArtifact(artifactType: string) {
+    const label = artifactType.replace(/_/g, " ");
+    if (!window.confirm(`Delete the ${label}? This removes the generated document and its version history. You can generate or upload a new one afterwards.`)) {
+      return;
+    }
+    setDeleting(artifactType);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/artifacts/${artifactType}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Delete failed");
+      }
+      setLocalArtifacts((prev) => prev.filter((a) => a.artifactType !== artifactType));
+      if (expanded === artifactType) setExpanded(null);
+      toast({ title: "Artifact deleted", description: `${label} was removed. You can generate or upload a new one.` });
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message || "Please try again", variant: "destructive" });
+    } finally {
+      setDeleting(null);
     }
   }
 
@@ -228,6 +253,19 @@ export function ArtifactPanel({
                             {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
                             {isGenerating ? "Generating…" : artifact ? "Regenerate" : "Generate"}
                           </Button>
+                          {artifact && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 px-0 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                              onClick={() => deleteArtifact(entry.type)}
+                              disabled={!!generating || !!uploading || deleting === entry.type}
+                              title="Delete this artifact"
+                              aria-label={`Delete ${entry.label}`}
+                            >
+                              {deleting === entry.type ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            </Button>
+                          )}
                         </div>
                       </div>
                       {isExpanded && artifact?.content && (
