@@ -112,10 +112,17 @@ export async function POST(
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    system: `You are a PMO AI assistant. The user has uploaded a file containing updated artifact data.
-Merge the uploaded content into the existing artifact JSON, preserving the existing structure.
-The uploaded data takes precedence for fields it contains. Return ONLY valid JSON wrapped in \`\`\`json ... \`\`\` blocks.`,
+    max_tokens: 16000,
+    system: `You are a PMO AI assistant. The user has downloaded an artifact, edited it, and re-uploaded it.
+Your job is to merge the uploaded content into the existing artifact JSON while preserving its structure and schema.
+
+Rules:
+- The uploaded file is the source of truth: incorporate EVERY change, addition, and edit it contains.
+- New items (e.g. added scope items, risks, rows, stakeholders, tasks) MUST be appended to the correct arrays — never dropped.
+- Edited values in the upload override the existing values for the same field.
+- Keep existing fields that the upload does not mention.
+- Preserve the existing JSON shape/keys exactly; do not rename or restructure keys.
+Return ONLY the complete merged artifact as valid JSON wrapped in \`\`\`json ... \`\`\` blocks.`,
     messages: [
       {
         role: "user",
@@ -124,16 +131,31 @@ The uploaded data takes precedence for fields it contains. Return ONLY valid JSO
 Existing artifact JSON:
 ${existingContent}
 
-Uploaded file content (extracted text):
-${extractedText.slice(0, 8000)}
+Uploaded file content (extracted text from the user's edited document):
+${extractedText.slice(0, 12000)}
 
-Merge the uploaded data into the artifact JSON and return the updated artifact. Return JSON only.`,
+Merge the uploaded data into the artifact JSON, making sure every addition and edit from the upload is reflected. Return the complete updated artifact as JSON only.`,
       },
     ],
   });
 
+  if (message.stop_reason === "max_tokens") {
+    return NextResponse.json(
+      { error: "The merged artifact was too large to process in one pass. Please split the upload or reduce its size and try again." },
+      { status: 422 }
+    );
+  }
+
   const responseText = message.content[0].type === "text" ? message.content[0].text : "";
-  const mergedContent = extractJson(responseText);
+  let mergedContent: Record<string, unknown>;
+  try {
+    mergedContent = extractJson(responseText);
+  } catch {
+    return NextResponse.json(
+      { error: "Could not parse the merged artifact from the AI response. Please try uploading again." },
+      { status: 422 }
+    );
+  }
 
   let artifact;
   if (existingArtifact) {
