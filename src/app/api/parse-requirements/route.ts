@@ -36,11 +36,11 @@ export async function POST(req: NextRequest) {
     let text = "";
 
     if (ext === "pdf") {
-      // pdf-parse v2 — class-based API: new PDFParse({ data }).getText()
+      // pdf-parse v1 (pinned) — pure-JS, serverless-safe. Require the lib path
+      // directly to skip the debug test-file read that runs on the package root.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { PDFParse } = require("pdf-parse");
-      const parser = new PDFParse({ data: buffer });
-      const result = await parser.getText();
+      const pdfParse = require("pdf-parse/lib/pdf-parse");
+      const result = await pdfParse(buffer);
       text = result.text;
     } else if (ext === "docx") {
       // eslint-disable-next-line @typescript-eslint/no-require-imports

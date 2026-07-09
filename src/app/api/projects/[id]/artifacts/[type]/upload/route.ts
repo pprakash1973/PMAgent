@@ -23,10 +23,9 @@ async function extractFileText(file: File): Promise<string> {
   const buffer = Buffer.from(arrayBuffer);
 
   if (ext === "pdf") {
-    // pdf-parse v2 — class-based API
-    const { PDFParse } = require("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
-    const result = await parser.getText();
+    // pdf-parse v1 (pinned) — pure-JS, serverless-safe
+    const pdfParse = require("pdf-parse/lib/pdf-parse");
+    const result = await pdfParse(buffer);
     return result.text;
   }
 
