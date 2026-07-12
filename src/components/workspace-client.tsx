@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { ArtifactPanel } from "@/components/artifact-panel";
-import { StatusForm } from "@/components/status-form";
+import { StatusQuestionnaire } from "@/components/status-questionnaire";
 import { BurndownDownloadButton } from "@/components/burndown-download-button";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@/lib/utils";
 
@@ -582,23 +582,44 @@ function StatusTab({ project }: { project: any }) {
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <StatusForm projectId={project.id} mode={project.engagementMode} />
+        <StatusQuestionnaire projectId={project.id} />
       </div>
       {latestStatus?.aiSummary && (
-        <div style={{ width: 330, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "16px 17px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-              <span style={{ color: C.primary, fontSize: 14 }}>✦</span>
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: C.primary, textTransform: "uppercase" as const }}>AI Executive Summary</span>
-            </div>
-            <p style={{ fontSize: "12.5px", color: "#3a3f52", lineHeight: 1.6, margin: 0 }}>{latestStatus.aiSummary}</p>
-            <p style={{ fontSize: "10.5px", color: C.text3, marginTop: 10, marginBottom: 0, fontStyle: "italic" }}>Grounded in your inputs — no figures added.</p>
-          </div>
+        <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 17px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const }}>Health score</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: ragColor(project.healthStatus) }}>{latestStatus.healthScore?.compositeScore ? `${Math.round(latestStatus.healthScore.compositeScore)} · ` : ""}{project.healthStatus}</span>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 10 }}>Last Report</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.text2 }}>Health</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: ragColor(project.healthStatus), textTransform: "capitalize" as const }}>{project.healthStatus}</span>
             </div>
+            {latestStatus.healthScore?.compositeScore != null && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: C.text2 }}>Score</span>
+                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 700, color: ragColor(project.healthStatus) }}>{Math.round(latestStatus.healthScore.compositeScore)}</span>
+              </div>
+            )}
+            {latestStatus.healthScore?.spi != null && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: C.text2 }}>SPI</span>
+                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 600, color: C.text2 }}>{latestStatus.healthScore.spi.toFixed(2)}</span>
+              </div>
+            )}
+            {latestStatus.healthScore?.cpi != null && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12, color: C.text2 }}>CPI</span>
+                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 600, color: C.text2 }}>{latestStatus.healthScore.cpi.toFixed(2)}</span>
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: C.text3, marginTop: 10 }}>
+              {new Date(latestStatus.reportDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+            </div>
+          </div>
+          <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "14px 15px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 9 }}>
+              <span style={{ color: C.primary, fontSize: 13 }}>✦</span>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: C.primary, textTransform: "uppercase" as const }}>Last Summary</span>
+            </div>
+            <p style={{ fontSize: 12, color: "#3a3f52", lineHeight: 1.6, margin: 0 }}>{latestStatus.aiSummary}</p>
           </div>
         </div>
       )}

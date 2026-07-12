@@ -25,15 +25,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const rawInput = await req.json();
 
-  const project = await prisma.project.findUnique({ where: { id } });
+  const project = await prisma.project.findUnique({
+    where: { id },
+    include: {
+      risks: { where: { status: "open" }, take: 5 },
+      milestones: { orderBy: { dueDate: "asc" }, take: 3 },
+    },
+  });
   if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
 
   const projectContext = {
     name: project.name,
     methodology: project.methodology,
     budget: project.budget,
+    currency: project.currency,
     startDate: project.startDate,
     endDate: project.endDate,
+    healthStatus: project.healthStatus,
+    openRisks: project.risks.length,
   };
 
   let aiResult;
@@ -42,9 +51,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   } catch {
     aiResult = {
       summary: "Status report submitted. AI summary generation failed — please review manually.",
-      ragStatus: rawInput.ragStatus || "amber",
+      ragStatus: (rawInput.ragStatus as string) || "amber",
       healthScore: 60,
-      recommendations: [],
+      recommendations: [] as string[],
+      accomplishments: [] as string[],
+      nextWeekPlan: [] as string[],
+      metricsNarrative: "",
+      cpi: null,
+      spi: null,
     };
   }
 
@@ -76,8 +90,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         create: {
           compositeScore: aiResult.healthScore,
           ragStatus: aiResult.ragStatus,
-          spi: computedSpi ?? rawInput.spi ?? null,
-          cpi: rawInput.cpi || null,
+          spi: computedSpi ?? aiResult.spi ?? (rawInput.spi as number) ?? null,
+          cpi: aiResult.cpi ?? (rawInput.cpi as number) ?? null,
         },
       },
     },
@@ -90,5 +104,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     data: { healthStatus: aiResult.ragStatus },
   });
 
-  return NextResponse.json({ report, recommendations: aiResult.recommendations }, { status: 201 });
+  return NextResponse.json({
+    report,
+    recommendations: aiResult.recommendations,
+    accomplishments: aiResult.accomplishments,
+    nextWeekPlan: aiResult.nextWeekPlan,
+    metricsNarrative: aiResult.metricsNarrative,
+    summary: aiResult.summary,
+    ragStatus: aiResult.ragStatus,
+    healthScore: aiResult.healthScore,
+  }, { status: 201 });
 }

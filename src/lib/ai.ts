@@ -99,26 +99,73 @@ Return JSON with these fields (infer from context; leave null if not found):
   return parseAIJson(message, "project-from-document");
 }
 
-export async function generateStatusSummary(
-  rawInput: Record<string, unknown>,
+export interface StatusQuestion {
+  id: number;
+  category: string;
+  question: string;
+  type: "textarea" | "text" | "number" | "select";
+  options?: string[];
+  required: boolean;
+  placeholder?: string;
+}
+
+export async function generateStatusQuestions(
   projectContext: Record<string, unknown>
-): Promise<{ summary: string; ragStatus: string; healthScore: number; recommendations: string[] }> {
+): Promise<StatusQuestion[]> {
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 4000,
-    system: `You are a PMO AI. Generate an executive status summary from the PM's raw status inputs.
-Apply PMBOK Monitoring & Controlling (4.5) principles: analyze schedule variance, cost variance, and scope health.
-Do not introduce figures not present in the inputs.
-Return JSON with: summary (string), ragStatus (green/amber/red), healthScore (0-100), recommendations (array of strings).`,
+    system: `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
+Generate exactly 10 targeted questions based on the project's current context.
+
+Rules:
+- Cover these categories (pick the most relevant 10): Schedule, Budget, Scope, Quality, Risks, Issues, Team/Resources, Stakeholder Sentiment, Accomplishments, Next Week Plan, Change Requests, Procurement
+- Make questions SPECIFIC to the project data provided — if SPI < 1, probe the delay; if there are open risks, ask about mitigation; if near deadline, ask about closure readiness
+- Each question should be answerable in 1–4 sentences
+- Use "textarea" for narrative answers, "select" for RAG/status choices, "number" for percentages/counts, "text" for short answers
+- Always include one Accomplishments question and one Next Week Plan question
+- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "textarea|text|number|select", "options": ["..."] (only for select), "required": true, "placeholder": "..." } ] }`,
     messages: [
       {
         role: "user",
-        content: `Project: ${JSON.stringify(projectContext, null, 2)}\n\nStatus inputs: ${JSON.stringify(rawInput, null, 2)}\n\nGenerate executive summary. Return JSON only.`,
+        content: `Generate 10 weekly status questions for this project:\n\n${JSON.stringify(projectContext, null, 2)}\n\nReturn JSON only.`,
       },
     ],
   });
 
-  return parseAIJson(message, "status-summary") as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[] };
+  const result = parseAIJson(message, "status-questions") as any;
+  return result.questions as StatusQuestion[];
+}
+
+export async function generateStatusSummary(
+  rawInput: Record<string, unknown>,
+  projectContext: Record<string, unknown>
+): Promise<{ summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null }> {
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 6000,
+    system: `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
+Apply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.
+
+Return JSON with:
+- summary (string): 2–3 sentence executive summary, stakeholder-ready
+- ragStatus (string): "green" | "amber" | "red" with clear rationale from the answers
+- healthScore (number 0–100): composite project health
+- recommendations (array of strings): 2–4 specific, actionable recommendations for the PM
+- accomplishments (array of strings): bulleted accomplishments extracted from answers
+- nextWeekPlan (array of strings): bulleted plan for next week extracted from answers
+- metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status
+- cpi (number | null): cost performance index if derivable from answers, else null
+- spi (number | null): schedule performance index override if PM stated one, else null`,
+    messages: [
+      {
+        role: "user",
+        content: `Project context:\n${JSON.stringify(projectContext, null, 2)}\n\nPM Q&A responses:\n${JSON.stringify(rawInput, null, 2)}\n\nGenerate the Weekly Status Report. Return JSON only.`,
+      },
+    ],
+  });
+
+  return parseAIJson(message, "status-summary") as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null };
 }
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
