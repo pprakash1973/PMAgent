@@ -103,10 +103,12 @@ export interface StatusQuestion {
   id: number;
   category: string;
   question: string;
-  type: "textarea" | "text" | "number" | "select";
-  options?: string[];
+  type: "chips" | "multi-chips" | "number" | "select";
+  suggestedAnswers: string[];   // 3–6 pre-populated, context-aware options
+  allowCustom: boolean;         // whether PM can type a custom answer
   required: boolean;
   placeholder?: string;
+  unit?: string;                // for number type, e.g. "%", "days"
 }
 
 export async function generateStatusQuestions(
@@ -114,17 +116,22 @@ export async function generateStatusQuestions(
 ): Promise<StatusQuestion[]> {
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 4000,
+    max_tokens: 6000,
     system: `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
 Generate exactly 10 targeted questions based on the project's current context.
 
 Rules:
-- Cover these categories (pick the most relevant 10): Schedule, Budget, Scope, Quality, Risks, Issues, Team/Resources, Stakeholder Sentiment, Accomplishments, Next Week Plan, Change Requests, Procurement
-- Make questions SPECIFIC to the project data provided — if SPI < 1, probe the delay; if there are open risks, ask about mitigation; if near deadline, ask about closure readiness
-- Each question should be answerable in 1–4 sentences
-- Use "textarea" for narrative answers, "select" for RAG/status choices, "number" for percentages/counts, "text" for short answers
+- Cover the most relevant categories from: Schedule, Budget, Scope, Quality, Risks, Issues, Team/Resources, Stakeholder Sentiment, Accomplishments, Next Week Plan, Change Requests
+- Make questions SPECIFIC to the project data — if SPI < 1, probe the delay; if risks are open, ask about mitigation; if near deadline, ask about closure readiness
 - Always include one Accomplishments question and one Next Week Plan question
-- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "textarea|text|number|select", "options": ["..."] (only for select), "required": true, "placeholder": "..." } ] }`,
+- For EVERY question, generate 4–6 suggested answers that are SPECIFIC to this project's context, phase, industry, and current health. These should be realistic options a PM for this project would actually choose.
+- Types:
+  - "chips": PM picks ONE of the suggested answers (single-select chips). Use for status/assessment questions.
+  - "multi-chips": PM picks ONE OR MORE suggested answers. Use for accomplishments, risks, plans, issues.
+  - "select": dropdown for simple categorical choices (RAG, yes/no, methodology-specific)
+  - "number": numeric input for percentages, counts, days
+- Set allowCustom: true when the PM might have an answer not in the list (narrative, unique situations)
+- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "chips|multi-chips|select|number", "suggestedAnswers": ["...", "..."], "allowCustom": true|false, "required": true, "placeholder": "..." } ] }`,
     messages: [
       {
         role: "user",

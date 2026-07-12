@@ -38,14 +38,175 @@ interface WSRResult {
   metricsNarrative: string;
 }
 
+// ── Answer state per question ────────────────────────────────────────────────
+// For chips / multi-chips: selected[] + optional customText
+// For select: a single string
+// For number: a string (numeric)
+interface AnswerState {
+  selected: string[];   // chosen chips or select value (index 0) or empty
+  custom: string;       // freetext typed by PM
+}
+
+function blankAnswer(): AnswerState { return { selected: [], custom: "" }; }
+
+function answerText(q: StatusQuestion, a: AnswerState): string {
+  if (q.type === "number") return a.custom;
+  if (q.type === "select") return a.selected[0] ?? "";
+  // chips / multi-chips: join selected chips + custom
+  const parts = [...a.selected];
+  if (a.custom.trim()) parts.push(a.custom.trim());
+  return parts.join("; ");
+}
+
+function isAnswered(q: StatusQuestion, a: AnswerState): boolean {
+  return answerText(q, a).trim().length > 0;
+}
+
+// ── Chip selector ────────────────────────────────────────────────────────────
+function ChipSelector({
+  q, answer, onChange,
+}: {
+  q: StatusQuestion;
+  answer: AnswerState;
+  onChange: (a: AnswerState) => void;
+}) {
+  const multi = q.type === "multi-chips";
+
+  function toggleChip(opt: string) {
+    if (multi) {
+      const already = answer.selected.includes(opt);
+      onChange({
+        ...answer,
+        selected: already
+          ? answer.selected.filter((s) => s !== opt)
+          : [...answer.selected, opt],
+      });
+    } else {
+      // single-select: toggle off if already selected
+      onChange({
+        ...answer,
+        selected: answer.selected[0] === opt ? [] : [opt],
+      });
+    }
+  }
+
+  return (
+    <div>
+      {/* instruction tag */}
+      <div style={{ fontSize: 11, color: C.text3, marginBottom: 8 }}>
+        {multi ? "Select all that apply" : "Select one"}{q.allowCustom ? " · or type a custom answer below" : ""}
+      </div>
+
+      {/* chips */}
+      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 7 }}>
+        {q.suggestedAnswers.map((opt) => {
+          const active = answer.selected.includes(opt);
+          return (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggleChip(opt)}
+              style={{
+                padding: "6px 13px",
+                borderRadius: 999,
+                border: `1.5px solid ${active ? C.primary : C.border}`,
+                background: active ? C.primary : C.surface,
+                color: active ? "#fff" : C.text2,
+                fontSize: 12.5,
+                fontFamily: "'IBM Plex Sans',sans-serif",
+                fontWeight: active ? 600 : 400,
+                cursor: "pointer",
+                transition: "all .12s",
+                display: "flex", alignItems: "center", gap: 5,
+              }}
+            >
+              {active && (
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* custom text input */}
+      {q.allowCustom && (
+        <div style={{ marginTop: 10 }}>
+          <textarea
+            rows={2}
+            placeholder={q.placeholder ?? "Add your own notes or additional context…"}
+            value={answer.custom}
+            onChange={(e) => onChange({ ...answer, custom: e.target.value })}
+            style={{
+              width: "100%", padding: "8px 10px",
+              border: `1px solid ${C.border}`, borderRadius: 8,
+              font: `13px 'IBM Plex Sans'`, color: C.text,
+              background: C.surface, resize: "vertical",
+              boxSizing: "border-box" as const, lineHeight: 1.55,
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Select dropdown ──────────────────────────────────────────────────────────
+function SelectInput({ q, answer, onChange }: { q: StatusQuestion; answer: AnswerState; onChange: (a: AnswerState) => void }) {
+  return (
+    <select
+      value={answer.selected[0] ?? ""}
+      onChange={(e) => onChange({ ...answer, selected: e.target.value ? [e.target.value] : [] })}
+      style={{
+        width: "100%", height: 38, padding: "0 10px",
+        border: `1px solid ${C.border}`, borderRadius: 8,
+        font: `13px 'IBM Plex Sans'`, color: answer.selected[0] ? C.text : C.text3,
+        background: C.surface, cursor: "pointer",
+      }}
+    >
+      <option value="">Select…</option>
+      {q.suggestedAnswers.map((opt) => (
+        <option key={opt} value={opt}>{opt}</option>
+      ))}
+    </select>
+  );
+}
+
+// ── Number input ─────────────────────────────────────────────────────────────
+function NumberInput({ q, answer, onChange }: { q: StatusQuestion; answer: AnswerState; onChange: (a: AnswerState) => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <input
+        type="number"
+        placeholder={q.placeholder ?? "0"}
+        value={answer.custom}
+        onChange={(e) => onChange({ ...answer, custom: e.target.value })}
+        style={{
+          width: 120, height: 38, padding: "0 10px",
+          border: `1px solid ${C.border}`, borderRadius: 8,
+          font: `14px 'IBM Plex Mono'`, color: C.text, background: C.surface,
+        }}
+      />
+      {q.unit && <span style={{ fontSize: 13, color: C.text3 }}>{q.unit}</span>}
+    </div>
+  );
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
 export function StatusQuestionnaire({ projectId }: { projectId: string }) {
   const [phase, setPhase] = useState<"idle" | "loading-q" | "answering" | "generating" | "wsr" | "saved">("idle");
   const [questions, setQuestions] = useState<StatusQuestion[]>([]);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [wsr, setWsr] = useState<WSRResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Step 1: Generate questions ──────────────────────────────────────────────
+  function setAnswer(id: number, a: AnswerState) {
+    setAnswers((prev) => ({ ...prev, [id]: a }));
+  }
+
+  // Step 1 — generate questions
   async function startQuestionnaire() {
     setPhase("loading-q");
     setError(null);
@@ -54,7 +215,9 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to generate questions");
       setQuestions(data.questions);
-      setAnswers({});
+      const blank: Record<number, AnswerState> = {};
+      for (const q of data.questions) blank[q.id] = blankAnswer();
+      setAnswers(blank);
       setPhase("answering");
     } catch (e: any) {
       setError(e.message);
@@ -62,7 +225,7 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
     }
   }
 
-  // ── Step 2: Submit answers → generate WSR ──────────────────────────────────
+  // Step 2 — submit answers → WSR
   async function generateWSR() {
     setPhase("generating");
     setError(null);
@@ -70,7 +233,7 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
       const qaPayload = questions.map((q) => ({
         category: q.category,
         question: q.question,
-        answer: answers[q.id] ?? "",
+        answer: answerText(q, answers[q.id] ?? blankAnswer()),
       }));
       const res = await fetch(`/api/projects/${projectId}/status`, {
         method: "POST",
@@ -95,25 +258,23 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
     }
   }
 
-  const answeredCount = questions.filter((q) => (answers[q.id] ?? "").trim().length > 0).length;
-  const requiredUnanswered = questions.filter((q) => q.required && !(answers[q.id] ?? "").trim()).length;
-  const canSubmit = requiredUnanswered === 0 && answeredCount >= 7;
+  const answeredCount = questions.filter((q) => isAnswered(q, answers[q.id] ?? blankAnswer())).length;
+  const requiredUnanswered = questions.filter((q) => q.required && !isAnswered(q, answers[q.id] ?? blankAnswer())).length;
+  const canSubmit = requiredUnanswered === 0 && answeredCount >= Math.min(7, questions.length);
 
-  // ── Idle state ──────────────────────────────────────────────────────────────
+  // ── Idle ──────────────────────────────────────────────────────────────────
   if (phase === "idle" || phase === "loading-q") {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "40px 20px", gap: 20 }}>
         <div style={{
           width: 64, height: 64, borderRadius: "50%",
           background: C.primaryLight, border: `2px solid ${C.primaryBorder}`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 28,
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28,
         }}>📋</div>
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center" as const }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 8 }}>Weekly Status Report</div>
           <div style={{ fontSize: 13, color: C.text2, maxWidth: 420, lineHeight: 1.6 }}>
-            The AI will analyse your project — schedule, risks, open issues, milestones — and ask you 10 targeted questions.
-            Your answers generate a formatted WSR, update health scores, and feed the Portfolio and Executive dashboards.
+            The AI reads your project — schedule, risks, open issues, milestones — and generates 10 targeted questions with suggested answers. Select, tweak, and confirm. Done in under 3 minutes.
           </div>
         </div>
         {error && (
@@ -133,120 +294,70 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
             display: "flex", alignItems: "center", gap: 10,
           }}
         >
-          {phase === "loading-q"
-            ? <><Spinner /> Generating questions…</>
-            : <>✦ Generate WSR</>}
+          {phase === "loading-q" ? <><Spinner col="#9199d4" /> Generating questions…</> : <>✦ Generate WSR</>}
         </button>
-        <div style={{ fontSize: 11, color: C.text3 }}>Powered by AI · takes ~10 seconds</div>
+        <div style={{ fontSize: 11, color: C.text3 }}>Powered by AI · ~10 seconds</div>
       </div>
     );
   }
 
-  // ── Questionnaire ───────────────────────────────────────────────────────────
+  // ── Answering ─────────────────────────────────────────────────────────────
   if (phase === "answering" || phase === "generating") {
     return (
       <div>
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Weekly Status Questionnaire</div>
             <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>{answeredCount} of {questions.length} answered</div>
           </div>
-          <button
-            onClick={() => { setPhase("idle"); setQuestions([]); setAnswers({}); }}
-            style={{ fontSize: 12, color: C.text3, background: "none", border: "none", cursor: "pointer" }}
-          >✕ Cancel</button>
+          <button onClick={() => { setPhase("idle"); setQuestions([]); setAnswers({}); }}
+            style={{ fontSize: 12, color: C.text3, background: "none", border: "none", cursor: "pointer" }}>
+            ✕ Cancel
+          </button>
         </div>
 
-        {/* Progress bar */}
+        {/* progress */}
         <div style={{ height: 4, background: C.borderLight, borderRadius: 2, marginBottom: 20, overflow: "hidden" }}>
           <div style={{ height: "100%", width: `${(answeredCount / questions.length) * 100}%`, background: C.primary, borderRadius: 2, transition: "width .3s" }} />
         </div>
 
-        {/* Questions */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
           {questions.map((q, i) => {
-            const answered = (answers[q.id] ?? "").trim().length > 0;
+            const ans = answers[q.id] ?? blankAnswer();
+            const answered = isAnswered(q, ans);
             return (
               <div key={q.id} style={{
-                background: C.surface, border: `1.5px solid ${answered ? C.primaryBorder : C.border}`,
-                borderRadius: 12, padding: "16px 18px",
-                transition: "border-color .15s",
+                background: C.surface,
+                border: `1.5px solid ${answered ? C.primaryBorder : C.border}`,
+                borderRadius: 12, padding: "16px 18px", transition: "border-color .15s",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, color: C.primary, background: C.primaryLight,
-                    borderRadius: 6, padding: "2px 8px", letterSpacing: ".03em",
-                  }}>{q.category.toUpperCase()}</span>
-                  <span style={{ fontSize: 11, color: C.text3 }}>{i + 1} of {questions.length}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: C.primary, background: C.primaryLight, borderRadius: 6, padding: "2px 8px", letterSpacing: ".03em" }}>
+                    {q.category.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize: 11, color: C.text3 }}>{i + 1} / {questions.length}</span>
+                  {q.type === "multi-chips" && (
+                    <span style={{ fontSize: 10, color: C.text3, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "1px 7px" }}>multi-select</span>
+                  )}
                   {q.required && !answered && <span style={{ fontSize: 10, color: C.red, marginLeft: "auto" }}>Required</span>}
-                  {answered && <span style={{ fontSize: 14, marginLeft: "auto" }}>✓</span>}
+                  {answered && <span style={{ fontSize: 14, marginLeft: "auto", color: C.green }}>✓</span>}
                 </div>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>{q.question}</div>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: C.text, marginBottom: 12, lineHeight: 1.5 }}>{q.question}</div>
 
-                {q.type === "select" ? (
-                  <select
-                    value={answers[q.id] ?? ""}
-                    onChange={(e) => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
-                    style={{
-                      width: "100%", height: 36, padding: "0 10px",
-                      border: `1px solid ${C.border}`, borderRadius: 7,
-                      font: `13px 'IBM Plex Sans'`, color: C.text,
-                      background: C.surface, cursor: "pointer",
-                    }}
-                  >
-                    <option value="">Select…</option>
-                    {(q.options ?? ["Green — On Track", "Amber — At Risk", "Red — Critical"]).map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                ) : q.type === "number" ? (
-                  <input
-                    type="number"
-                    placeholder={q.placeholder ?? "Enter a number"}
-                    value={answers[q.id] ?? ""}
-                    onChange={(e) => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
-                    style={{
-                      width: "100%", height: 36, padding: "0 10px",
-                      border: `1px solid ${C.border}`, borderRadius: 7,
-                      font: `13px 'IBM Plex Mono'`, color: C.text,
-                      background: C.surface, boxSizing: "border-box",
-                    }}
-                  />
-                ) : q.type === "text" ? (
-                  <input
-                    type="text"
-                    placeholder={q.placeholder ?? "Your answer…"}
-                    value={answers[q.id] ?? ""}
-                    onChange={(e) => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
-                    style={{
-                      width: "100%", height: 36, padding: "0 10px",
-                      border: `1px solid ${C.border}`, borderRadius: 7,
-                      font: `13px 'IBM Plex Sans'`, color: C.text,
-                      background: C.surface, boxSizing: "border-box",
-                    }}
-                  />
-                ) : (
-                  <textarea
-                    rows={3}
-                    placeholder={q.placeholder ?? "Describe in a few sentences…"}
-                    value={answers[q.id] ?? ""}
-                    onChange={(e) => setAnswers(a => ({ ...a, [q.id]: e.target.value }))}
-                    style={{
-                      width: "100%", padding: "9px 10px",
-                      border: `1px solid ${C.border}`, borderRadius: 7,
-                      font: `13px 'IBM Plex Sans'`, color: C.text,
-                      background: C.surface, resize: "vertical", boxSizing: "border-box",
-                      lineHeight: 1.55,
-                    }}
-                  />
+                {(q.type === "chips" || q.type === "multi-chips") && (
+                  <ChipSelector q={q} answer={ans} onChange={(a) => setAnswer(q.id, a)} />
+                )}
+                {q.type === "select" && (
+                  <SelectInput q={q} answer={ans} onChange={(a) => setAnswer(q.id, a)} />
+                )}
+                {q.type === "number" && (
+                  <NumberInput q={q} answer={ans} onChange={(a) => setAnswer(q.id, a)} />
                 )}
               </div>
             );
           })}
         </div>
 
-        {/* Footer */}
         <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 12 }}>
           {!canSubmit && requiredUnanswered > 0 && (
             <span style={{ fontSize: 12, color: C.text3 }}>
@@ -262,11 +373,12 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
               background: !canSubmit || phase === "generating" ? C.surface2 : C.primary,
               color: !canSubmit || phase === "generating" ? C.text3 : "#fff",
               border: "none", borderRadius: 9,
-              font: `700 13px 'IBM Plex Sans'`, cursor: !canSubmit || phase === "generating" ? "not-allowed" : "pointer",
+              font: `700 13px 'IBM Plex Sans'`,
+              cursor: !canSubmit || phase === "generating" ? "not-allowed" : "pointer",
               display: "flex", alignItems: "center", gap: 8,
             }}
           >
-            {phase === "generating" ? <><Spinner /> Generating WSR…</> : <>✦ Generate Status Report</>}
+            {phase === "generating" ? <><Spinner col="#9199d4" /> Generating WSR…</> : <>✦ Generate Status Report</>}
           </button>
         </div>
         {error && (
@@ -274,18 +386,17 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
             {error}
           </div>
         )}
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
   }
 
-  // ── WSR Result ──────────────────────────────────────────────────────────────
+  // ── WSR result ────────────────────────────────────────────────────────────
   if ((phase === "wsr" || phase === "saved") && wsr) {
     const rc = ragColor(wsr.ragStatus);
     const rb = ragBg(wsr.ragStatus);
-
     return (
       <div>
-        {/* WSR header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Weekly Status Report</div>
@@ -294,10 +405,9 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
               {phase === "saved" && <span style={{ marginLeft: 8, color: C.green, fontWeight: 600 }}>· Saved ✓</span>}
             </div>
           </div>
-          <span style={{
-            fontSize: 12, fontWeight: 700, color: rc, background: rb,
-            borderRadius: 999, padding: "5px 14px",
-          }}>{ragLabel(wsr.ragStatus)}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: rc, background: rb, borderRadius: 999, padding: "5px 14px" }}>
+            {ragLabel(wsr.ragStatus)}
+          </span>
           <div style={{
             width: 48, height: 48, borderRadius: "50%",
             background: `conic-gradient(${rc} 0 ${wsr.healthScore}%, #eceef2 ${wsr.healthScore}% 100%)`,
@@ -311,13 +421,11 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* Executive Summary */}
+        <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
           <WSRSection title="Executive Summary" icon="📌">
             <p style={{ fontSize: 13.5, color: C.text2, lineHeight: 1.65, margin: 0 }}>{wsr.summary}</p>
           </WSRSection>
 
-          {/* Metrics */}
           {wsr.metricsNarrative && (
             <WSRSection title="Schedule & Budget" icon="📊">
               <p style={{ fontSize: 13, color: C.text2, lineHeight: 1.65, margin: 0 }}>{wsr.metricsNarrative}</p>
@@ -325,7 +433,6 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            {/* Accomplishments */}
             {wsr.accomplishments.length > 0 && (
               <WSRSection title="Accomplishments" icon="✅">
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -335,8 +442,6 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
                 </ul>
               </WSRSection>
             )}
-
-            {/* Next week plan */}
             {wsr.nextWeekPlan.length > 0 && (
               <WSRSection title="Plan for Next Week" icon="🗓️">
                 <ul style={{ margin: 0, paddingLeft: 18 }}>
@@ -348,17 +453,13 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          {/* AI Recommendations */}
           {wsr.recommendations.length > 0 && (
-            <div style={{
-              background: "linear-gradient(160deg,#f4f5ff,#eef0fc)",
-              border: `1px solid ${C.primaryBorder}`, borderRadius: 12, padding: "16px 18px",
-            }}>
+            <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 12, padding: "16px 18px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <span style={{ color: C.primary, fontSize: 14 }}>✦</span>
                 <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: C.primary, textTransform: "uppercase" as const }}>AI Recommendations</span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
                 {wsr.recommendations.map((r, i) => (
                   <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                     <span style={{
@@ -374,41 +475,28 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
           )}
         </div>
 
-        {/* Actions */}
         {phase === "wsr" && (
           <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-            <button
-              onClick={() => { setPhase("answering"); }}
-              style={{
-                height: 36, padding: "0 16px",
-                background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-                font: `500 12.5px 'IBM Plex Sans'`, color: C.text2, cursor: "pointer",
-              }}
-            >← Revise answers</button>
+            <button onClick={() => setPhase("answering")}
+              style={{ height: 36, padding: "0 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12.5px 'IBM Plex Sans'`, color: C.text2, cursor: "pointer" }}>
+              ← Revise answers
+            </button>
             <div style={{ flex: 1 }} />
-            <button
-              onClick={() => setPhase("saved")}
-              style={{
-                height: 36, padding: "0 20px",
-                background: C.green, border: "none", borderRadius: 8,
-                font: `700 12.5px 'IBM Plex Sans'`, color: "#fff", cursor: "pointer",
-              }}
-            >Confirm & save ✓</button>
+            <button onClick={() => setPhase("saved")}
+              style={{ height: 36, padding: "0 20px", background: C.green, border: "none", borderRadius: 8, font: `700 12.5px 'IBM Plex Sans'`, color: "#fff", cursor: "pointer" }}>
+              Confirm & save ✓
+            </button>
           </div>
         )}
-
         {phase === "saved" && (
           <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
-            <button
-              onClick={() => { setPhase("idle"); setWsr(null); setQuestions([]); setAnswers({}); }}
-              style={{
-                height: 36, padding: "0 16px",
-                background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
-                font: `500 12.5px 'IBM Plex Sans'`, color: C.text2, cursor: "pointer",
-              }}
-            >Submit another report</button>
+            <button onClick={() => { setPhase("idle"); setWsr(null); setQuestions([]); setAnswers({}); }}
+              style={{ height: 36, padding: "0 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12.5px 'IBM Plex Sans'`, color: C.text2, cursor: "pointer" }}>
+              Submit another report
+            </button>
           </div>
         )}
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );
   }
@@ -418,9 +506,7 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
 
 function WSRSection({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
   return (
-    <div style={{
-      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px",
-    }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
         <span style={{ fontSize: 14 }}>{icon}</span>
         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: C.text3, textTransform: "uppercase" as const }}>{title}</span>
@@ -430,11 +516,11 @@ function WSRSection({ title, icon, children }: { title: string; icon: string; ch
   );
 }
 
-function Spinner() {
+function Spinner({ col = "#fff" }: { col?: string }) {
   return (
     <span style={{
       display: "inline-block", width: 13, height: 13,
-      border: "2px solid rgba(255,255,255,.3)", borderTopColor: "#fff",
+      border: `2px solid ${col}44`, borderTopColor: col,
       borderRadius: "50%", animation: "spin .7s linear infinite",
     }} />
   );
