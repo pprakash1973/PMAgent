@@ -76,7 +76,7 @@ export async function POST(
 
   // Find latest WBS artifact
   const wbsArtifact = await prisma.artifact.findFirst({
-    where: { projectId: id, artifactType: "work_breakdown_structure" },
+    where: { projectId: id, artifactType: "wbs" },
     orderBy: { updatedAt: "desc" },
   });
 
