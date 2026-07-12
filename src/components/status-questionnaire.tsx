@@ -36,6 +36,7 @@ interface WSRResult {
   accomplishments: string[];
   nextWeekPlan: string[];
   metricsNarrative: string;
+  savedAt?: string;   // ISO string, set only after confirmed save
 }
 
 // ── Answer state per question ────────────────────────────────────────────────
@@ -196,7 +197,7 @@ function NumberInput({ q, answer, onChange }: { q: StatusQuestion; answer: Answe
 
 // ── Main component ───────────────────────────────────────────────────────────
 export function StatusQuestionnaire({ projectId }: { projectId: string }) {
-  const [phase, setPhase] = useState<"idle" | "loading-q" | "answering" | "generating" | "wsr" | "saved">("idle");
+  const [phase, setPhase] = useState<"idle" | "loading-q" | "answering" | "generating" | "wsr" | "saving" | "saved">("idle");
   const [questions, setQuestions] = useState<StatusQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [wsr, setWsr] = useState<WSRResult | null>(null);
@@ -225,20 +226,24 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
     }
   }
 
-  // Step 2 — submit answers → WSR
+  // cached payload so we don't re-build it on confirm
+  const [qaPayload, setQaPayload] = useState<object[]>([]);
+
+  // Step 2 — preview WSR (no DB write)
   async function generateWSR() {
     setPhase("generating");
     setError(null);
     try {
-      const qaPayload = questions.map((q) => ({
+      const payload = questions.map((q) => ({
         category: q.category,
         question: q.question,
         answer: answerText(q, answers[q.id] ?? blankAnswer()),
       }));
+      setQaPayload(payload);
       const res = await fetch(`/api/projects/${projectId}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionnaire: qaPayload, source: "questionnaire" }),
+        body: JSON.stringify({ questionnaire: payload, source: "questionnaire", preview: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message ?? "Failed to generate WSR");
@@ -255,6 +260,26 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
     } catch (e: any) {
       setError(e.message);
       setPhase("answering");
+    }
+  }
+
+  // Step 3 — confirm: save to DB with timestamp
+  async function confirmSave() {
+    setPhase("saving");
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionnaire: qaPayload, source: "questionnaire", preview: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message ?? "Failed to save WSR");
+      setWsr((prev) => prev ? { ...prev, savedAt: data.savedAt } : prev);
+      setPhase("saved");
+    } catch (e: any) {
+      setError(e.message);
+      setPhase("wsr");
     }
   }
 
@@ -392,17 +417,32 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
   }
 
   // ── WSR result ────────────────────────────────────────────────────────────
-  if ((phase === "wsr" || phase === "saved") && wsr) {
+  if ((phase === "wsr" || phase === "saving" || phase === "saved") && wsr) {
     const rc = ragColor(wsr.ragStatus);
     const rb = ragBg(wsr.ragStatus);
+    const isSaved = phase === "saved";
+    const isSaving = phase === "saving";
+    const savedDate = wsr.savedAt ? new Date(wsr.savedAt) : null;
+
     return (
       <div>
+        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Weekly Status Report</div>
-            <div style={{ fontSize: 12, color: C.text3, marginTop: 1 }}>
-              {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-              {phase === "saved" && <span style={{ marginLeft: 8, color: C.green, fontWeight: 600 }}>· Saved ✓</span>}
+            <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
+              {isSaved && savedDate ? (
+                <span>
+                  Saved{" "}
+                  <span style={{ color: C.green, fontWeight: 600 }}>
+                    {savedDate.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                    {" at "}
+                    {savedDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </span>
+              ) : (
+                <span style={{ color: C.amber }}>Preview — not yet saved</span>
+              )}
             </div>
           </div>
           <span style={{ fontSize: 12, fontWeight: 700, color: rc, background: rb, borderRadius: 999, padding: "5px 14px" }}>
@@ -421,6 +461,7 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
           </div>
         </div>
 
+        {/* Body */}
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
           <WSRSection title="Executive Summary" icon="📌">
             <p style={{ fontSize: 13.5, color: C.text2, lineHeight: 1.65, margin: 0 }}>{wsr.summary}</p>
@@ -475,27 +516,33 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
           )}
         </div>
 
-        {phase === "wsr" && (
-          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-            <button onClick={() => setPhase("answering")}
-              style={{ height: 36, padding: "0 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12.5px 'IBM Plex Sans'`, color: C.text2, cursor: "pointer" }}>
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 10, marginTop: 18, alignItems: "center" }}>
+          {!isSaved && (
+            <button
+              onClick={() => setPhase("answering")}
+              disabled={isSaving}
+              style={{ height: 36, padding: "0 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12.5px 'IBM Plex Sans'`, color: C.text2, cursor: isSaving ? "not-allowed" : "pointer" }}>
               ← Revise answers
             </button>
-            <div style={{ flex: 1 }} />
-            <button onClick={() => setPhase("saved")}
-              style={{ height: 36, padding: "0 20px", background: C.green, border: "none", borderRadius: 8, font: `700 12.5px 'IBM Plex Sans'`, color: "#fff", cursor: "pointer" }}>
-              Confirm & save ✓
+          )}
+          <div style={{ flex: 1 }} />
+          {error && <span style={{ fontSize: 12, color: C.red }}>{error}</span>}
+          {isSaved ? (
+            <button
+              onClick={() => { setPhase("idle"); setWsr(null); setQuestions([]); setAnswers({}); setQaPayload([]); }}
+              style={{ height: 36, padding: "0 18px", background: C.primary, border: "none", borderRadius: 8, font: `700 12.5px 'IBM Plex Sans'`, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
+              ✦ Generate new WSR
             </button>
-          </div>
-        )}
-        {phase === "saved" && (
-          <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
-            <button onClick={() => { setPhase("idle"); setWsr(null); setQuestions([]); setAnswers({}); }}
-              style={{ height: 36, padding: "0 16px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12.5px 'IBM Plex Sans'`, color: C.text2, cursor: "pointer" }}>
-              Submit another report
+          ) : (
+            <button
+              onClick={confirmSave}
+              disabled={isSaving}
+              style={{ height: 36, padding: "0 20px", background: isSaving ? C.surface2 : C.green, border: "none", borderRadius: 8, font: `700 12.5px 'IBM Plex Sans'`, color: isSaving ? C.text3 : "#fff", cursor: isSaving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+              {isSaving ? <><Spinner col="#9199d4" /> Saving…</> : <>Confirm & save ✓</>}
             </button>
-          </div>
-        )}
+          )}
+        </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     );

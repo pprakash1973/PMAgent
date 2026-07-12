@@ -45,6 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     openRisks: project.risks.length,
   };
 
+  const preview = rawInput.preview === true;
+
   let aiResult;
   try {
     aiResult = await generateStatusSummary(rawInput, projectContext);
@@ -62,7 +64,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     };
   }
 
-  // Compute SPI from live schedule tasks if they exist; otherwise fall back to manual entry
+  // Preview mode: return AI result without touching the DB
+  if (preview) {
+    return NextResponse.json({
+      recommendations: aiResult.recommendations,
+      accomplishments: aiResult.accomplishments,
+      nextWeekPlan: aiResult.nextWeekPlan,
+      metricsNarrative: aiResult.metricsNarrative,
+      summary: aiResult.summary,
+      ragStatus: aiResult.ragStatus,
+      healthScore: aiResult.healthScore,
+    });
+  }
+
+  // Compute SPI from live schedule tasks if they exist; fall back to AI/manual
   const scheduleTasks = await prisma.scheduleTask.findMany({ where: { projectId: id } });
   let computedSpi: number | null = null;
   if (scheduleTasks.length > 0) {
@@ -79,13 +94,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     computedSpi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
   }
 
+  const savedAt = new Date();
   const report = await prisma.statusReport.create({
     data: {
       projectId: id,
       ragStatus: aiResult.ragStatus,
       aiSummary: aiResult.summary,
       rawInput,
-      submittedAt: new Date(),
+      submittedAt: savedAt,
       healthScore: {
         create: {
           compositeScore: aiResult.healthScore,
@@ -98,7 +114,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: { healthScore: true },
   });
 
-  // Update project health
   await prisma.project.update({
     where: { id },
     data: { healthStatus: aiResult.ragStatus },
@@ -106,6 +121,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   return NextResponse.json({
     report,
+    savedAt: savedAt.toISOString(),
     recommendations: aiResult.recommendations,
     accomplishments: aiResult.accomplishments,
     nextWeekPlan: aiResult.nextWeekPlan,
