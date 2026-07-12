@@ -48,6 +48,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     };
   }
 
+  // Compute SPI from live schedule tasks if they exist; otherwise fall back to manual entry
+  const scheduleTasks = await prisma.scheduleTask.findMany({ where: { projectId: id } });
+  let computedSpi: number | null = null;
+  if (scheduleTasks.length > 0) {
+    const today = Date.now();
+    let pv = 0, ev = 0;
+    for (const t of scheduleTasks) {
+      const s = new Date(t.baselineStart).getTime();
+      const f = new Date(t.baselineFinish).getTime();
+      const dur = f - s;
+      const plannedPct = today <= s ? 0 : today >= f ? 1 : dur > 0 ? (today - s) / dur : 0;
+      pv += t.baselineDays * plannedPct;
+      ev += t.baselineDays * (t.percentComplete / 100);
+    }
+    computedSpi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
+  }
+
   const report = await prisma.statusReport.create({
     data: {
       projectId: id,
@@ -59,7 +76,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         create: {
           compositeScore: aiResult.healthScore,
           ragStatus: aiResult.ragStatus,
-          spi: rawInput.spi || null,
+          spi: computedSpi ?? rawInput.spi ?? null,
           cpi: rawInput.cpi || null,
         },
       },

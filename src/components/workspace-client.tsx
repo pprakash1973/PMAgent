@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusForm } from "@/components/status-form";
@@ -252,42 +252,288 @@ function RAIDTab({ project }: { project: any }) {
 
 // ── Schedule tab ───────────────────────────────────────────────────────────────
 
+function fmt(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
+function spiColor(spi: number | null) {
+  if (spi === null) return C.text3;
+  if (spi >= 1) return C.green;
+  if (spi >= 0.85) return C.amber;
+  return C.red;
+}
+
 function ScheduleTab({ project }: { project: any }) {
-  const milestones = project.milestones || [];
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editPct, setEditPct] = useState(0);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const loadSchedule = useCallback(async () => {
+    const res = await fetch(`/api/projects/${project.id}/schedule`);
+    if (res.ok) {
+      const data = await res.json();
+      setTasks(data.tasks ?? []);
+      setKpi(data.kpi ?? null);
+    }
+    setLoading(false);
+  }, [project.id]);
+
+  useEffect(() => { loadSchedule(); }, [loadSchedule]);
+  useEffect(() => { if (editId && inputRef.current) inputRef.current.focus(); }, [editId]);
+
+  async function generate() {
+    setGenerating(true);
+    setError(null);
+    const res = await fetch(`/api/projects/${project.id}/schedule/generate`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) { setError(data.error ?? "Failed to generate schedule"); setGenerating(false); return; }
+    await loadSchedule();
+    setGenerating(false);
+  }
+
+  async function saveProgress(taskId: string, pct: number) {
+    setSavingId(taskId);
+    const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ percentComplete: pct }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated } : t));
+      await loadSchedule();
+    }
+    setSavingId(null);
+    setEditId(null);
+  }
+
+  // Gantt timeline bounds
+  const minStart = tasks.length
+    ? new Date(Math.min(...tasks.map(t => new Date(t.baselineStart).getTime())))
+    : new Date();
+  const maxFinish = tasks.length
+    ? new Date(Math.max(...tasks.map(t => new Date(t.baselineFinish).getTime())))
+    : new Date();
+  const totalMs = Math.max(maxFinish.getTime() - minStart.getTime(), 1);
+  const today = new Date();
+  const todayPct = Math.max(0, Math.min(100, ((today.getTime() - minStart.getTime()) / totalMs) * 100));
+
+  // Group tasks by phase
+  const phases = Array.from(new Set(tasks.map(t => t.phase)));
+
+  function barStyle(t: any) {
+    const left = ((new Date(t.baselineStart).getTime() - minStart.getTime()) / totalMs) * 100;
+    const width = ((new Date(t.baselineFinish).getTime() - new Date(t.baselineStart).getTime()) / totalMs) * 100;
+    return { left: `${left}%`, width: `${Math.max(width, 0.5)}%` };
+  }
+
+  function statusColor(t: any) {
+    if (t.percentComplete === 100) return C.green;
+    if (t.percentComplete > 0) return C.primary;
+    return "#c5cadb";
+  }
+
+  if (loading) {
+    return <div style={{ padding: "40px 0", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>Loading schedule…</div>;
+  }
+
   return (
     <div>
+      {/* ── Header bar ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Milestone Plan</div>
-        <span style={{ fontSize: "11.5px", color: C.text3 }}>{milestones.length} milestones</span>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Project Schedule</div>
+        {tasks.length > 0 && <span style={{ fontSize: "11.5px", color: C.text3 }}>{tasks.length} tasks · {phases.length} phases</span>}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={generate}
+          disabled={generating}
+          style={{
+            height: 32, padding: "0 14px",
+            background: generating ? C.surface2 : C.primary,
+            color: generating ? C.text3 : "#fff",
+            border: "none", borderRadius: 8,
+            font: `600 12.5px 'IBM Plex Sans'`, cursor: generating ? "not-allowed" : "pointer",
+            display: "flex", alignItems: "center", gap: 7,
+          }}
+        >
+          {generating
+            ? <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
+            : tasks.length > 0 ? "↺ Regenerate from WBS" : "✦ Generate from WBS"
+          }
+        </button>
       </div>
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", background: C.surface2, font: `600 10px 'IBM Plex Sans'`, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const }}>
-          <span style={{ flex: 1 }}>Milestone</span>
-          <span style={{ width: 110 }}>Due Date</span>
-          <span style={{ width: 90 }}>Status</span>
+
+      {error && (
+        <div style={{ padding: "10px 14px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 9, fontSize: 13, color: C.red, marginBottom: 14 }}>
+          {error}
         </div>
-        {milestones.length === 0 && <div style={{ padding: "20px 18px", fontSize: 13, color: C.text3 }}>No milestones defined. Generate a Milestone Plan to populate.</div>}
-        {milestones.map((m: any) => {
-          const isAchieved = m.status === "achieved";
-          const isDelayed = m.status === "delayed";
-          return (
-            <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderTop: `1px solid ${C.borderLight}` }}>
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ color: isAchieved ? C.green : isDelayed ? C.red : "#a8adb8", fontSize: 14 }}>◆</span>
-                <span style={{ fontSize: "12.5px", fontWeight: 500 }}>{m.name}</span>
+      )}
+
+      {tasks.length === 0 && !error && (
+        <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "32px 24px", textAlign: "center" as const }}>
+          <div style={{ fontSize: 36, marginBottom: 14 }}>📅</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.primary, marginBottom: 8 }}>No schedule yet</div>
+          <div style={{ fontSize: 13, color: C.text2, maxWidth: 440, margin: "0 auto 18px" }}>
+            Generate a schedule from your WBS artifact. The AI will sequence all work packages using critical-path scheduling, respecting dependencies and a 5-day working week.
+          </div>
+          <div style={{ fontSize: 12, color: C.text3 }}>
+            You can also upload a new WBS (via the Artifacts tab) and then regenerate.
+          </div>
+        </div>
+      )}
+
+      {tasks.length > 0 && (
+        <>
+          {/* ── EVM KPI strip ── */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
+            {[
+              { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: "Schedule Performance Index", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.85 ? C.amberLight : C.redLight },
+              { label: "SV", value: kpi?.sv != null ? `${kpi.sv > 0 ? "+" : ""}${kpi.sv.toFixed(1)}d` : "—", sub: "Schedule Variance (task-days)", color: (kpi?.sv ?? 0) >= 0 ? C.green : C.red, bg: (kpi?.sv ?? 0) >= 0 ? C.greenLight : C.redLight },
+              { label: "EV", value: kpi?.ev != null ? `${kpi.ev.toFixed(1)}d` : "—", sub: "Earned Value (days)", color: C.primary, bg: C.primaryLight },
+              { label: "PV", value: kpi?.pv != null ? `${kpi.pv.toFixed(1)}d` : "—", sub: "Planned Value (days)", color: C.text2, bg: C.surface2 },
+            ].map(k => (
+              <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 12, padding: "13px 15px" }}>
+                <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: k.color }}>{k.value}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: k.color, marginTop: 2 }}>{k.label}</div>
+                <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{k.sub}</div>
               </div>
-              <span className="mono" style={{ width: 110, fontSize: 12, color: C.text2 }}>{formatDate(m.dueDate)}</span>
-              <span style={{ width: 90 }}>
-                <Badge
-                  label={isAchieved ? "Complete" : isDelayed ? "Slipped" : "On Track"}
-                  color={isAchieved ? C.green : isDelayed ? C.red : C.text2}
-                  bg={isAchieved ? C.greenLight : isDelayed ? C.redLight : C.surface2}
-                />
-              </span>
+            ))}
+          </div>
+
+          {/* ── Gantt ── */}
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
+            {/* Timeline header */}
+            <div style={{ display: "flex", background: C.surface2, borderBottom: `1px solid ${C.borderLight}` }}>
+              <div style={{ width: 320, flexShrink: 0, padding: "8px 16px", font: `600 10px 'IBM Plex Sans'`, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const }}>Task</div>
+              <div style={{ width: 44, flexShrink: 0, padding: "8px 4px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, textAlign: "center" as const, textTransform: "uppercase" as const }}>%</div>
+              <div style={{ flex: 1, position: "relative", padding: "8px 12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", font: `500 10px 'IBM Plex Mono'`, color: C.text3 }}>
+                  <span>{fmt(minStart)}</span>
+                  <span>{fmt(maxFinish)}</span>
+                </div>
+              </div>
             </div>
-          );
-        })}
-      </div>
+
+            {phases.map(phase => (
+              <div key={phase}>
+                {/* Phase group header */}
+                <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "6px 16px" }}>
+                  <div style={{ width: 320, font: `700 10.5px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".03em", textTransform: "uppercase" as const }}>{phase}</div>
+                  <div style={{ flex: 1 }} />
+                </div>
+
+                {tasks.filter(t => t.phase === phase).map(t => {
+                  const bar = barStyle(t);
+                  const isEditing = editId === t.id;
+                  const isSaving = savingId === t.id;
+                  const pctColor = t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.text3;
+
+                  return (
+                    <div key={t.id} style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, minHeight: 38 }}>
+                      {/* Task name + meta */}
+                      <div style={{ width: 320, flexShrink: 0, padding: "9px 16px 9px 20px" }}>
+                        <div style={{ fontSize: "12.5px", fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
+                        <div style={{ fontSize: 10.5, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
+                          {t.wbsCode} · {t.owner || "Unassigned"} · {t.baselineDays}d
+                        </div>
+                      </div>
+
+                      {/* % complete cell — click to edit */}
+                      <div
+                        style={{ width: 44, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", padding: "0 2px" }}
+                        onClick={() => { if (!isEditing) { setEditId(t.id); setEditPct(t.percentComplete); } }}
+                      >
+                        {isEditing ? (
+                          <input
+                            ref={inputRef}
+                            type="number" min={0} max={100}
+                            value={editPct}
+                            onChange={e => setEditPct(Number(e.target.value))}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") saveProgress(t.id, editPct);
+                              if (e.key === "Escape") setEditId(null);
+                            }}
+                            onBlur={() => saveProgress(t.id, editPct)}
+                            style={{ width: 36, height: 24, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5, fontFamily: "'IBM Plex Mono',monospace", padding: 0 }}
+                          />
+                        ) : (
+                          <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, fontWeight: 600, color: pctColor }}>
+                            {isSaving ? "…" : `${t.percentComplete}%`}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Gantt bar area */}
+                      <div style={{ flex: 1, position: "relative", height: 38 }}>
+                        {/* Today line */}
+                        {todayPct >= 0 && todayPct <= 100 && (
+                          <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 1.5, background: C.red, opacity: 0.5, zIndex: 2 }} />
+                        )}
+                        {/* Baseline bar */}
+                        <div style={{
+                          position: "absolute", top: "50%", transform: "translateY(-50%)",
+                          ...bar,
+                          height: 16, borderRadius: 4,
+                          background: "#e2e5ea",
+                          overflow: "hidden",
+                        }}>
+                          {/* Progress fill */}
+                          <div style={{
+                            position: "absolute", top: 0, left: 0, bottom: 0,
+                            width: `${t.percentComplete}%`,
+                            background: statusColor(t),
+                            borderRadius: 4,
+                            transition: "width .3s",
+                          }} />
+                        </div>
+                        {/* Start / finish labels on hover area */}
+                        <div style={{
+                          position: "absolute", ...bar,
+                          top: "50%", transform: "translateY(-50%)",
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "0 4px", pointerEvents: "none",
+                        }}>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+
+            {/* Legend */}
+            <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 18px", borderTop: `1px solid ${C.borderLight}`, background: C.surface2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 20, height: 8, borderRadius: 3, background: C.green }} />
+                <span style={{ fontSize: 10.5, color: C.text3 }}>Complete</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 20, height: 8, borderRadius: 3, background: C.primary }} />
+                <span style={{ fontSize: 10.5, color: C.text3 }}>In Progress</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 20, height: 8, borderRadius: 3, background: "#e2e5ea" }} />
+                <span style={{ fontSize: 10.5, color: C.text3 }}>Not Started</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 1.5, height: 14, background: C.red, opacity: 0.5 }} />
+                <span style={{ fontSize: 10.5, color: C.text3 }}>Today</span>
+              </div>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 10.5, color: C.text3 }}>Click % to update progress</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

@@ -108,8 +108,8 @@ export function StatusForm({ projectId, mode }: { projectId: string; mode: strin
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">SPI (Schedule)</Label>
-                  <Input className="h-8 text-xs" placeholder="1.00" value={form.spi} onChange={(e) => update("spi", e.target.value)} />
+                  <Label className="text-xs">SPI override <span className="text-slate-400 font-normal">(auto-computed from Schedule tab)</span></Label>
+                  <Input className="h-8 text-xs" placeholder="auto" value={form.spi} onChange={(e) => update("spi", e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">CPI (Cost)</Label>

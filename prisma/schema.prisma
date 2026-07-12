@@ -125,6 +125,7 @@ model Project {
   integrationLinks   IntegrationLink[]
   requirementsDocs   RequirementsDocument[]
   artifactSelections ArtifactSelection[]
+  scheduleTasks      ScheduleTask[]
 
   @@unique([orgId, code])
 }
@@ -324,6 +325,28 @@ model IntegrationLink {
   project Project @relation(fields: [projectId], references: [id])
 }
 
+model ScheduleTask {
+  id              String    @id @default(cuid())
+  projectId       String
+  wbsCode         String
+  name            String
+  phase           String
+  owner           String?
+  sortOrder       Int       @default(0)
+  baselineStart   DateTime
+  baselineFinish  DateTime
+  baselineDays    Int
+  actualStart     DateTime?
+  actualFinish    DateTime?
+  percentComplete Int       @default(0)
+  status          String    @default("not_started")
+  dependencies    Json      @default("[]")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   orgId     String
@@ -335,3 +358,4 @@ model AuditLog {
   after     Json?
   createdAt DateTime @default(now())
 }
+
