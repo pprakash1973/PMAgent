@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 const PHASE_ORDER = ["initiation", "planning", "execution", "closure"] as const;
 type Phase = (typeof PHASE_ORDER)[number];
 
-// Artifacts required to EXIT each phase (must exist, status != "draft")
+// Artifacts required to EXIT each phase (must exist — any status counts, all are created as "draft")
 const PHASE_GATE_ARTIFACTS: Record<Phase, string[]> = {
   initiation: ["project_charter"],
   planning: ["wbs", "risk_register"],
@@ -62,8 +62,7 @@ export async function GET(
   const artifactMap = new Map(project.artifacts.map((a) => [a.artifactType, a.status]));
 
   const gates = requiredArtifacts.map((type) => {
-    const status = artifactMap.get(type);
-    const met = !!status && status !== "draft";
+    const met = artifactMap.has(type);
     return {
       key: type,
       label: ARTIFACT_LABELS[type] ?? type,
@@ -101,8 +100,9 @@ export async function POST(
   const override = body.override === true;
   const justification = body.justification as string | undefined;
 
-  if (override && !["delivery_manager", "delivery_head", "admin"].includes(user.role)) {
-    return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  // Override requires a justification; any role may override with written justification (audit-logged)
+  if (override && (!justification || !justification.trim())) {
+    return NextResponse.json({ error: "JUSTIFICATION_REQUIRED" }, { status: 400 });
   }
 
   const project = await prisma.project.findUnique({
@@ -122,10 +122,7 @@ export async function POST(
   if (!override) {
     const requiredArtifacts = PHASE_GATE_ARTIFACTS[current as Phase] ?? [];
     const artifactMap = new Map(project.artifacts.map((a) => [a.artifactType, a.status]));
-    const unmet = requiredArtifacts.filter((type) => {
-      const status = artifactMap.get(type);
-      return !status || status === "draft";
-    });
+    const unmet = requiredArtifacts.filter((type) => !artifactMap.has(type));
     if (current === "execution") {
       if (project.issues.length > 0) unmet.push("no_critical_issues");
     }

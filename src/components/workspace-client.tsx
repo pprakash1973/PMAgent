@@ -96,7 +96,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
       setJustification("");
       setGateData(null);
     } else {
-      setError(data.error === "GATE_BLOCKED" ? "Gate requirements not met. Override requires manager approval." : data.error || "Failed");
+      setError(data.error === "GATE_BLOCKED" ? "Gate requirements not met. Use override with justification to proceed." : data.error === "JUSTIFICATION_REQUIRED" ? "Please enter a justification before overriding." : data.error || "Failed");
     }
     setAdvancing(false);
   }
