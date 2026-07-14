@@ -107,6 +107,7 @@ model Project {
   startDate             DateTime?
   endDate               DateTime?
   status                String    @default("draft")
+  currentPhase          String    @default("initiation")
   healthStatus          String    @default("green")
   description           String?  
   createdAt             DateTime  @default(now())

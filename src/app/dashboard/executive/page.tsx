@@ -159,7 +159,7 @@ export default async function ExecutivePage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f7f8fa" }}>
-                {["Project", "Owner", "Method", "Budget", "Health", "SPI", "CPI", "Risks"].map(h => (
+                {["Project", "Owner", "Method", "Budget", "Phase", "Health", "SPI", "CPI", "Risks"].map(h => (
                   <th key={h} style={{ textAlign: "left", padding: "9px 16px", fontSize: 10, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase" as const, whiteSpace: "nowrap" as const }}>{h}</th>
                 ))}
               </tr>
@@ -171,6 +171,7 @@ export default async function ExecutivePage() {
                   <td style={{ padding: "13px 16px", color: "#5b616e" }}>{p.pmOwner.fullName}</td>
                   <td style={{ padding: "13px 16px", color: "#5b616e" }}>{methodologyLabel(p.methodology)}</td>
                   <td style={{ padding: "13px 16px", color: "#5b616e", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12 }}>{p.budget ? formatCurrency(p.budget, p.currency) : "—"}</td>
+                  <td style={{ padding: "13px 16px" }}><span style={{ fontSize: 11, fontWeight: 500, color: "#003C51", background: "#D7E0E3", borderRadius: 6, padding: "3px 9px", textTransform: "capitalize" as const }}>{(p as any).currentPhase || "initiation"}</span></td>
                   <td style={{ padding: "13px 16px" }}><span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 6, padding: "3px 9px" }}>{ragLabel(p.healthStatus)}</span></td>
                   <td style={{ padding: "13px 16px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: "#5b616e" }}>{p.statusReports[0]?.healthScore?.spi?.toFixed(2) ?? "—"}</td>
                   <td style={{ padding: "13px 16px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: "#5b616e" }}>{p.statusReports[0]?.healthScore?.cpi?.toFixed(2) ?? "—"}</td>

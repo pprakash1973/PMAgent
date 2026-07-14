@@ -51,44 +51,226 @@ function SectionHeader({ label }: { label: string }) {
 
 // ── Phase rail ─────────────────────────────────────────────────────────────────
 
-const PHASES = ["Initiation", "Planning", "Execution", "Monitoring", "Closure"];
+// Display phases (Monitoring runs alongside Execution in PMBOK, but we show it as a step)
+const PHASES = ["Initiation", "Planning", "Execution", "Closure"];
+// Map display names to DB values
+const PHASE_DB: Record<string, string> = {
+  Initiation: "initiation", Planning: "planning", Execution: "execution", Closure: "closure",
+};
 
-function PhaseRail({ current }: { current: string }) {
-  const currentIdx = PHASES.findIndex(p => p.toLowerCase() === current.toLowerCase());
+type GateItem = { key: string; label: string; met: boolean; hint?: string };
+type GateData = { current: string; next: string | null; canAdvance: boolean; gates: GateItem[] };
+
+function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
+  projectId: string;
+  currentPhase: string;
+  onPhaseAdvanced: (newPhase: string) => void;
+}) {
+  const [gateData, setGateData] = useState<GateData | null>(null);
+  const [showGate, setShowGate] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  const [overrideMode, setOverrideMode] = useState(false);
+  const [justification, setJustification] = useState("");
+  const [error, setError] = useState("");
+
+  const currentIdx = PHASES.findIndex(p => PHASE_DB[p] === currentPhase);
+
+  async function loadGate() {
+    const res = await fetch(`/api/projects/${projectId}/phase-gate`);
+    if (res.ok) setGateData(await res.json());
+  }
+
+  async function advance(override = false) {
+    setAdvancing(true);
+    setError("");
+    const res = await fetch(`/api/projects/${projectId}/phase-gate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ override, justification: justification || undefined }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      onPhaseAdvanced(data.current);
+      setShowGate(false);
+      setOverrideMode(false);
+      setJustification("");
+      setGateData(null);
+    } else {
+      setError(data.error === "GATE_BLOCKED" ? "Gate requirements not met. Override requires manager approval." : data.error || "Failed");
+    }
+    setAdvancing(false);
+  }
+
+  function openGate() {
+    setShowGate(true);
+    setOverrideMode(false);
+    setError("");
+    loadGate();
+  }
+
+  const nextPhaseName = PHASES.find(p => PHASE_DB[p] === gateData?.next);
+
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px 26px 18px", marginBottom: 18 }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 26px 16px", marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "flex-start" }}>
-        {PHASES.map((phase, i) => {
-          const done = i < currentIdx;
-          const active = i === currentIdx;
-          return (
-            <div key={phase} style={{ display: "flex", alignItems: "flex-start", flex: i < PHASES.length - 1 ? "1 1 auto" : undefined }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 88, flexShrink: 0 }}>
-                <div style={{
-                  width: active ? 38 : 34, height: active ? 38 : 34,
-                  marginTop: active ? -2 : 0,
-                  borderRadius: "50%",
-                  background: done ? C.green : active ? C.surface : "#f2f4f7",
-                  border: active ? `3px solid ${C.primary}` : done ? "none" : "1.5px solid #d3d7de",
-                  boxShadow: active ? `0 0 0 5px #eef0fc` : done ? `0 2px 6px rgba(21,138,90,.3)` : "none",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  {done && <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  {active && <span style={{ width: 11, height: 11, borderRadius: "50%", background: C.primary, display: "block" }} />}
-                  {!done && !active && <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#a8adb8" strokeWidth="1.8"/><path d="M8 11V8a4 4 0 018 0v3" stroke="#a8adb8" strokeWidth="1.8"/></svg>}
+        <div style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
+          {PHASES.map((phase, i) => {
+            const done = i < currentIdx;
+            const active = i === currentIdx;
+            return (
+              <div key={phase} style={{ display: "flex", alignItems: "flex-start", flex: i < PHASES.length - 1 ? "1 1 auto" : undefined }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 90, flexShrink: 0 }}>
+                  <div style={{
+                    width: active ? 38 : 34, height: active ? 38 : 34,
+                    marginTop: active ? -2 : 0,
+                    borderRadius: "50%",
+                    background: done ? C.green : active ? C.surface : "#f2f4f7",
+                    border: active ? `3px solid ${C.primary}` : done ? "none" : "1.5px solid #d3d7de",
+                    boxShadow: active ? `0 0 0 5px #eef0fc` : done ? `0 2px 6px rgba(21,138,90,.3)` : "none",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {done && <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    {active && <span style={{ width: 11, height: 11, borderRadius: "50%", background: C.primary, display: "block" }} />}
+                    {!done && !active && <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#a8adb8" strokeWidth="1.8"/><path d="M8 11V8a4 4 0 018 0v3" stroke="#a8adb8" strokeWidth="1.8"/></svg>}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: active ? 700 : 600, color: active ? C.primary : done ? C.text : "#8a909c", marginTop: 8 }}>{phase}</span>
+                  <span style={{ fontSize: 10, color: done ? C.green : active ? C.amber : "#a8adb8", marginTop: 2 }}>
+                    {done ? "Gate passed" : active ? "In progress" : "Locked"}
+                  </span>
                 </div>
-                <span style={{ fontSize: 12, fontWeight: active ? 700 : 600, color: active ? C.primary : done ? C.text : "#8a909c", marginTop: 8 }}>{phase}</span>
-                <span style={{ fontSize: 10, color: done ? C.green : active ? C.amber : "#a8adb8", marginTop: 2 }}>
-                  {done ? "Gate passed" : active ? "In progress" : "Locked"}
-                </span>
+                {i < PHASES.length - 1 && (
+                  <div style={{ flex: 1, height: 2.5, background: done ? C.green : C.border, marginTop: 16, borderRadius: 2 }} />
+                )}
               </div>
-              {i < PHASES.length - 1 && (
-                <div style={{ flex: 1, height: 2.5, background: done ? C.green : C.border, marginTop: 16, borderRadius: 2 }} />
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+
+        {/* Advance button — hidden if in Closure */}
+        {currentIdx < PHASES.length - 1 && (
+          <button
+            onClick={openGate}
+            style={{
+              marginLeft: 20, marginTop: 2, height: 34, padding: "0 16px",
+              background: C.primary, color: "#fff", border: "none",
+              borderRadius: 9, font: `600 12px 'IBM Plex Sans',sans-serif`,
+              cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+              boxShadow: "0 2px 6px rgba(79,91,213,.3)",
+            }}
+          >
+            Advance phase →
+          </button>
+        )}
       </div>
+
+      {/* Gate checklist panel */}
+      {showGate && (
+        <div style={{ marginTop: 16, borderTop: `1px solid ${C.border}`, paddingTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                Gate Review: {PHASES[currentIdx]} → {nextPhaseName}
+              </span>
+              <div style={{ fontSize: 11.5, color: C.text3, marginTop: 2 }}>
+                Complete all requirements to advance the project phase.
+              </div>
+            </div>
+            <button onClick={() => setShowGate(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3 }}>×</button>
+          </div>
+
+          {!gateData ? (
+            <div style={{ fontSize: 12.5, color: C.text3, padding: "8px 0" }}>Evaluating gate criteria…</div>
+          ) : (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                {gateData.gates.map((g) => (
+                  <div key={g.key} style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px",
+                    background: g.met ? "#e3f3ea" : "#f7f8fa",
+                    borderRadius: 9, border: `1px solid ${g.met ? "#c1e4cf" : C.border}`,
+                  }}>
+                    <div style={{
+                      width: 20, height: 20, borderRadius: "50%", flexShrink: 0, marginTop: 1,
+                      background: g.met ? C.green : "#d3d7de",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {g.met
+                        ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L19 7" stroke="#fff" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        : <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                      }
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: g.met ? C.green : C.text }}>{g.label}</div>
+                      {!g.met && g.hint && <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{g.hint}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {error && <div style={{ fontSize: 11.5, color: C.red, marginBottom: 10 }}>{error}</div>}
+
+              {overrideMode && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.amber, marginBottom: 6 }}>Override justification (required)</div>
+                  <textarea
+                    value={justification}
+                    onChange={e => setJustification(e.target.value)}
+                    placeholder="Explain why gate criteria are being overridden…"
+                    rows={2}
+                    style={{
+                      width: "100%", padding: "8px 10px", fontSize: 12.5,
+                      border: `1px solid ${C.border}`, borderRadius: 8,
+                      fontFamily: "'IBM Plex Sans',sans-serif", resize: "vertical",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              )}
+
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {gateData.canAdvance ? (
+                  <button
+                    onClick={() => advance(false)}
+                    disabled={advancing}
+                    style={{
+                      height: 34, padding: "0 18px", background: advancing ? "#8a9ed4" : C.primary,
+                      color: "#fff", border: "none", borderRadius: 9,
+                      font: `600 12.5px 'IBM Plex Sans',sans-serif`, cursor: advancing ? "default" : "pointer",
+                    }}
+                  >{advancing ? "Advancing…" : `Advance to ${nextPhaseName}`}</button>
+                ) : overrideMode ? (
+                  <button
+                    onClick={() => advance(true)}
+                    disabled={advancing || !justification.trim()}
+                    style={{
+                      height: 34, padding: "0 18px",
+                      background: advancing || !justification.trim() ? "#e2a060" : C.amber,
+                      color: "#fff", border: "none", borderRadius: 9,
+                      font: `600 12.5px 'IBM Plex Sans',sans-serif`,
+                      cursor: advancing || !justification.trim() ? "default" : "pointer",
+                    }}
+                  >{advancing ? "Advancing…" : "Override & Advance"}</button>
+                ) : (
+                  <button
+                    onClick={() => setOverrideMode(true)}
+                    style={{
+                      height: 34, padding: "0 14px", background: C.surface,
+                      color: C.amber, border: `1px solid ${C.amber}40`, borderRadius: 9,
+                      font: `500 12px 'IBM Plex Sans',sans-serif`, cursor: "pointer",
+                    }}
+                  >Override gate (manager)</button>
+                )}
+                {overrideMode && (
+                  <button onClick={() => { setOverrideMode(false); setJustification(""); }}
+                    style={{ background: "none", border: "none", fontSize: 12, color: C.text3, cursor: "pointer" }}>
+                    Cancel override
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -633,11 +815,7 @@ const TABS = ["Artifacts", "RAID", "Schedule", "Requirements", "Weekly Status"];
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const [tab, setTab] = useState("Artifacts");
-
-  const currentPhase = project.status === "completed" ? "Closure"
-    : project.status === "on_hold" ? "Monitoring"
-    : project.artifacts?.length > 0 ? "Planning"
-    : "Initiation";
+  const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
 
   return (
     <div style={{ padding: "22px 26px 40px" }}>
@@ -660,7 +838,11 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       </div>
 
       {/* Phase rail */}
-      <PhaseRail current={currentPhase} />
+      <PhaseRail
+        projectId={project.id}
+        currentPhase={currentPhase}
+        onPhaseAdvanced={setCurrentPhase}
+      />
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 26, borderBottom: `1.5px solid ${C.border}`, marginBottom: 20 }}>

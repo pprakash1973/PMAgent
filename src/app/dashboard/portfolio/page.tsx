@@ -115,7 +115,7 @@ export default async function PortfolioPage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f7f8fa" }}>
-                {["Project", "PM Owner", "Methodology", "Mode", "Health", "SPI", "CPI", "Risks", "End Date"].map(h => (
+                {["Project", "PM Owner", "Methodology", "Mode", "Phase", "Health", "SPI", "CPI", "Risks", "End Date"].map(h => (
                   <th key={h} style={{ textAlign: "left", padding: "9px 16px", fontSize: 10, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -135,6 +135,11 @@ export default async function PortfolioPage() {
                   <td style={{ padding: "13px 16px" }}>
                     <span style={{ fontSize: 11, fontWeight: 500, color: "#5b616e", background: "#f2f4f7", borderRadius: 6, padding: "3px 9px" }}>
                       {p.engagementMode === "high_level" ? "Governance" : "Detailed"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "13px 16px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#003C51", background: "#D7E0E3", borderRadius: 6, padding: "3px 9px", textTransform: "capitalize" as const }}>
+                      {(p as any).currentPhase || "initiation"}
                     </span>
                   </td>
                   <td style={{ padding: "13px 16px" }}>
