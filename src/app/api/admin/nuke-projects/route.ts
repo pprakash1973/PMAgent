@@ -13,6 +13,16 @@ export async function POST(req: NextRequest) {
   const projects = await prisma.project.findMany({ select: { id: true, name: true } });
 
   // Delete all project-related data in dependency order
+  await prisma.healthScore.deleteMany({});
+  await prisma.statusReport.deleteMany({});
+  await prisma.scheduleTask.deleteMany({});
+  await prisma.backlogItem.deleteMany({});
+  await prisma.sprint.deleteMany({});
+  await prisma.milestone.deleteMany({});
+  await prisma.changeRequest.deleteMany({});
+  await prisma.issue.deleteMany({});
+  await prisma.risk.deleteMany({});
+  await prisma.integrationLink.deleteMany({});
   await prisma.artifactVersion.deleteMany({});
   await prisma.artifact.deleteMany({});
   await prisma.artifactSelection.deleteMany({});
