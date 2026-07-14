@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { formatDate, formatCurrency, methodologyLabel } from "@/lib/utils";
+import { SteeringDeckGenerator } from "@/components/steering-deck-generator";
 
 const CAN_PORTFOLIO = ["delivery_manager", "delivery_head", "admin"];
 
@@ -48,9 +49,12 @@ export default async function PortfolioPage() {
   return (
     <div style={{ padding: "26px 28px 48px" }}>
       {/* Header */}
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1d24" }}>Portfolio Overview</div>
-        <div style={{ fontSize: 13, color: "#8a909c", marginTop: 3 }}>{projects.length} active projects · as of today</div>
+      <div style={{ marginBottom: 22, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1d24" }}>Portfolio Overview</div>
+          <div style={{ fontSize: 13, color: "#8a909c", marginTop: 3 }}>{projects.length} active projects · as of today</div>
+        </div>
+        <SteeringDeckGenerator projects={projects.map((p) => ({ id: p.id, name: p.name, healthStatus: p.healthStatus }))} />
       </div>
 
       {/* KPI strip */}

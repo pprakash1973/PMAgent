@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatCurrency, ragBg } from "@/lib/utils";
 import { FolderKanban, AlertTriangle, CheckCircle2, Plus, TrendingUp, Clock } from "lucide-react";
+import { getProductivityStatsForUser } from "@/lib/productivity";
+import { ProductivityMeter } from "@/components/productivity-meter";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -39,6 +41,8 @@ export default async function DashboardPage() {
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
     .slice(0, 5);
 
+  const productivityStats = await getProductivityStatsForUser(user);
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
@@ -56,6 +60,8 @@ export default async function DashboardPage() {
           </Link>
         ) : null}
       </div>
+
+      <ProductivityMeter stats={productivityStats} compact />
 
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4">

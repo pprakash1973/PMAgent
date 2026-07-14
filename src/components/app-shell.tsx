@@ -141,36 +141,129 @@ function TopBar({ children }: { children?: React.ReactNode }) {
   );
 }
 
-function DockedAIBar() {
+type AskTurn = { question: string; answer: string; loading: boolean };
+
+const PORTFOLIO_SUGGESTIONS: Record<string, string[]> = {
+  pm: ["Summarize the top risks across my projects", "Which of my projects need attention this week?", "Draft a status update email to my sponsor"],
+  delivery_manager: ["Which projects are trending red and why?", "Where are we over budget across the portfolio?", "Summarize open risks needing escalation"],
+  delivery_head: ["Give me the portfolio health summary in 3 bullets", "What decisions need my sign-off this week?", "Which projects are the biggest cost risk?"],
+  admin: ["Give me a portfolio-wide health and budget summary", "Which projects have the most open risks?", "Summarize this week's biggest delivery concerns"],
+};
+
+function DockedAIBar({ role }: { role: string }) {
   const [value, setValue] = useState("");
+  const [turns, setTurns] = useState<AskTurn[]>([]);
+  const [open, setOpen] = useState(false);
+
+  async function ask(question: string) {
+    if (!question.trim()) return;
+    setValue("");
+    setOpen(true);
+    setTurns((t) => [...t, { question, answer: "", loading: true }]);
+    try {
+      const res = await fetch("/api/chat/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      setTurns((t) => {
+        const next = [...t];
+        next[next.length - 1] = { question, answer: data.response || "Sorry, I couldn't process that.", loading: false };
+        return next;
+      });
+    } catch {
+      setTurns((t) => {
+        const next = [...t];
+        next[next.length - 1] = { question, answer: "Something went wrong. Please try again.", loading: false };
+        return next;
+      });
+    }
+  }
+
+  const suggestions = PORTFOLIO_SUGGESTIONS[role] ?? PORTFOLIO_SUGGESTIONS.pm;
+
   return (
-    <div style={{
-      flexShrink: 0, background: "#fff", borderTop: `1px solid ${UST_BORDER}`,
-      padding: "11px 22px", display: "flex", alignItems: "center", gap: 14,
-    }}>
-      <div style={{
-        flex: 1, display: "flex", alignItems: "center", gap: 10, height: 42,
-        padding: "0 15px", background: UST_WASH, border: `1.5px solid ${UST_TEAL}30`,
-        borderRadius: 12,
-      }}>
-        <span style={{ color: UST_TEAL, fontSize: 16 }}>✦</span>
-        <input
-          value={value}
-          onChange={e => setValue(e.target.value)}
-          placeholder='Ask PM Agent, or type / — "generate RAID", "prepare status report", "predict delays"…'
-          style={{
-            flex: 1, border: "none", background: "transparent", outline: "none",
-            fontSize: 13, color: UST_SOFT_BLK, fontFamily: "'Aptos','Calibri',sans-serif",
-          }}
-        />
-        <span style={{
-          fontSize: 11, color: "#7A7480", border: `1px solid ${UST_BORDER}`,
-          borderRadius: 6, padding: "2px 7px", fontFamily: "'Aptos Mono','Consolas',monospace",
-        }}>⏎</span>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "11.5px", color: "#7A7480" }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#01B27C", display: "inline-block" }} />
-        AI Agent active
+    <div style={{ flexShrink: 0, background: "#fff", borderTop: `1px solid ${UST_BORDER}` }}>
+      {open && (
+        <div style={{ maxHeight: 320, overflowY: "auto", padding: "14px 22px", borderBottom: `1px solid ${UST_BORDER}`, background: UST_WASH }}>
+          {turns.map((t, i) => (
+            <div key={i} style={{ marginBottom: i === turns.length - 1 ? 0 : 16 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: "#fff", background: UST_TEAL_L, borderRadius: 6,
+                  padding: "2px 6px", flexShrink: 0, marginTop: 2,
+                }}>YOU</span>
+                <span style={{ fontSize: 13, color: UST_SOFT_BLK, fontWeight: 600 }}>{t.question}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: "#fff", background: UST_TEAL, borderRadius: 6,
+                  padding: "2px 6px", flexShrink: 0, marginTop: 2,
+                }}>AI</span>
+                {t.loading ? (
+                  <span style={{ fontSize: 13, color: "#7A7480", fontStyle: "italic" as const }}>Analyzing portfolio data…</span>
+                ) : (
+                  <span style={{ fontSize: 13, color: UST_SOFT_BLK, lineHeight: 1.55, whiteSpace: "pre-wrap" as const }}>{t.answer}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ padding: "11px 22px", display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{
+          flex: 1, display: "flex", alignItems: "center", gap: 10, height: 42,
+          padding: "0 15px", background: UST_WASH, border: `1.5px solid ${UST_TEAL}30`,
+          borderRadius: 12,
+        }}>
+          <span style={{ color: UST_TEAL, fontSize: 16 }}>✦</span>
+          <input
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && value.trim()) ask(value); }}
+            placeholder='Ask PM Agent anything about your portfolio — "which projects are at risk?", "draft a status email"…'
+            style={{
+              flex: 1, border: "none", background: "transparent", outline: "none",
+              fontSize: 13, color: UST_SOFT_BLK, fontFamily: "'Aptos','Calibri',sans-serif",
+            }}
+          />
+          <span
+            onClick={() => value.trim() && ask(value)}
+            style={{
+              fontSize: 11, color: "#7A7480", border: `1px solid ${UST_BORDER}`,
+              borderRadius: 6, padding: "2px 7px", fontFamily: "'Aptos Mono','Consolas',monospace",
+              cursor: "pointer",
+            }}
+          >⏎</span>
+        </div>
+        {turns.length === 0 ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            {suggestions.slice(0, 2).map((s) => (
+              <button
+                key={s}
+                onClick={() => ask(s)}
+                style={{
+                  fontSize: 11, color: UST_TEAL, background: `${UST_TEAL}12`, border: "none",
+                  borderRadius: 999, padding: "6px 11px", cursor: "pointer", fontWeight: 600,
+                  fontFamily: "'Aptos','Calibri',sans-serif", whiteSpace: "nowrap" as const,
+                }}
+              >{s}</button>
+            ))}
+          </div>
+        ) : (
+          <button
+            onClick={() => setOpen((o) => !o)}
+            style={{
+              fontSize: 11, color: "#7A7480", background: "transparent", border: `1px solid ${UST_BORDER}`,
+              borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontWeight: 600, flexShrink: 0,
+            }}
+          >{open ? "Hide" : "Show"} ({turns.length})</button>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "11.5px", color: "#7A7480", flexShrink: 0 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#01B27C", display: "inline-block" }} />
+          AI Agent active
+        </div>
       </div>
     </div>
   );
@@ -195,7 +288,7 @@ export function AppShell({
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           {children}
         </div>
-        <DockedAIBar />
+        <DockedAIBar role={role} />
       </div>
     </div>
   );

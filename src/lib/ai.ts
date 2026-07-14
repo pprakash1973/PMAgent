@@ -227,6 +227,41 @@ Reference PMBOK processes, knowledge areas, and principles where relevant.`,
   return content.text;
 }
 
+export async function askPortfolio(
+  question: string,
+  context: Record<string, unknown>,
+  role: string
+): Promise<string> {
+  const roleGuidance: Record<string, string> = {
+    pm: "The user is a Project Manager. Focus answers on their own projects: schedule/budget risk, next actions, drafting artifacts or stakeholder communications on their behalf.",
+    delivery_manager: "The user is a Delivery Manager overseeing a portfolio. Focus on cross-project patterns, resource allocation and utilization, at-risk projects needing intervention, and portfolio-level recommendations.",
+    delivery_head: "The user is a Delivery/Practice Head (executive). Be concise and numbers-first. Lead with the bottom line (cost, risk, delivery health), flag anything needing executive decision, and quantify impact in dollars where possible.",
+    admin: "The user is an org administrator with full visibility. Answer with portfolio-wide context, calling out governance or process gaps where relevant.",
+  };
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1200,
+    system: `You are the PM Agent portfolio copilot — a senior PMO AI with PMBOK 6th/7th edition expertise, embedded across a portfolio delivery platform.
+${roleGuidance[role] ?? roleGuidance.pm}
+You have access to live portfolio data (projects, health, budget, risks, issues, milestones) provided as context below.
+Answer directly and concisely using only the data provided — never fabricate figures, names, or dates not present in context.
+If asked to draft something (an email, a message, a summary), produce it ready to send/use.
+If the answer requires data not present in context, say what's missing rather than guessing.
+Use markdown formatting (bold, bullet lists) sparingly for readability in a chat UI.`,
+    messages: [
+      {
+        role: "user",
+        content: `Portfolio context:\n${JSON.stringify(context, null, 2)}\n\nQuestion: ${question}`,
+      },
+    ],
+  });
+
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response");
+  return content.text;
+}
+
 function buildArtifactPrompt(
   artifactType: string,
   projectContext: Record<string, unknown>,

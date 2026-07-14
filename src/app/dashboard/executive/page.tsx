@@ -4,6 +4,9 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, methodologyLabel } from "@/lib/utils";
 import { HealthDonut, BudgetBar, MethodologyBar, RiskBar } from "@/components/executive-charts";
+import { getProductivityStatsForUser } from "@/lib/productivity";
+import { ProductivityMeter } from "@/components/productivity-meter";
+import { SteeringDeckGenerator } from "@/components/steering-deck-generator";
 
 const CAN_EXECUTIVE = ["delivery_head", "admin"];
 
@@ -60,13 +63,21 @@ export default async function ExecutivePage() {
     .map((p) => ({ name: p.name.length > 20 ? p.name.slice(0, 18) + "…" : p.name, value: p._count.risks }));
 
   const atRisk = projects.filter((p) => p.healthStatus === "amber" || p.healthStatus === "red");
+  const productivityStats = await getProductivityStatsForUser(user);
 
   return (
     <div style={{ padding: "26px 28px 48px" }}>
       {/* Header */}
+      <div style={{ marginBottom: 22, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1d24" }}>Executive Overview</div>
+          <div style={{ fontSize: 13, color: "#8a909c", marginTop: 3 }}>Organization-wide delivery health and financial performance</div>
+        </div>
+        <SteeringDeckGenerator projects={projects.map((p) => ({ id: p.id, name: p.name, healthStatus: p.healthStatus }))} />
+      </div>
+
       <div style={{ marginBottom: 22 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1d24" }}>Executive Overview</div>
-        <div style={{ fontSize: 13, color: "#8a909c", marginTop: 3 }}>Organization-wide delivery health and financial performance</div>
+        <ProductivityMeter stats={productivityStats} />
       </div>
 
       {/* KPI strip */}
