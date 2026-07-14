@@ -4,14 +4,14 @@ import Link from "next/link";
 import { formatDate, formatCurrency, methodologyLabel } from "@/lib/utils";
 
 function ragColor(s: string) {
-  if (s === "green") return "#158a5a";
-  if (s === "amber") return "#c17d12";
-  return "#cf3f3a";
+  if (s === "green") return "#007a55";
+  if (s === "amber") return "#B07C10";
+  return "#c0392b";
 }
 function ragBg(s: string) {
-  if (s === "green") return "#e3f3ea";
-  if (s === "amber") return "#fbf0da";
-  return "#fbe4e2";
+  if (s === "green") return "#D6F5EC";
+  if (s === "amber") return "#F9EDD1";
+  return "#FEDDDA";
 }
 function ragLabel(s: string) {
   if (s === "green") return "On Track";
@@ -49,8 +49,8 @@ export default async function ProjectsPage() {
         <Link href="/dashboard/projects/new" style={{ textDecoration: "none" }}>
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 16px",
-            background: "#4f5bd5", color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 600,
-            boxShadow: "0 2px 6px rgba(79,91,213,.3)",
+            background: "#006E74", color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 600,
+            boxShadow: "0 2px 6px rgba(0,110,116,.3)",
           }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg>
             New Project
@@ -65,16 +65,16 @@ export default async function ProjectsPage() {
         }}>
           <div style={{
             width: 60, height: 60, borderRadius: 16, margin: "0 auto 18px",
-            background: "#eef0fc", display: "flex", alignItems: "center", justifyContent: "center",
+            background: "#E0F2F3", display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#4f5bd5" strokeWidth="1.7" /><path d="M3 9h18M8 4v5" stroke="#4f5bd5" strokeWidth="1.7" /></svg>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#006E74" strokeWidth="1.7" /><path d="M3 9h18M8 4v5" stroke="#006E74" strokeWidth="1.7" /></svg>
           </div>
           <div style={{ fontSize: 16, fontWeight: 600, color: "#1a1d24", marginBottom: 6 }}>No projects yet</div>
           <div style={{ fontSize: 13, color: "#8a909c", marginBottom: 22 }}>Create your first project to get started</div>
           <Link href="/dashboard/projects/new" style={{ textDecoration: "none" }}>
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 7, height: 38, padding: "0 16px",
-              background: "#4f5bd5", color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 600,
+              background: "#006E74", color: "#fff", borderRadius: 10, fontSize: 13, fontWeight: 600,
             }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg>
               Create Project
@@ -119,7 +119,7 @@ export default async function ProjectsPage() {
                       </span>
                     ))}
                     {project.budget && (
-                      <span className="mono" style={{ fontSize: 12, color: "#158a5a", fontWeight: 600 }}>
+                      <span className="mono" style={{ fontSize: 12, color: "#01B27C", fontWeight: 600 }}>
                         {formatCurrency(project.budget, project.currency)}
                       </span>
                     )}

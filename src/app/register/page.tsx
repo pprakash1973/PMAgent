@@ -43,7 +43,7 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-950 via-blue-900 to-blue-800 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#003C51] via-[#006E74] to-[#0097AC] p-4">
         <Card className="w-full max-w-md text-center p-8">
           <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Account created!</h2>
@@ -54,15 +54,15 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-950 via-blue-900 to-blue-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#003C51] via-[#006E74] to-[#0097AC] p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3 text-white">
           <div className="bg-white/10 rounded-2xl p-4 backdrop-blur">
-            <BriefcaseIcon className="w-10 h-10 text-blue-200" />
+            <BriefcaseIcon className="w-10 h-10 text-[#DBD3BD]" />
           </div>
           <div className="text-center">
             <h1 className="text-2xl font-bold">PM Agent</h1>
-            <p className="text-blue-200 text-sm mt-1">Create your organization</p>
+            <p className="text-[#DBD3BD] text-sm mt-1">Create your organization</p>
           </div>
         </div>
 
@@ -103,7 +103,7 @@ export default function RegisterPage() {
               </Button>
               <p className="text-sm text-slate-500 text-center">
                 Already have an account?{" "}
-                <Link href="/login" className="text-blue-700 font-medium hover:underline">Sign in</Link>
+                <Link href="/login" className="text-[#006E74] font-medium hover:underline">Sign in</Link>
               </p>
             </CardFooter>
           </form>

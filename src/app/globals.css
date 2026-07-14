@@ -1,37 +1,57 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 :root {
-  /* Design tokens from wireframe */
-  --bg: #eef0f3;
-  --rail: #1b1e27;
-  --primary: #4f5bd5;
-  --primary-light: #eef0fc;
-  --primary-border: #cfd4f5;
-  --green: #158a5a;
-  --green-light: #e3f3ea;
-  --amber: #c17d12;
-  --amber-light: #fbf0da;
-  --red: #cf3f3a;
-  --red-light: #fbe4e2;
-  --border: #e2e5ea;
-  --border-light: #eceef2;
-  --surface: #ffffff;
-  --surface2: #f7f8fa;
-  --text: #1a1d24;
-  --text2: #5b616e;
-  --text3: #8a909c;
-  --ai-grad: linear-gradient(160deg, #f4f5ff, #eef0fc);
+  /* ── UST Brand Palette ── */
+  /* Primary */
+  --ust-dark-teal:   #006E74;
+  --ust-light-teal:  #0097AC;
+  --ust-soft-black:  #231F20;
+  --ust-white:       #FFFFFF;
+
+  /* Secondary */
+  --ust-purple:      #881E87;
+  --ust-green:       #01B27C;
+  --ust-petrol:      #003C51;
+  --ust-dark-gray:   #7A7480;
+  --ust-orange:      #FC6A59;
+  --ust-dark-sand:   #DBD3BD;
+
+  /* Washes */
+  --ust-wash-light:  #F2F7F8;
+  --ust-wash-mid:    #D7E0E3;
+  --ust-wash-dark:   #C2BCBE;
+  --ust-sand:        #ECECEL;
+
+  /* ── Design Tokens (mapped to UST) ── */
+  --bg:             #F2F7F8;
+  --rail:           #003C51;
+  --primary:        #006E74;
+  --primary-light:  #E0F2F3;
+  --primary-border: #A3D4D7;
+  --green:          #01B27C;
+  --green-light:    #D6F5EC;
+  --amber:          #B07C10;
+  --amber-light:    #F9EDD1;
+  --red:            #FC6A59;
+  --red-light:      #FEDDDA;
+  --border:         #D7E0E3;
+  --border-light:   #E8EFF1;
+  --surface:        #FFFFFF;
+  --surface2:       #F2F7F8;
+  --text:           #231F20;
+  --text2:          #7A7480;
+  --text3:          #9EA3A9;
+  --ai-grad:        linear-gradient(160deg, #E0F2F3, #D7E0E3);
 
   /* legacy compat */
-  --background: #eef0f3;
-  --foreground: #1a1d24;
-  --muted: #f7f8fa;
-  --muted-foreground: #8a909c;
-  --card: #ffffff;
-  --card-foreground: #1a1d24;
-  --destructive: #cf3f3a;
-  --radius: 0.5rem;
+  --background:         #F2F7F8;
+  --foreground:         #231F20;
+  --muted:              #F2F7F8;
+  --muted-foreground:   #7A7480;
+  --card:               #FFFFFF;
+  --card-foreground:    #231F20;
+  --destructive:        #FC6A59;
+  --radius:             0.5rem;
 }
 
 * { box-sizing: border-box; }
@@ -39,20 +59,21 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  /* Aptos is available on Windows 11; Calibri is the approved fallback */
+  font-family: 'Aptos', 'Calibri', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   margin: 0;
 }
 
-.mono { font-family: 'IBM Plex Mono', monospace; }
+.mono { font-family: 'Aptos Mono', 'Consolas', monospace; }
 
 ::-webkit-scrollbar { width: 7px; height: 7px; }
-::-webkit-scrollbar-thumb { background: #c9cdd6; border-radius: 6px; }
+::-webkit-scrollbar-thumb { background: var(--ust-wash-mid); border-radius: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* Badge variants */
-.badge-green  { color: var(--green);  background: var(--green-light);  }
+/* Badge variants — UST RAG mapping */
+.badge-green  { color: #007a55;  background: var(--green-light);  }
 .badge-amber  { color: var(--amber);  background: var(--amber-light);  }
-.badge-red    { color: var(--red);    background: var(--red-light);    }
+.badge-red    { color: #c0392b;  background: var(--red-light);    }
 .badge-indigo { color: var(--primary); background: var(--primary-light); }
 .badge-gray   { color: var(--text2);  background: var(--surface2);     }

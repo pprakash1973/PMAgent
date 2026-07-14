@@ -4,10 +4,16 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useState } from "react";
 
-// Role-based visibility. pm sees projects only; delivery_manager also sees the
-// portfolio; delivery_head (and admin) additionally see the executive view.
 const CAN_PORTFOLIO = ["delivery_manager", "delivery_head", "admin"];
 const CAN_EXECUTIVE = ["delivery_head", "admin"];
+
+// UST brand tokens
+const UST_PETROL    = "#003C51";
+const UST_TEAL      = "#006E74";
+const UST_TEAL_L    = "#0097AC";
+const UST_WASH      = "#F2F7F8";
+const UST_SOFT_BLK  = "#231F20";
+const UST_BORDER    = "#D7E0E3";
 
 function initialsOf(name: string) {
   const parts = (name || "").trim().split(/\s+/).filter(Boolean);
@@ -29,9 +35,9 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
       <Link href={href} style={{
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         gap: 6, width: 56, height: 56, borderRadius: 14, cursor: "pointer",
-        fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "9.5px", fontWeight: 600,
-        background: active ? "rgba(255,255,255,0.14)" : "transparent",
-        color: active ? "#ffffff" : "#9aa0ad",
+        fontFamily: "'Aptos','Calibri',sans-serif", fontSize: "9.5px", fontWeight: 600,
+        background: active ? "rgba(255,255,255,0.15)" : "transparent",
+        color: active ? "#ffffff" : "rgba(255,255,255,0.55)",
         textDecoration: "none", border: "none", transition: "background .15s,color .15s",
       }}>
         {icon}
@@ -42,19 +48,19 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
 
   return (
     <div style={{
-      width: 78, background: "#1b1e27", display: "flex", flexDirection: "column",
+      width: 78, background: UST_PETROL, display: "flex", flexDirection: "column",
       alignItems: "center", padding: "16px 0", gap: 8, flexShrink: 0,
     }}>
-      {/* Logo */}
+      {/* UST Logo mark */}
       <div style={{
         width: 38, height: 38, borderRadius: 11,
-        background: "linear-gradient(135deg,#5b67e0,#4f5bd5)",
+        background: UST_TEAL,
         display: "flex", alignItems: "center", justifyContent: "center",
-        marginBottom: 14, boxShadow: "0 3px 10px rgba(79,91,213,.4)",
+        marginBottom: 14, boxShadow: "0 3px 10px rgba(0,110,116,.45)",
       }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-          <path d="M12 3l7 4v10l-7 4-7-4V7l7-4z" stroke="#fff" strokeWidth="1.7" strokeLinejoin="round"/>
-          <path d="M12 12l7-4M12 12v9M12 12L5 8" stroke="#fff" strokeWidth="1.7" strokeLinejoin="round"/>
+        <svg width="22" height="14" viewBox="0 0 44 28" fill="none">
+          {/* UST wordmark simplified */}
+          <text x="0" y="20" fontFamily="'Aptos','Calibri',sans-serif" fontWeight="700" fontSize="18" fill="#fff">UST</text>
         </svg>
       </div>
 
@@ -81,11 +87,11 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
         style={{
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           gap: 5, width: 56, height: 52, borderRadius: 14, cursor: "pointer",
-          background: "transparent", border: "none", color: "#9aa0ad",
-          fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "9.5px", fontWeight: 600,
+          background: "transparent", border: "none", color: "rgba(255,255,255,0.55)",
+          fontFamily: "'Aptos','Calibri',sans-serif", fontSize: "9.5px", fontWeight: 600,
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.color = "#fff"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#9aa0ad"; }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 17l5-5-5-5M20 12H9M9 4H6a2 2 0 00-2 2v12a2 2 0 002 2h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
         Sign out
@@ -95,9 +101,9 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
       <div
         title={userName}
         style={{
-          width: 34, height: 34, borderRadius: "50%", background: "#3a3f4d",
-          color: "#dfe2e8", display: "flex", alignItems: "center", justifyContent: "center",
-          font: "600 12px 'IBM Plex Sans'", marginTop: 6, marginBottom: 2,
+          width: 34, height: 34, borderRadius: "50%", background: UST_TEAL_L,
+          color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+          font: "600 12px 'Aptos','Calibri',sans-serif", marginTop: 6, marginBottom: 2,
         }}
       >{initialsOf(userName)}</div>
     </div>
@@ -108,14 +114,14 @@ function TopBar({ children }: { children?: React.ReactNode }) {
   const router = useRouter();
   return (
     <div style={{
-      height: 60, flexShrink: 0, background: "#fff", borderBottom: "1px solid #e2e5ea",
+      height: 60, flexShrink: 0, background: "#fff", borderBottom: `1px solid ${UST_BORDER}`,
       display: "flex", alignItems: "center", padding: "0 22px", gap: 16,
     }}>
       {children}
       <div style={{ flex: 1 }} />
       <div style={{
         display: "flex", alignItems: "center", gap: 8, height: 36, padding: "0 12px",
-        background: "#f2f4f7", border: "1px solid #e2e5ea", borderRadius: 9, width: 220, color: "#8a909c",
+        background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 9, width: 220, color: "#7A7480",
       }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
         <span style={{ fontSize: "12.5px" }}>Search or ask…</span>
@@ -123,9 +129,9 @@ function TopBar({ children }: { children?: React.ReactNode }) {
       <button
         onClick={() => router.push("/dashboard/projects/new")}
         style={{
-          height: 36, padding: "0 15px", background: "#4f5bd5", color: "#fff", border: "none",
-          borderRadius: 9, font: "600 12.5px 'IBM Plex Sans'", cursor: "pointer",
-          display: "flex", alignItems: "center", gap: 7, boxShadow: "0 2px 6px rgba(79,91,213,.3)",
+          height: 36, padding: "0 15px", background: UST_TEAL, color: "#fff", border: "none",
+          borderRadius: 9, font: "600 12.5px 'Aptos','Calibri',sans-serif", cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 7, boxShadow: "0 2px 6px rgba(0,110,116,.3)",
         }}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
@@ -139,31 +145,31 @@ function DockedAIBar() {
   const [value, setValue] = useState("");
   return (
     <div style={{
-      flexShrink: 0, background: "#fff", borderTop: "1px solid #e2e5ea",
+      flexShrink: 0, background: "#fff", borderTop: `1px solid ${UST_BORDER}`,
       padding: "11px 22px", display: "flex", alignItems: "center", gap: 14,
     }}>
       <div style={{
         flex: 1, display: "flex", alignItems: "center", gap: 10, height: 42,
-        padding: "0 15px", background: "#f7f8fa", border: "1.5px solid #cfd4f5",
+        padding: "0 15px", background: UST_WASH, border: `1.5px solid ${UST_TEAL}30`,
         borderRadius: 12,
       }}>
-        <span style={{ color: "#4f5bd5", fontSize: 16 }}>✦</span>
+        <span style={{ color: UST_TEAL, fontSize: 16 }}>✦</span>
         <input
           value={value}
           onChange={e => setValue(e.target.value)}
           placeholder='Ask PM Agent, or type / — "generate RAID", "prepare status report", "predict delays"…'
           style={{
             flex: 1, border: "none", background: "transparent", outline: "none",
-            fontSize: 13, color: "#1a1d24", fontFamily: "'IBM Plex Sans',sans-serif",
+            fontSize: 13, color: UST_SOFT_BLK, fontFamily: "'Aptos','Calibri',sans-serif",
           }}
         />
         <span style={{
-          fontSize: 11, color: "#8a909c", border: "1px solid #d3d7de",
-          borderRadius: 6, padding: "2px 7px", fontFamily: "'IBM Plex Mono',monospace",
+          fontSize: 11, color: "#7A7480", border: `1px solid ${UST_BORDER}`,
+          borderRadius: 6, padding: "2px 7px", fontFamily: "'Aptos Mono','Consolas',monospace",
         }}>⏎</span>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "11.5px", color: "#5b616e" }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#158a5a", display: "inline-block" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: "11.5px", color: "#7A7480" }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#01B27C", display: "inline-block" }} />
         AI Agent active
       </div>
     </div>

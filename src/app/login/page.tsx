@@ -47,7 +47,7 @@ export default function LoginPage() {
           justifyContent: "space-between",
           padding: "48px 56px",
           overflow: "hidden",
-          background: "linear-gradient(150deg,#1b1e27 0%,#2d327a 55%,#4f5bd5 100%)",
+          background: "linear-gradient(150deg,#003C51 0%,#006E74 60%,#0097AC 100%)",
         }}
         className="login-photo-panel"
       >
@@ -72,7 +72,7 @@ export default function LoginPage() {
             position: "absolute",
             inset: 0,
             background:
-              "linear-gradient(155deg, rgba(20,22,31,0.72) 0%, rgba(27,30,39,0.55) 40%, rgba(79,91,213,0.78) 100%)",
+              "linear-gradient(155deg, rgba(0,60,81,0.72) 0%, rgba(0,60,81,0.45) 40%, rgba(0,110,116,0.72) 100%)",
           }}
         />
 
@@ -83,11 +83,11 @@ export default function LoginPage() {
               width: 42,
               height: 42,
               borderRadius: 12,
-              background: "linear-gradient(135deg,#5b67e0,#4f5bd5)",
+              background: "linear-gradient(135deg,#0097AC,#006E74)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: "0 4px 14px rgba(79,91,213,.45)",
+              boxShadow: "0 4px 14px rgba(0,110,116,.45)",
             }}
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -211,7 +211,7 @@ export default function LoginPage() {
             </Button>
             <p style={{ fontSize: 13, color: "#5b616e", textAlign: "center", marginTop: 2 }}>
               No account?{" "}
-              <Link href="/register" style={{ color: "#4f5bd5", fontWeight: 600, textDecoration: "none" }}>
+              <Link href="/register" style={{ color: "#006E74", fontWeight: 600, textDecoration: "none" }}>
                 Register your organization
               </Link>
             </p>
