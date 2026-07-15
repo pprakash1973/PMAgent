@@ -26,6 +26,15 @@ function ragLabel(s: string) {
   return "Critical";
 }
 
+// Effective health: live SPI always wins — never show green when schedule is at risk
+function effectiveHealth(storedHealth: string, liveSpi: number | null): string {
+  if (liveSpi !== null) {
+    if (liveSpi < 0.8) return "red";
+    if (liveSpi < 0.9 && storedHealth === "green") return "amber";
+  }
+  return storedHealth;
+}
+
 function spiColor(spi: number | null) {
   if (spi === null) return { text: "#8a909c", bg: "#f7f8fa" };
   if (spi >= 1) return { text: "#158a5a", bg: "#e3f3ea" };
@@ -74,10 +83,13 @@ export default async function ExecutivePage() {
     liveEVM: computeProjectEVM(p.scheduleTasks),
   }));
 
-  // Portfolio KPIs
+  // Portfolio KPIs — use effectiveHealth so SPI-derived degradation shows immediately
   const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
   const health = { green: 0, amber: 0, red: 0 };
-  for (const p of projects) { const h = p.healthStatus as keyof typeof health; if (h in health) health[h]++; }
+  for (const p of projectsWithEVM) {
+    const h = effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null) as keyof typeof health;
+    if (h in health) health[h]++;
+  }
   const healthPct = projects.length ? Math.round((health.green / projects.length) * 100) : 0;
 
   // Live SPI average (from schedule tasks where available, else fall back to status report)
@@ -86,11 +98,13 @@ export default async function ExecutivePage() {
     .filter((v): v is number => v != null);
   const avgSPI = spiVals.length ? (spiVals.reduce((a, b) => a + b, 0) / spiVals.length) : null;
 
-  const criticalProjects = projectsWithEVM.filter(p => {
-    const spi = p.liveEVM?.spi ?? p.statusReports[0]?.healthScore?.spi;
-    return p.healthStatus === "red" || (spi != null && spi < 0.8);
+  const criticalProjects = projectsWithEVM.filter(p =>
+    effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null) === "red"
+  );
+  const atRiskProjects = projectsWithEVM.filter(p => {
+    const eh = effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null);
+    return eh === "amber" || eh === "red";
   });
-  const atRiskProjects = projectsWithEVM.filter(p => p.healthStatus === "amber" || p.healthStatus === "red");
 
   const totalTeam = projects.reduce((s, p) => s + (p.teamSize || 0), 0);
 
@@ -170,7 +184,7 @@ export default async function ExecutivePage() {
                         <div style={{ fontSize: 10, color: "#8a909c" }}>SPI</div>
                       </div>
                     )}
-                    <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 6, padding: "4px 11px" }}>{ragLabel(p.healthStatus)}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null)), background: ragBg(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null)), borderRadius: 6, padding: "4px 11px" }}>{ragLabel(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null))}</span>
                     <span style={{ fontSize: 11.5, color: "#8a909c" }}>→</span>
                   </div>
                 </Link>
@@ -242,7 +256,7 @@ export default async function ExecutivePage() {
                         ) : <span style={{ color: "#c5cadb" }}>—</span>}
                       </td>
                       <td style={{ padding: "13px 14px" }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 6, padding: "3px 9px" }}>{ragLabel(p.healthStatus)}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null)), background: ragBg(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null)), borderRadius: 6, padding: "3px 9px" }}>{ragLabel(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null))}</span>
                       </td>
                       <td style={{ padding: "13px 14px", color: p._count.risks > 3 ? "#cf3f3a" : "#5b616e", fontWeight: p._count.risks > 3 ? 600 : 400 }}>{p._count.risks}</td>
                     </tr>
@@ -306,17 +320,20 @@ export default async function ExecutivePage() {
           {atRiskProjects.length === 0
             ? <div style={{ fontSize: 13, color: "#158a5a" }}>✓ All projects on track. No interventions required.</div>
             : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {atRiskProjects.slice(0, 4).map(p => (
+              {atRiskProjects.slice(0, 4).map(p => {
+                const eh = effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null);
+                return (
                 <Link key={p.id} href={`/dashboard/projects/${p.id}`} style={{ textDecoration: "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", border: `1px solid ${ragBg(p.healthStatus)}`, borderLeft: `3px solid ${ragColor(p.healthStatus)}`, borderRadius: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", border: `1px solid ${ragBg(eh)}`, borderLeft: `3px solid ${ragColor(eh)}`, borderRadius: 8 }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 600, color: "#1a1d24" }}>{p.name}</div>
                       <div style={{ fontSize: 11, color: "#8a909c", marginTop: 1 }}>{p.pmOwner.fullName}</div>
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(p.healthStatus), background: ragBg(p.healthStatus), borderRadius: 6, padding: "3px 9px" }}>{ragLabel(p.healthStatus)}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: ragColor(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null)), background: ragBg(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null)), borderRadius: 6, padding: "3px 9px" }}>{ragLabel(effectiveHealth(p.healthStatus, p.liveEVM?.spi ?? null))}</span>
                   </div>
                 </Link>
-              ))}
+                );
+              })}
             </div>
           }
         </div>
