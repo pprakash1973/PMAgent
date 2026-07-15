@@ -432,6 +432,142 @@ function RAIDTab({ project }: { project: any }) {
   );
 }
 
+// ── Recovery panel ─────────────────────────────────────────────────────────────
+
+type RecoveryStep = { title: string; action: string; effort: string; impact: string };
+type RecoveryPlan = { headline: string; steps: RecoveryStep[]; estimatedRecovery: string };
+
+function effortColor(e: string) {
+  if (e === "Low") return { color: C.green, bg: C.greenLight };
+  if (e === "High") return { color: C.red, bg: C.redLight };
+  return { color: C.amber, bg: C.amberLight };
+}
+
+function RecoveryPanel({ projectId, spi }: { projectId: string; spi: number }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [plan, setPlan] = useState<RecoveryPlan | null>(null);
+  const [err, setErr] = useState("");
+
+  async function load() {
+    if (plan) { setOpen(true); return; }
+    setOpen(true);
+    setLoading(true);
+    setErr("");
+    try {
+      const res = await fetch(`/api/projects/${projectId}/schedule/recovery`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setPlan(data);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      {/* Alert banner */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "12px 16px", background: C.redLight,
+        border: `1px solid ${C.red}40`, borderRadius: open ? "12px 12px 0 0" : 12,
+      }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: "50%", background: C.red,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.red }}>Schedule at risk — SPI {spi.toFixed(2)}</div>
+          <div style={{ fontSize: 11.5, color: C.text2, marginTop: 1 }}>
+            Project is significantly behind schedule. SPI below 0.80 requires corrective action.
+          </div>
+        </div>
+        <button
+          onClick={load}
+          style={{
+            height: 34, padding: "0 16px",
+            background: C.red, color: "#fff",
+            border: "none", borderRadius: 8,
+            font: `700 12.5px 'IBM Plex Sans',sans-serif`, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 7, flexShrink: 0,
+          }}
+        >
+          ⚡ Get back on track
+        </button>
+        {open && <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, padding: "0 4px" }}>×</button>}
+      </div>
+
+      {/* Recovery plan panel */}
+      {open && (
+        <div style={{
+          border: `1px solid ${C.red}40`, borderTop: "none",
+          borderRadius: "0 0 12px 12px",
+          background: "#fffcfc", padding: "18px 20px",
+        }}>
+          {loading && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, color: C.text3, fontSize: 13 }}>
+              <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #ccc", borderTopColor: C.red, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+              Analysing schedule and generating recovery plan…
+            </div>
+          )}
+          {err && <div style={{ fontSize: 13, color: C.red }}>{err}</div>}
+          {plan && (
+            <>
+              {/* Headline */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18 }}>
+                <span style={{ color: C.primary, fontSize: 16, flexShrink: 0 }}>✦</span>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: C.primary, textTransform: "uppercase" as const, marginBottom: 4 }}>AI Recovery Assessment</div>
+                  <p style={{ fontSize: 13, color: C.text, lineHeight: 1.6, margin: 0 }}>{plan.headline}</p>
+                </div>
+              </div>
+
+              {/* Steps */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+                {plan.steps.map((s, i) => {
+                  const effortC = effortColor(s.effort);
+                  const impactC = effortColor(s.impact);
+                  return (
+                    <div key={i} style={{
+                      display: "flex", gap: 14,
+                      padding: "13px 15px",
+                      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+                    }}>
+                      <div style={{
+                        width: 26, height: 26, borderRadius: "50%", background: C.primary,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        font: `700 12px 'IBM Plex Mono'`, color: "#fff", flexShrink: 0, marginTop: 1,
+                      }}>{i + 1}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{s.title}</div>
+                        <div style={{ fontSize: 12.5, color: C.text2, lineHeight: 1.5 }}>{s.action}</div>
+                        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: effortC.color, background: effortC.bg, borderRadius: 5, padding: "2px 8px" }}>Effort: {s.effort}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: impactC.color, background: impactC.bg, borderRadius: 5, padding: "2px 8px" }}>Impact: {s.impact}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Recovery estimate */}
+              <div style={{ padding: "10px 14px", background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, fontSize: 12.5, color: C.primary }}>
+                <strong>Estimated recovery:</strong> {plan.estimatedRecovery}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Schedule tab ───────────────────────────────────────────────────────────────
 
 function fmt(d: Date | string | null | undefined) {
@@ -622,6 +758,11 @@ function ScheduleTab({ project }: { project: any }) {
               </div>
             ))}
           </div>
+
+          {/* ── Recovery alert ── */}
+          {kpi?.spi != null && kpi.spi < 0.8 && (
+            <RecoveryPanel projectId={project.id} spi={kpi.spi} />
+          )}
 
           {/* ── Gantt ── */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>

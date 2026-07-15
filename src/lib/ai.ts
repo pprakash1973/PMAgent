@@ -146,13 +146,24 @@ Rules:
 
 export async function generateStatusSummary(
   rawInput: Record<string, unknown>,
-  projectContext: Record<string, unknown>
+  projectContext: Record<string, unknown>,
+  liveEVM?: { pv: number; ev: number; sv: number; spi: number | null; overdueTasks: number }
 ): Promise<{ summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null }> {
+  const evmSection = liveEVM
+    ? `\n\nLIVE SCHEDULE EVM (computed from actual task progress — use these numbers directly in your report, do not invent alternatives):
+- Planned Value (PV): ${liveEVM.pv.toFixed(1)} task-days
+- Earned Value (EV): ${liveEVM.ev.toFixed(1)} task-days
+- Schedule Variance (SV): ${liveEVM.sv > 0 ? "+" : ""}${liveEVM.sv.toFixed(1)} task-days
+- Schedule Performance Index (SPI): ${liveEVM.spi != null ? liveEVM.spi.toFixed(2) : "N/A"}${liveEVM.spi != null ? (liveEVM.spi >= 1 ? " (on/ahead of schedule)" : liveEVM.spi >= 0.85 ? " (slight delay)" : " (significantly behind schedule)") : ""}
+- Overdue tasks: ${liveEVM.overdueTasks}`
+    : "";
+
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 6000,
     system: `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
 Apply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.
+When live EVM data is provided, use those exact numbers in metricsNarrative and spi field — do not override them.
 
 Return JSON with:
 - summary (string): 2–3 sentence executive summary, stakeholder-ready
@@ -161,18 +172,43 @@ Return JSON with:
 - recommendations (array of strings): 2–4 specific, actionable recommendations for the PM
 - accomplishments (array of strings): bulleted accomplishments extracted from answers
 - nextWeekPlan (array of strings): bulleted plan for next week extracted from answers
-- metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status
+- metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status; include SPI and SV if EVM data is provided
 - cpi (number | null): cost performance index if derivable from answers, else null
-- spi (number | null): schedule performance index override if PM stated one, else null`,
+- spi (number | null): use the live SPI value if provided, else derive from PM answers, else null`,
     messages: [
       {
         role: "user",
-        content: `Project context:\n${JSON.stringify(projectContext, null, 2)}\n\nPM Q&A responses:\n${JSON.stringify(rawInput, null, 2)}\n\nGenerate the Weekly Status Report. Return JSON only.`,
+        content: `Project context:\n${JSON.stringify(projectContext, null, 2)}${evmSection}\n\nPM Q&A responses:\n${JSON.stringify(rawInput, null, 2)}\n\nGenerate the Weekly Status Report. Return JSON only.`,
       },
     ],
   });
 
   return parseAIJson(message, "status-summary") as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null };
+}
+
+export async function generateScheduleRecovery(
+  projectContext: Record<string, unknown>,
+  evm: { pv: number; ev: number; sv: number; spi: number; overdueTasks: number; overdueTaskNames: string[] },
+  tasks: { name: string; phase: string; percentComplete: number; baselineDays: number; status: string }[]
+): Promise<{ headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string }> {
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4000,
+    system: `You are a PMO recovery specialist. A project is behind schedule (SPI < 0.8) and the PM needs a concrete recovery plan.
+Apply PMBOK schedule compression techniques: fast-tracking, crashing, scope reduction, resource reallocation.
+Return JSON with:
+- headline (string): 1-sentence diagnosis of the delay root cause based on the data
+- steps (array of 4–6 objects): each has title (short action name), action (specific what-to-do in 2 sentences), effort ("Low"|"Medium"|"High"), impact ("Low"|"Medium"|"High")
+- estimatedRecovery (string): realistic estimate of how many days/weeks recovery will take if steps are followed`,
+    messages: [
+      {
+        role: "user",
+        content: `Project: ${JSON.stringify(projectContext)}\n\nEVM metrics: SPI=${evm.spi}, SV=${evm.sv} task-days, PV=${evm.pv}, EV=${evm.ev}, Overdue tasks: ${evm.overdueTasks} (${evm.overdueTaskNames.join(", ")})\n\nTask breakdown (top 10): ${JSON.stringify(tasks.slice(0, 10))}\n\nGenerate recovery plan JSON only.`,
+      },
+    ],
+  });
+
+  return parseAIJson(message, "schedule-recovery") as unknown as { headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string };
 }
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
