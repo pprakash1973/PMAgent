@@ -291,6 +291,7 @@ function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
           artifacts={project.artifacts}
           selections={project.artifactSelections}
           catalog={catalog}
+          currentPhase={project.currentPhase || "initiation"}
         />
       </div>
 

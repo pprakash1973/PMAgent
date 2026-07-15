@@ -1,35 +1,96 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toaster";
-import { FileText, Wand2, Loader2, ChevronDown, ChevronUp, Eye, Sparkles, Plus, Trash2 } from "lucide-react";
+import {
+  FileText, Presentation, Users, Target, Network, Flag, Coins, AlertTriangle,
+  ShieldAlert, MessageSquare, Grid3x3, BadgeCheck, ClipboardList, AlertCircle,
+  Gavel, FileBarChart, RefreshCw, GraduationCap, FileCheck, TrendingUp, ScrollText,
+  Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Sparkles, Check, Lock,
+} from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
-import { cn } from "@/lib/utils";
+import { ARTIFACT_FORMAT } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Artifact = { id: string; artifactType: string; phase: string; status: string; content: any };
 type Selection = { artifactType: string; selectionStatus: string };
 type CatalogEntry = { type: string; label: string; phase: string };
 
+const C = {
+  primary: "#4f5bd5", primaryLight: "#eef0fc", primaryBorder: "#cfd4f5",
+  border: "#e2e5ea", borderLight: "#eceef2",
+  surface: "#fff", surface2: "#f7f8fa",
+  text: "#1a1d24", text2: "#5b616e", text3: "#8a909c", textMuted: "#a8adb8",
+  green: "#158a5a", greenLight: "#e3f3ea",
+  amber: "#c17d12", amberLight: "#fbf0da",
+  red: "#cf3f3a", redLight: "#fbe4e2",
+};
+
+const PHASE_ORDER = ["initiation", "planning", "execution", "monitoring", "closure"];
+const PHASE_META: Record<string, { label: string; color: string; bg: string }> = {
+  initiation: { label: "Initiation", color: "#0F6E56", bg: "#E1F5EE" },
+  planning:   { label: "Planning",   color: "#3C3489", bg: "#EEEDFE" },
+  execution:  { label: "Execution",  color: "#185FA5", bg: "#E6F1FB" },
+  monitoring: { label: "Monitoring", color: "#854F0B", bg: "#FAEEDA" },
+  closure:    { label: "Closure",    color: "#3B6D11", bg: "#EAF3DE" },
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ARTIFACT_ICON: Record<string, any> = {
+  initiation_deck: Presentation,
+  project_charter: ScrollText,
+  business_case: FileText,
+  stakeholder_register: Users,
+  assumption_log: ClipboardList,
+  benefits_register: TrendingUp,
+  scope_statement: Target,
+  wbs: Network,
+  milestone_plan: Flag,
+  resource_plan: Users,
+  cost_plan: Coins,
+  raid_register: AlertTriangle,
+  risk_register: ShieldAlert,
+  communication_plan: MessageSquare,
+  raci_matrix: Grid3x3,
+  quality_plan: BadgeCheck,
+  action_log: ClipboardList,
+  issue_register: AlertCircle,
+  decision_log: Gavel,
+  weekly_status: FileBarChart,
+  monthly_status: FileBarChart,
+  change_log: RefreshCw,
+  lessons_learned: GraduationCap,
+  closure_report: FileCheck,
+};
+
+function triggerDownload(url: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export function ArtifactPanel({
   projectId,
   artifacts,
   selections,
   catalog,
+  currentPhase = "initiation",
 }: {
   projectId: string;
   artifacts: Artifact[];
   selections: Selection[];
   catalog: CatalogEntry[];
+  currentPhase?: string;
 }) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [localArtifacts, setLocalArtifacts] = useState(artifacts);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [autoGenQueue, setAutoGenQueue] = useState<string[]>([]);
   const [autoGenDone, setAutoGenDone] = useState(false);
@@ -39,7 +100,6 @@ export function ArtifactPanel({
 
   const activeTypes = selections.filter((s) => s.selectionStatus === "active").map((s) => s.artifactType);
 
-  // Auto-generate core artifacts when ?autoGenerate=1 is in URL
   useEffect(() => {
     if (searchParams.get("autoGenerate") !== "1" || autoGenDone) return;
     const coreTypes = ["project_charter", "stakeholder_register", "risk_register", "wbs"];
@@ -53,7 +113,6 @@ export function ArtifactPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Process auto-gen queue one at a time
   useEffect(() => {
     if (autoGenQueue.length === 0 || generating) return;
     const next = autoGenQueue[0];
@@ -63,11 +122,10 @@ export function ArtifactPanel({
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoGenQueue, generating]);
-  const visibleCatalog = showAll ? catalog : catalog.filter((c) => activeTypes.includes(c.type) || localArtifacts.some((a) => a.artifactType === c.type));
-  const displayCatalog = showAll ? catalog : visibleCatalog.length > 0 ? visibleCatalog : catalog.slice(0, 5);
 
   async function generate(artifactType: string) {
     setGenerating(artifactType);
+    setMenuFor(null);
     try {
       const res = await fetch(`/api/projects/${projectId}/artifacts`, {
         method: "POST",
@@ -85,7 +143,7 @@ export function ArtifactPanel({
         }
         return [...prev, artifact];
       });
-      toast({ title: "Artifact generated!", description: `${artifactType.replace(/_/g, " ")} is ready` });
+      toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
     } catch {
       toast({ title: "Generation failed", description: "Please try again", variant: "destructive" });
     } finally {
@@ -113,7 +171,7 @@ export function ArtifactPanel({
         return [...prev, artifact];
       });
       setExpanded(artifactType);
-      toast({ title: "Artifact updated!", description: `AI merged your uploaded file into ${artifactType.replace(/_/g, " ")}` });
+      toast({ title: "Artifact updated", description: `AI merged your file into ${artifactType.replace(/_/g, " ")}` });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message || "Please try again", variant: "destructive" });
     } finally {
@@ -124,21 +182,20 @@ export function ArtifactPanel({
 
   async function deleteArtifact(artifactType: string) {
     const label = artifactType.replace(/_/g, " ");
+    setMenuFor(null);
     if (!window.confirm(`Delete the ${label}? This removes the generated document and its version history. You can generate or upload a new one afterwards.`)) {
       return;
     }
     setDeleting(artifactType);
     try {
-      const res = await fetch(`/api/projects/${projectId}/artifacts/${artifactType}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`/api/projects/${projectId}/artifacts/${artifactType}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Delete failed");
       }
       setLocalArtifacts((prev) => prev.filter((a) => a.artifactType !== artifactType));
       if (expanded === artifactType) setExpanded(null);
-      toast({ title: "Artifact deleted", description: `${label} was removed. You can generate or upload a new one.` });
+      toast({ title: "Artifact deleted", description: `${label} was removed.` });
     } catch (err: any) {
       toast({ title: "Delete failed", description: err.message || "Please try again", variant: "destructive" });
     } finally {
@@ -148,6 +205,7 @@ export function ArtifactPanel({
 
   function handleUploadClick(artifactType: string) {
     uploadTargetRef.current = artifactType;
+    setMenuFor(null);
     fileInputRef.current?.click();
   }
 
@@ -159,128 +217,248 @@ export function ArtifactPanel({
   }
 
   const isAutoGenerating = autoGenQueue.length > 0 || (searchParams.get("autoGenerate") === "1" && !autoGenDone && generating !== null);
+  const currentIdx = PHASE_ORDER.indexOf(currentPhase);
 
-  const phases = ["initiation", "planning", "execution", "monitoring", "closure"];
+  const generatedCount = localArtifacts.length;
+  const busy = !!generating || !!uploading;
 
   return (
-    <Card>
-      {/* Hidden file input for artifact upload */}
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px" }}>
       <input
         ref={fileInputRef}
         type="file"
-        className="hidden"
+        style={{ display: "none" }}
         accept=".xlsx,.xls,.csv,.pdf,.docx,.pptx,.txt"
         onChange={handleFileChange}
       />
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <FileText className="w-4 h-4 text-blue-500" />
-            Project Artifacts ({localArtifacts.length} generated)
-          </CardTitle>
-          <button onClick={() => setShowAll((v) => !v)} className="text-xs text-blue-700 hover:underline flex items-center gap-1">
-            {showAll ? "Show active only" : "Browse all artifacts"}
-            {showAll ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Project artifacts</div>
+          <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
+            Grouped by phase · {generatedCount} of {catalog.length} generated
+          </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {isAutoGenerating && (
-          <div className="flex items-center gap-2 text-xs text-purple-800 bg-purple-50 border border-purple-200 rounded-md px-3 py-2">
-            <Sparkles className="w-3 h-3 shrink-0 text-purple-500" />
-            Auto-generating core artifacts from your requirements document…&nbsp;
-            <span className="font-medium">
-              {generating ? generating.replace(/_/g, " ") : ""}&nbsp;
-              {autoGenQueue.length > 0 ? `(${autoGenQueue.length} remaining)` : ""}
-            </span>
-            <Loader2 className="w-3 h-3 animate-spin ml-auto shrink-0" />
-          </div>
-        )}
-        {!isAutoGenerating && generating && (
-          <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
-            <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-            Generating <span className="font-medium">{generating.replace(/_/g, " ")}</span> — this takes 20–40 seconds…
-          </div>
-        )}
-        {phases.map((phase) => {
-          const phaseItems = (showAll ? catalog : catalog.filter((c) => activeTypes.includes(c.type) || localArtifacts.some((a) => a.artifactType === c.type))).filter((c) => c.phase === phase);
-          if (phaseItems.length === 0) return null;
-          return (
-            <div key={phase}>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">{phase}</p>
-              <div className="space-y-1">
-                {phaseItems.map((entry) => {
-                  const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
-                  const isGenerating = generating === entry.type;
-                  const isExpanded = expanded === entry.type;
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          style={{
+            height: 30, padding: "0 12px", background: C.surface, color: C.text2,
+            border: `1px solid ${C.border}`, borderRadius: 8, cursor: "pointer",
+            font: `500 12px 'IBM Plex Sans',sans-serif`,
+          }}
+        >
+          {showAll ? "Show active only" : "Browse all artifacts"}
+        </button>
+      </div>
+
+      {/* Auto-gen / generating banners */}
+      {isAutoGenerating && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
+          <Sparkles style={{ width: 14, height: 14, flexShrink: 0 }} />
+          Auto-generating core artifacts…
+          <span style={{ fontWeight: 600 }}>
+            {generating ? generating.replace(/_/g, " ") : ""} {autoGenQueue.length > 0 ? `(${autoGenQueue.length} remaining)` : ""}
+          </span>
+          <Loader2 className="animate-spin" style={{ width: 14, height: 14, marginLeft: "auto", flexShrink: 0 }} />
+        </div>
+      )}
+      {!isAutoGenerating && generating && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
+          <Loader2 className="animate-spin" style={{ width: 14, height: 14, flexShrink: 0 }} />
+          Generating <span style={{ fontWeight: 600 }}>{generating.replace(/_/g, " ")}</span> — this takes 20–40 seconds…
+        </div>
+      )}
+
+      {/* Phase bands */}
+      {PHASE_ORDER.map((phase) => {
+        const phaseItems = (showAll
+          ? catalog
+          : catalog.filter((c) => activeTypes.includes(c.type) || localArtifacts.some((a) => a.artifactType === c.type))
+        ).filter((c) => c.phase === phase);
+        if (phaseItems.length === 0) return null;
+
+        const meta = PHASE_META[phase] ?? { label: phase, color: C.text2, bg: C.surface2 };
+        const phaseIdx = PHASE_ORDER.indexOf(phase);
+        const doneCount = phaseItems.filter((e) => localArtifacts.some((a) => a.artifactType === e.type)).length;
+        const isDone = currentIdx >= 0 && phaseIdx < currentIdx;
+        const isCurrent = phaseIdx === currentIdx;
+
+        const expandedInPhase = phaseItems.find((e) => e.type === expanded);
+        const expandedArtifact = expandedInPhase ? localArtifacts.find((a) => a.artifactType === expanded) : null;
+
+        return (
+          <div key={phase} style={{ marginBottom: 22 }}>
+            {/* Phase header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: meta.color, background: meta.bg, borderRadius: 6, padding: "3px 10px" }}>{meta.label}</span>
+              <span style={{ fontSize: 12, color: C.textMuted }}>
+                {doneCount} of {phaseItems.length} generated{isCurrent ? " · current phase" : ""}
+              </span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              {isDone ? (
+                <span style={{ fontSize: 11, color: C.green, display: "flex", alignItems: "center", gap: 3 }}><Check style={{ width: 13, height: 13 }} /> Gate passed</span>
+              ) : isCurrent ? (
+                <span style={{ fontSize: 11, color: C.amber, display: "flex", alignItems: "center", gap: 3 }}>In progress</span>
+              ) : (
+                <span style={{ fontSize: 11, color: C.textMuted, display: "flex", alignItems: "center", gap: 3 }}><Lock style={{ width: 12, height: 12 }} /> Upcoming</span>
+              )}
+            </div>
+
+            {/* Cards grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(158px, 1fr))", gap: 10 }}>
+              {phaseItems.map((entry) => {
+                const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
+                const Icon = ARTIFACT_ICON[entry.type] ?? FileText;
+                const isGen = generating === entry.type;
+                const isUp = uploading === entry.type;
+                const isDel = deleting === entry.type;
+                const isExpanded = expanded === entry.type;
+                const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
+
+                if (!artifact && !isGen) {
+                  // Not generated — dashed card
                   return (
-                    <div key={entry.type} className="rounded-md border border-slate-200 overflow-hidden">
-                      <div className="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
-                        <div className="flex items-center gap-2">
-                          <FileText className={cn("w-3.5 h-3.5", artifact ? "text-blue-600" : "text-slate-300")} />
-                          <span className="text-sm text-slate-700">{entry.label}</span>
-                          {artifact && (
-                            <Badge variant={artifact.status === "approved" ? "green" : "secondary"} className="text-xs">
-                              {artifact.status}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {artifact && (
-                            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={() => setExpanded(isExpanded ? null : entry.type)}>
-                              <Eye className="w-3 h-3" />
-                              {isExpanded ? "Hide" : "View"}
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs gap-1 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
-                            onClick={() => handleUploadClick(entry.type)}
-                            disabled={!!uploading || !!generating}
-                            title="Upload edited file — AI will merge it into this artifact"
-                          >
-                            {uploading === entry.type ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                            {uploading === entry.type ? "Merging…" : "Upload"}
-                          </Button>
-                          <Button
-                            variant={artifact ? "outline" : "default"}
-                            size="sm"
-                            className="h-7 px-2 text-xs gap-1"
-                            onClick={() => generate(entry.type)}
-                            disabled={!!generating}
-                          >
-                            {isGenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                            {isGenerating ? "Generating…" : artifact ? "Regenerate" : "Generate"}
-                          </Button>
-                          {artifact && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 px-0 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              onClick={() => deleteArtifact(entry.type)}
-                              disabled={!!generating || !!uploading || deleting === entry.type}
-                              title="Delete this artifact"
-                              aria-label={`Delete ${entry.label}`}
-                            >
-                              {deleting === entry.type ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      {isExpanded && artifact?.content && (
-                        <div className="border-t border-slate-200 p-3">
-                          <ArtifactDocument artifactType={artifact.artifactType} content={artifact.content} projectId={projectId} />
-                        </div>
-                      )}
+                    <div key={entry.type} style={{
+                      border: `1.5px dashed ${C.border}`, borderRadius: 12, padding: "16px 12px",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
+                      minHeight: 132,
+                    }}>
+                      <Icon style={{ width: 26, height: 26, color: C.textMuted }} />
+                      <div style={{ fontSize: 13, fontWeight: 500, color: C.text2, marginTop: 8 }}>{entry.label}</div>
+                      <div style={{ fontSize: 11, color: C.textMuted, margin: "1px 0 10px" }}>Not generated</div>
+                      <button
+                        onClick={() => generate(entry.type)}
+                        disabled={busy}
+                        style={{
+                          height: 28, padding: "0 12px", background: C.primary, color: "#fff",
+                          border: "none", borderRadius: 8, cursor: busy ? "default" : "pointer",
+                          font: `600 12px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 5,
+                          opacity: busy ? 0.6 : 1,
+                        }}
+                      >
+                        <Wand2 style={{ width: 13, height: 13 }} /> Generate
+                      </button>
                     </div>
                   );
-                })}
-              </div>
+                }
+
+                // Generated (or generating) — solid card
+                return (
+                  <div key={entry.type} style={{
+                    position: "relative", background: C.surface, border: `1px solid ${isExpanded ? C.primaryBorder : C.border}`,
+                    borderRadius: 12, padding: "14px 12px", textAlign: "center", minHeight: 132,
+                    boxShadow: isExpanded ? `0 0 0 2px ${C.primaryLight}` : "none",
+                    display: "flex", flexDirection: "column", alignItems: "center",
+                  }}>
+                    {/* Format chip */}
+                    <span style={{ position: "absolute", top: 8, right: 8, fontSize: 9.5, fontWeight: 600, color: C.text3, background: C.surface2, border: `1px solid ${C.borderLight}`, borderRadius: 5, padding: "1px 5px" }}>{format}</span>
+
+                    <Icon style={{ width: 26, height: 26, color: isGen ? C.textMuted : C.primary, marginTop: 4 }} />
+                    <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginTop: 8, lineHeight: 1.25 }}>{entry.label}</div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, marginBottom: 10 }}>
+                      {isGen ? "Generating…" : "Generated"}
+                    </div>
+
+                    {/* Action row */}
+                    <div style={{ marginTop: "auto", display: "flex", justifyContent: "center", gap: 4 }}>
+                      {isGen ? (
+                        <Loader2 className="animate-spin" style={{ width: 16, height: 16, color: C.primary }} />
+                      ) : (
+                        <>
+                          <IconBtn title={isExpanded ? "Hide" : "View"} onClick={() => setExpanded(isExpanded ? null : entry.type)} active={isExpanded}>
+                            {isExpanded ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                          </IconBtn>
+                          <IconBtn title="Download" onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)}>
+                            <Download style={{ width: 15, height: 15 }} />
+                          </IconBtn>
+                          <IconBtn title="Regenerate" onClick={() => generate(entry.type)} disabled={busy}>
+                            {isUp ? <Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> : <RefreshCw style={{ width: 15, height: 15 }} />}
+                          </IconBtn>
+                          <IconBtn title="More" onClick={() => setMenuFor(menuFor === entry.type ? null : entry.type)} active={menuFor === entry.type}>
+                            {isDel ? <Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> : <MoreHorizontal style={{ width: 15, height: 15 }} />}
+                          </IconBtn>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Overflow menu */}
+                    {menuFor === entry.type && (
+                      <>
+                        <div onClick={() => setMenuFor(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                        <div style={{
+                          position: "absolute", top: 46, right: 8, zIndex: 41,
+                          background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9,
+                          boxShadow: "0 6px 20px rgba(0,0,0,.12)", padding: 5, minWidth: 158, textAlign: "left",
+                        }}>
+                          <MenuItem icon={<Upload style={{ width: 14, height: 14 }} />} label={isUp ? "Merging…" : "Upload new version"} onClick={() => handleUploadClick(entry.type)} disabled={busy} />
+                          <MenuItem icon={isExpanded ? <EyeOff style={{ width: 14, height: 14 }} /> : <Eye style={{ width: 14, height: 14 }} />} label={isExpanded ? "Hide document" : "View document"} onClick={() => { setExpanded(isExpanded ? null : entry.type); setMenuFor(null); }} />
+                          <MenuItem icon={<Trash2 style={{ width: 14, height: 14 }} />} label="Delete" onClick={() => deleteArtifact(entry.type)} disabled={busy} danger />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </CardContent>
-    </Card>
+
+            {/* Expanded document — full width below the phase grid */}
+            {expandedArtifact?.content && (
+              <div style={{ marginTop: 12, background: C.surface, border: `1px solid ${C.primaryBorder}`, borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: `1px solid ${C.borderLight}`, background: C.primaryLight }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.primary }}>{expandedInPhase?.label}</span>
+                  <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
+                </div>
+                <div style={{ padding: 16 }}>
+                  <ArtifactDocument artifactType={expandedArtifact.artifactType} content={expandedArtifact.content} projectId={projectId} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function IconBtn({ children, title, onClick, disabled, active }: {
+  children: React.ReactNode; title: string; onClick: () => void; disabled?: boolean; active?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      style={{
+        width: 28, height: 26, display: "flex", alignItems: "center", justifyContent: "center",
+        background: active ? C.primaryLight : C.surface, color: active ? C.primary : C.text2,
+        border: `1px solid ${active ? C.primaryBorder : C.border}`, borderRadius: 7,
+        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1, padding: 0,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MenuItem({ icon, label, onClick, disabled, danger }: {
+  icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 9px",
+        background: "none", border: "none", borderRadius: 6, cursor: disabled ? "default" : "pointer",
+        font: `500 12.5px 'IBM Plex Sans',sans-serif`, color: danger ? C.red : C.text2,
+        opacity: disabled ? 0.5 : 1, textAlign: "left",
+      }}
+      onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = danger ? C.redLight : C.surface2; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+    >
+      {icon} {label}
+    </button>
   );
 }
