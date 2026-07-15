@@ -4,6 +4,48 @@ import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+// After any task update, recompute portfolio SPI and auto-degrade project health
+// if the schedule is at risk. Never auto-upgrades — only the PM/WSR can improve health.
+async function syncProjectHealth(projectId: string) {
+  const tasks = await prisma.scheduleTask.findMany({ where: { projectId } });
+  if (tasks.length === 0) return;
+
+  const now = Date.now();
+  let pv = 0, ev = 0;
+  for (const t of tasks) {
+    const s = new Date(t.baselineStart).getTime();
+    const f = new Date(t.baselineFinish).getTime();
+    const dur = f - s;
+    const plannedPct = now <= s ? 0 : now >= f ? 1 : dur > 0 ? (now - s) / dur : 0;
+    pv += t.baselineDays * plannedPct;
+    ev += t.baselineDays * (t.percentComplete / 100);
+  }
+
+  if (pv === 0) return;
+  const spi = ev / pv;
+
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { healthStatus: true },
+  });
+  if (!project) return;
+
+  // Degrade: SPI < 0.8 → red, SPI < 0.9 → at least amber. Never auto-upgrade.
+  let newHealth: string | null = null;
+  if (spi < 0.8 && project.healthStatus !== "red") {
+    newHealth = "red";
+  } else if (spi < 0.9 && project.healthStatus === "green") {
+    newHealth = "amber";
+  }
+
+  if (newHealth) {
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { healthStatus: newHealth },
+    });
+  }
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; taskId: string }> }
@@ -38,6 +80,9 @@ export async function PATCH(
     where: { id: taskId },
     data,
   });
+
+  // Fire-and-forget: recompute health from live SPI after every task update
+  syncProjectHealth(id).catch(() => {});
 
   return NextResponse.json(updated);
 }
