@@ -454,6 +454,9 @@ function ScheduleTab({ project }: { project: any }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [editPct, setEditPct] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [dateEditId, setDateEditId] = useState<string | null>(null);
+  const [dateEditField, setDateEditField] = useState<"actualStart" | "actualFinish" | null>(null);
+  const [dateEditVal, setDateEditVal] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -496,6 +499,22 @@ function ScheduleTab({ project }: { project: any }) {
     setEditId(null);
   }
 
+  async function saveActualDate(taskId: string, field: "actualStart" | "actualFinish", val: string) {
+    setDateEditId(null);
+    setDateEditField(null);
+    if (!val) return;
+    const body: Record<string, string> = { [field]: new Date(val).toISOString() };
+    const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated } : t));
+    }
+  }
+
   // Gantt timeline bounds
   const minStart = tasks.length
     ? new Date(Math.min(...tasks.map(t => new Date(t.baselineStart).getTime())))
@@ -533,6 +552,21 @@ function ScheduleTab({ project }: { project: any }) {
         <div style={{ fontSize: 14, fontWeight: 600 }}>Project Schedule</div>
         {tasks.length > 0 && <span style={{ fontSize: "11.5px", color: C.text3 }}>{tasks.length} tasks · {phases.length} phases</span>}
         <div style={{ flex: 1 }} />
+        {tasks.length > 0 && (
+          <a
+            href={`/api/projects/${project.id}/schedule/export`}
+            download
+            style={{
+              height: 32, padding: "0 14px",
+              background: C.surface, color: C.text2,
+              border: `1px solid ${C.border}`, borderRadius: 8,
+              font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 6, textDecoration: "none",
+            }}
+          >
+            ↓ Export XLSX
+          </a>
+        )}
         <button
           onClick={generate}
           disabled={generating}
@@ -619,11 +653,49 @@ function ScheduleTab({ project }: { project: any }) {
 
                   return (
                     <div key={t.id} style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, minHeight: 38 }}>
-                      {/* Task name + meta */}
+                      {/* Task name + meta + actual dates */}
                       <div style={{ width: 320, flexShrink: 0, padding: "9px 16px 9px 20px" }}>
                         <div style={{ fontSize: "12.5px", fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
                         <div style={{ fontSize: 10.5, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
                           {t.wbsCode} · {t.owner || "Unassigned"} · {t.baselineDays}d
+                        </div>
+                        {/* Actual start / finish — click to edit */}
+                        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                          {(["actualStart", "actualFinish"] as const).map(field => {
+                            const label = field === "actualStart" ? "Started" : "Finished";
+                            const val = t[field];
+                            const isDateEditing = dateEditId === t.id && dateEditField === field;
+                            const chip = val ? fmt(val) : `+ ${label}`;
+                            const chipColor = val ? C.text2 : C.text3;
+                            const chipBg = val ? C.surface2 : "transparent";
+                            const chipBorder = val ? C.border : "dashed 1px " + C.borderLight;
+                            if (isDateEditing) {
+                              return (
+                                <input
+                                  key={field}
+                                  type="date"
+                                  autoFocus
+                                  defaultValue={val ? new Date(val).toISOString().slice(0, 10) : ""}
+                                  onBlur={e => saveActualDate(t.id, field, e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter") saveActualDate(t.id, field, (e.target as HTMLInputElement).value);
+                                    if (e.key === "Escape") { setDateEditId(null); setDateEditField(null); }
+                                  }}
+                                  style={{ fontSize: 10, height: 20, border: `1px solid ${C.primary}`, borderRadius: 4, padding: "0 3px", fontFamily: "'IBM Plex Mono',monospace" }}
+                                />
+                              );
+                            }
+                            return (
+                              <span
+                                key={field}
+                                onClick={() => { setDateEditId(t.id); setDateEditField(field); setDateEditVal(val ? new Date(val).toISOString().slice(0, 10) : ""); }}
+                                title={`Click to set actual ${label.toLowerCase()} date`}
+                                style={{ fontSize: 10, color: chipColor, background: chipBg, border: chipBorder, borderRadius: 4, padding: "1px 5px", cursor: "pointer", whiteSpace: "nowrap" as const }}
+                              >
+                                {chip}
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -709,7 +781,7 @@ function ScheduleTab({ project }: { project: any }) {
                 <span style={{ fontSize: 10.5, color: C.text3 }}>Today</span>
               </div>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 10.5, color: C.text3 }}>Click % to update progress</span>
+              <span style={{ fontSize: 10.5, color: C.text3 }}>Click % to update progress · click date chips to set actuals</span>
             </div>
           </div>
         </>
