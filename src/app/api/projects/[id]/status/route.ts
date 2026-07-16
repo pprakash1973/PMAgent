@@ -47,13 +47,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const preview = rawInput.preview === true;
 
-  // Compute full EVM from live schedule tasks (used in both preview and save paths)
-  const scheduleTasks = await prisma.scheduleTask.findMany({ where: { projectId: id } });
+  // Compute full EVM from live schedule tasks + cost entries
+  const [scheduleTasks, costEntries] = await Promise.all([
+    prisma.scheduleTask.findMany({ where: { projectId: id } }),
+    prisma.costEntry.findMany({ where: { projectId: id } }),
+  ]);
   let computedSpi: number | null = null;
-  let liveEVM: { pv: number; ev: number; sv: number; spi: number | null; overdueTasks: number } | undefined;
+  let computedCpi: number | null = null;
+  let liveEVM: { pv: number; ev: number; sv: number; spi: number | null; overdueTasks: number; ac?: number; cpi?: number | null } | undefined;
   if (scheduleTasks.length > 0) {
     const now = Date.now();
     const todayDate = new Date();
+    const bac = project.budget ?? 0;
+    const totalBaseDays = scheduleTasks.reduce((s, t) => s + (t.baselineDays || 1), 0);
     let pv = 0, ev = 0;
     let overdueCount = 0;
     for (const t of scheduleTasks) {
@@ -68,7 +74,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const spi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
     const sv = Math.round((ev - pv) * 10) / 10;
     computedSpi = spi;
-    liveEVM = { pv: Math.round(pv * 10) / 10, ev: Math.round(ev * 10) / 10, sv, spi, overdueTasks: overdueCount };
+    // Live cost CPI from cost entries if available
+    const totalAC = costEntries.reduce((s, e) => s + e.amount, 0);
+    if (totalAC > 0 && bac > 0 && totalBaseDays > 0) {
+      const evCost = scheduleTasks.reduce((s, t) => {
+        const pc = t.plannedCost ?? (bac * (t.baselineDays || 1) / totalBaseDays);
+        return s + pc * (t.percentComplete / 100);
+      }, 0);
+      computedCpi = evCost > 0 ? Math.round((evCost / totalAC) * 1000) / 1000 : null;
+    }
+    liveEVM = { pv: Math.round(pv * 10) / 10, ev: Math.round(ev * 10) / 10, sv, spi, overdueTasks: overdueCount, ac: totalAC, cpi: computedCpi };
   }
 
   let aiResult;
@@ -114,7 +129,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           compositeScore: aiResult.healthScore,
           ragStatus: aiResult.ragStatus,
           spi: computedSpi ?? aiResult.spi ?? (rawInput.spi as number) ?? null,
-          cpi: aiResult.cpi ?? (rawInput.cpi as number) ?? null,
+          cpi: computedCpi ?? aiResult.cpi ?? (rawInput.cpi as number) ?? null,
         },
       },
     },

@@ -331,6 +331,56 @@ function buildStaffAug(wb: XLSX.WorkBook, project: any) {
   XLSX.utils.book_append_sheet(wb, burn, "Burndown");
 }
 
+/** EVM Cost Actuals sheet — populated from CostEntry records */
+function buildEvmActuals(wb: XLSX.WorkBook, project: any, costEntries: any[]) {
+  if (!costEntries.length) return;
+  const rows: any[][] = [
+    ["Date", "Category", "Description", "Amount (" + (project.currency ?? "USD") + ")", "Cumulative AC ($)"],
+    ...costEntries.map((e, i) => {
+      const row = i + 2;
+      return [
+        new Date(e.date).toLocaleDateString(),
+        e.category,
+        e.description ?? "",
+        e.amount,
+        { f: `SUM($D$2:D${row})` },
+      ];
+    }),
+    [],
+    ["TOTAL", "", "", { f: `SUM(D2:D${costEntries.length + 1})` }, ""],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  setColWidths(ws, [14, 14, 32, 18, 18]);
+  XLSX.utils.book_append_sheet(wb, ws, "Actual Cost Entries");
+}
+
+/** EVM Summary sheet */
+function buildEvmSummary(wb: XLSX.WorkBook, project: any, evmSummary: any) {
+  if (!evmSummary) return;
+  const s = evmSummary;
+  const rows = [
+    ["EVM Performance Summary"],
+    [],
+    ["Metric", "Value", "Interpretation"],
+    ["BAC (Budget at Completion)", s.bac, "Total approved budget"],
+    ["AC (Actual Cost)", s.totalAC, "Total spent to date"],
+    ["EV (Earned Value)", s.totalEV, "Value of work completed"],
+    ["PV (Planned Value)", s.pvNow, "What should have been spent by now"],
+    ["CPI (Cost Performance Index)", s.cpi, s.cpi >= 1 ? "Under budget" : "Over budget"],
+    ["SPI (Schedule Performance Index)", s.spi, s.spi >= 1 ? "Ahead / on schedule" : "Behind schedule"],
+    ["CV (Cost Variance)", s.cv, s.cv >= 0 ? "Favorable" : "Unfavorable"],
+    ["SV (Schedule Variance)", s.sv, s.sv >= 0 ? "Favorable" : "Unfavorable"],
+    ["EAC (Estimate at Completion)", s.eac, "Forecast final cost"],
+    ["ETC (Estimate to Complete)", s.etc, "Remaining cost forecast"],
+    ["VAC (Variance at Completion)", s.vac, s.vac >= 0 ? "Projected to finish under budget" : "Projected cost overrun"],
+    [],
+    ["% Budget Consumed", s.percentSpent + "%", ""],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  setColWidths(ws, [32, 18, 36]);
+  XLSX.utils.book_append_sheet(wb, ws, "EVM Summary");
+}
+
 // ── route handler ─────────────────────────────────────────────────────────────
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -338,11 +388,50 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
   const { id } = await params;
-  const project = await prisma.project.findUnique({
-    where: { id },
-    include: { milestones: { orderBy: { dueDate: "asc" } } },
-  });
+  const [project, costEntries, scheduleTasks] = await Promise.all([
+    prisma.project.findUnique({ where: { id }, include: { milestones: { orderBy: { dueDate: "asc" } } } }),
+    prisma.costEntry.findMany({ where: { projectId: id }, orderBy: { date: "asc" } }),
+    prisma.scheduleTask.findMany({ where: { projectId: id } }),
+  ]);
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
+  // Compute EVM summary for the export
+  let evmSummary = null;
+  if (project.budget && (costEntries.length > 0 || scheduleTasks.length > 0)) {
+    const bac = project.budget;
+    const totalBaseDays = scheduleTasks.reduce((s, t) => s + (t.baselineDays || 1), 0);
+    const now = Date.now();
+    let pv = 0;
+    for (const t of scheduleTasks) {
+      const s2 = new Date(t.baselineStart).getTime();
+      const f2 = new Date(t.baselineFinish).getTime();
+      const dur = f2 - s2;
+      const pct = now <= s2 ? 0 : now >= f2 ? 1 : dur > 0 ? (now - s2) / dur : 0;
+      pv += (t.plannedCost ?? (bac * (t.baselineDays || 1) / (totalBaseDays || 1))) * pct;
+    }
+    const totalAC = costEntries.reduce((s, e) => s + e.amount, 0);
+    const totalEV = scheduleTasks.reduce((s, t) => {
+      const pc = (t as any).plannedCost ?? (bac * (t.baselineDays || 1) / (totalBaseDays || 1));
+      return s + pc * (t.percentComplete / 100);
+    }, 0);
+    const cpi = totalAC > 0 ? totalEV / totalAC : 1;
+    const spi = pv > 0 ? totalEV / pv : 1;
+    const eac = cpi > 0 ? bac / cpi : bac;
+    evmSummary = {
+      bac: Math.round(bac * 100) / 100,
+      totalAC: Math.round(totalAC * 100) / 100,
+      totalEV: Math.round(totalEV * 100) / 100,
+      pvNow: Math.round(pv * 100) / 100,
+      cpi: Math.round(cpi * 1000) / 1000,
+      spi: Math.round(spi * 1000) / 1000,
+      eac: Math.round(eac * 100) / 100,
+      etc: Math.round((eac - totalAC) * 100) / 100,
+      vac: Math.round((bac - eac) * 100) / 100,
+      cv: Math.round((totalEV - totalAC) * 100) / 100,
+      sv: Math.round((totalEV - pv) * 100) / 100,
+      percentSpent: bac > 0 ? Math.round((totalAC / bac) * 1000) / 10 : 0,
+    };
+  }
 
   const wb = XLSX.utils.book_new();
 
@@ -352,6 +441,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     case "staff_aug":         buildStaffAug(wb, project); break;
     default:                  buildFixedPrice(wb, project); break;  // fixed_price + fallback
   }
+
+  // Append EVM sheets if data exists
+  buildEvmActuals(wb, project, costEntries);
+  buildEvmSummary(wb, project, evmSummary);
 
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   const safeName = project.name.replace(/[^a-z0-9]/gi, "_").slice(0, 40);

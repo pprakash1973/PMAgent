@@ -127,6 +127,7 @@ model Project {
   requirementsDocs   RequirementsDocument[]
   artifactSelections ArtifactSelection[]
   scheduleTasks      ScheduleTask[]
+  costEntries        CostEntry[]
 
   @@unique([orgId, code])
 }
@@ -337,6 +338,7 @@ model ScheduleTask {
   baselineStart   DateTime
   baselineFinish  DateTime
   baselineDays    Int
+  plannedCost     Float?
   actualStart     DateTime?
   actualFinish    DateTime?
   percentComplete Int       @default(0)
@@ -344,6 +346,18 @@ model ScheduleTask {
   dependencies    Json      @default("[]")
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+}
+
+model CostEntry {
+  id          String   @id @default(cuid())
+  projectId   String
+  date        DateTime
+  amount      Float
+  category    String   @default("labor")
+  description String?
+  createdAt   DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id])
 }
