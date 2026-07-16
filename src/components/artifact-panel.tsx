@@ -27,12 +27,12 @@ const C = {
 };
 
 const PHASE_ORDER = ["initiation", "planning", "execution", "monitoring", "closure"];
-const PHASE_META: Record<string, { label: string; color: string; bg: string }> = {
-  initiation: { label: "Initiation", color: "#0F6E56", bg: "#E1F5EE" },
-  planning:   { label: "Planning",   color: "#3C3489", bg: "#EEEDFE" },
-  execution:  { label: "Execution",  color: "#185FA5", bg: "#E6F1FB" },
-  monitoring: { label: "Monitoring", color: "#854F0B", bg: "#FAEEDA" },
-  closure:    { label: "Closure",    color: "#3B6D11", bg: "#EAF3DE" },
+const PHASE_META: Record<string, { label: string; color: string; bg: string; border: string; borderLight: string }> = {
+  initiation: { label: "Initiation", color: "#0F6E56", bg: "#E1F5EE", border: "#5DCAA5", borderLight: "#A8E4CE" },
+  planning:   { label: "Planning",   color: "#3C3489", bg: "#EEEDFE", border: "#AFA9EC", borderLight: "#D1CEF6" },
+  execution:  { label: "Execution",  color: "#185FA5", bg: "#E6F1FB", border: "#6AABDF", borderLight: "#AACFEE" },
+  monitoring: { label: "Monitoring", color: "#854F0B", bg: "#FAEEDA", border: "#E0A040", borderLight: "#EEC98A" },
+  closure:    { label: "Closure",    color: "#3B6D11", bg: "#EAF3DE", border: "#7DC053", borderLight: "#B2D998" },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -291,11 +291,13 @@ export function ArtifactPanel({
           <div key={phase} style={{ marginBottom: 22 }}>
             {/* Phase header */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: meta.color, background: meta.bg, borderRadius: 6, padding: "3px 10px" }}>{meta.label}</span>
-              <span style={{ fontSize: 12, color: C.textMuted }}>
-                {doneCount} of {phaseItems.length} generated{isCurrent ? " · current phase" : ""}
+              <span style={{ fontSize: 16, color: isCurrent || isDone ? meta.color : C.textMuted }}>●</span>
+              <span style={{ fontSize: 18, fontWeight: 500, color: isCurrent || isDone ? meta.color : C.textMuted }}>{meta.label}</span>
+              <span style={{ fontSize: 12, color: C.textMuted, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, padding: "1px 8px" }}>
+                {doneCount}/{phaseItems.length}
               </span>
-              <div style={{ flex: 1, height: 1, background: C.border }} />
+              {isCurrent ? <span style={{ fontSize: 11, color: meta.color }}>current phase</span> : null}
+              <div style={{ flex: 1, height: 1, background: isCurrent || isDone ? meta.border : C.border, opacity: 0.4 }} />
               {isDone ? (
                 <span style={{ fontSize: 11, color: C.green, display: "flex", alignItems: "center", gap: 3 }}><Check style={{ width: 13, height: 13 }} /> Gate passed</span>
               ) : isCurrent ? (
@@ -316,11 +318,14 @@ export function ArtifactPanel({
                 const isExpanded = expanded === entry.type;
                 const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
 
+                const phaseBorder = isCurrent || isDone ? meta.border : C.border;
+                const phaseBorderLight = isCurrent || isDone ? meta.borderLight : C.border;
+
                 if (!artifact && !isGen) {
                   // Not generated — dashed card
                   return (
                     <div key={entry.type} style={{
-                      border: `1.5px dashed ${C.border}`, borderRadius: 12, padding: "16px 12px",
+                      border: `1.5px dashed ${phaseBorderLight}`, borderRadius: 12, padding: "16px 12px",
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
                       minHeight: 132,
                     }}>
@@ -346,13 +351,14 @@ export function ArtifactPanel({
                 // Generated (or generating) — solid card
                 return (
                   <div key={entry.type} style={{
-                    position: "relative", background: C.surface, border: `1px solid ${isExpanded ? C.primaryBorder : C.border}`,
+                    position: "relative", background: C.surface,
+                    border: `1.5px solid ${isExpanded ? phaseBorder : phaseBorder}`,
                     borderRadius: 12, padding: "14px 12px", textAlign: "center", minHeight: 132,
-                    boxShadow: isExpanded ? `0 0 0 2px ${C.primaryLight}` : "none",
+                    boxShadow: isExpanded ? `0 0 0 3px ${meta.bg}` : "none",
                     display: "flex", flexDirection: "column", alignItems: "center",
                   }}>
                     {/* Format chip */}
-                    <span style={{ position: "absolute", top: 8, right: 8, fontSize: 9.5, fontWeight: 600, color: C.text3, background: C.surface2, border: `1px solid ${C.borderLight}`, borderRadius: 5, padding: "1px 5px" }}>{format}</span>
+                    <span style={{ position: "absolute", top: 8, right: 8, fontSize: 9.5, fontWeight: 600, color: meta.color, background: meta.bg, border: `1px solid ${phaseBorderLight}`, borderRadius: 5, padding: "1px 5px" }}>{format}</span>
 
                     <Icon style={{ width: 26, height: 26, color: isGen ? C.textMuted : C.primary, marginTop: 4 }} />
                     <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginTop: 8, lineHeight: 1.25 }}>{entry.label}</div>
@@ -404,9 +410,9 @@ export function ArtifactPanel({
 
             {/* Expanded document — full width below the phase grid */}
             {expandedArtifact?.content && (
-              <div style={{ marginTop: 12, background: C.surface, border: `1px solid ${C.primaryBorder}`, borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: `1px solid ${C.borderLight}`, background: C.primaryLight }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: C.primary }}>{expandedInPhase?.label}</span>
+              <div style={{ marginTop: 12, background: C.surface, border: `1.5px solid ${meta.border}`, borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: `1px solid ${meta.borderLight}`, background: meta.bg }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: meta.color }}>{expandedInPhase?.label}</span>
                   <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
                 </div>
                 <div style={{ padding: 16 }}>
