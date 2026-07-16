@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusQuestionnaire } from "@/components/status-questionnaire";
@@ -975,6 +975,30 @@ function RequirementsTab({ project }: { project: any }) {
 
 function StatusTab({ project }: { project: any }) {
   const latestStatus = project.statusReports?.[0];
+  const [exportingPpt, setExportingPpt] = React.useState(false);
+
+  async function handleExportPpt() {
+    setExportingPpt(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/status/export`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] ?? "WSR.pptx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(err.message || "Export failed");
+    } finally {
+      setExportingPpt(false);
+    }
+  }
+
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -982,6 +1006,17 @@ function StatusTab({ project }: { project: any }) {
       </div>
       {latestStatus?.aiSummary && (
         <div style={{ width: 300, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#fff4ed", border: "1px solid #f97316", borderRadius: 10 }}>
+            <span style={{ fontSize: 14 }}>📊</span>
+            <span style={{ fontSize: 12, color: "#c2410c", fontWeight: 500, flex: 1 }}>Export last report as PowerPoint</span>
+            <button
+              onClick={handleExportPpt}
+              disabled={exportingPpt}
+              style={{ fontSize: 11, fontWeight: 600, color: "#fff", background: exportingPpt ? "#9a3412" : "#ea580c", border: "none", borderRadius: 6, padding: "5px 12px", cursor: exportingPpt ? "not-allowed" : "pointer" }}
+            >
+              {exportingPpt ? "Generating…" : "Export PPT"}
+            </button>
+          </div>
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 17px" }}>
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 10 }}>Last Report</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
