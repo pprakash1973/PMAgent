@@ -797,8 +797,8 @@ function ScheduleTab({ project }: { project: any }) {
                     <div key={t.id} style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, minHeight: 38 }}>
                       {/* Task name + meta + actual dates */}
                       <div style={{ width: 320, flexShrink: 0, padding: "9px 16px 9px 20px" }}>
-                        <div style={{ fontSize: "12.5px", fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
-                        <div style={{ fontSize: 10.5, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
+                        <div style={{ fontSize: 12, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
                           {t.wbsCode} · {t.owner || "Unassigned"} · {t.baselineDays}d
                         </div>
                         {/* Actual start / finish — click to edit */}
