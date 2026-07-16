@@ -498,7 +498,7 @@ function RecoveryPanel({ projectId, spi }: { projectId: string; spi: number }) {
             display: "flex", alignItems: "center", gap: 7, flexShrink: 0,
           }}
         >
-          ⚡ Get back on track
+          ⚡ Go To Green
         </button>
         {open && <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, padding: "0 4px" }}>×</button>}
       </div>

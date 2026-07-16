@@ -13,6 +13,8 @@ const FORMAT_META = {
   docx: { label: "Download Word", Icon: FileText, color: "text-blue-700" },
 };
 
+const WSR_TYPES = new Set(["weekly_status", "monthly_status", "status_report"]);
+
 export function ArtifactDocument({ artifactType, content, projectId }: Props) {
   const docRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
@@ -71,24 +73,43 @@ export function ArtifactDocument({ artifactType, content, projectId }: Props) {
 
   const title = artifactType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+  const isWsr = WSR_TYPES.has(artifactType);
+
   return (
     <div className="space-y-2">
+      {isWsr && (
+        <div className="flex items-center gap-3 px-3 py-2 rounded-md bg-orange-50 border border-orange-200">
+          <Presentation className="w-4 h-4 text-orange-600 shrink-0" />
+          <span className="text-xs text-orange-700 font-medium flex-1">Export this status report as a polished PowerPoint deck</span>
+          <Button
+            size="sm"
+            className="h-7 text-xs gap-1.5 bg-orange-600 hover:bg-orange-700 text-white"
+            onClick={handleDownload}
+            disabled={downloading}
+          >
+            {downloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Presentation className="w-3 h-3" />}
+            {downloading ? "Generating…" : "Export as PPT"}
+          </Button>
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handlePrint}>
           <Printer className="w-3 h-3" /> Print / PDF
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className={`h-7 text-xs gap-1 ${meta.color}`}
-          onClick={handleDownload}
-          disabled={downloading}
-        >
-          {downloading
-            ? <Loader2 className="w-3 h-3 animate-spin" />
-            : <meta.Icon className="w-3 h-3" />}
-          {downloading ? "Generating…" : meta.label}
-        </Button>
+        {!isWsr && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={`h-7 text-xs gap-1 ${meta.color}`}
+            onClick={handleDownload}
+            disabled={downloading}
+          >
+            {downloading
+              ? <Loader2 className="w-3 h-3 animate-spin" />
+              : <meta.Icon className="w-3 h-3" />}
+            {downloading ? "Generating…" : meta.label}
+          </Button>
+        )}
       </div>
       <div ref={docRef} className="bg-white border border-slate-200 rounded-md p-6 text-sm text-slate-800 space-y-4 max-h-[600px] overflow-y-auto">
         <h1 className="text-lg font-bold text-blue-900 border-b-2 border-blue-900 pb-2">{title}</h1>
