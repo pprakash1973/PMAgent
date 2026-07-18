@@ -167,6 +167,7 @@ export function ArtifactPanel({
 
   async function uploadArtifact(artifactType: string, file: File) {
     setUploading(artifactType);
+    const isNew = !localArtifacts.some((a) => a.artifactType === artifactType);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -185,7 +186,7 @@ export function ArtifactPanel({
         return [...prev, artifact];
       });
       setExpanded(artifactType);
-      toast({ title: "Artifact updated", description: `AI merged your file into ${artifactType.replace(/_/g, " ")}` });
+      toast({ title: isNew ? "Artifact created from upload" : "Artifact updated", description: `AI extracted and structured ${artifactType.replace(/_/g, " ")}` });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message || "Please try again", variant: "destructive" });
     } finally {

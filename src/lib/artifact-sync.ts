@@ -12,28 +12,37 @@ export async function syncArtifactToTables(
   switch (artifactType) {
 
     case "resource_plan": {
-      const team: any[] = content.teamDirectory ?? [];
+      // Accept any common key name the AI or an upload might produce
+      const team: any[] = (
+        content.teamDirectory ??
+        content.team ??
+        content.resources ??
+        content.members ??
+        content.teamMembers ??
+        content.roster ??
+        []
+      ) as any[];
       if (team.length === 0) return;
       await prisma.projectResource.deleteMany({ where: { projectId } });
       await prisma.projectResource.createMany({
         data: team.map((m: any) => ({
           projectId,
           name: String(m.name ?? "Unknown"),
-          role: String(m.role ?? "Team Member"),
+          role: String(m.role ?? m.title ?? m.position ?? "Team Member"),
           email: m.email ? String(m.email) : null,
-          allocationPct: Number(m.allocationPercent ?? m.allocationPct ?? 100),
+          allocationPct: Number(m.allocationPercent ?? m.allocationPct ?? m.allocation ?? 100),
           startDate: m.startDate ? new Date(m.startDate) : null,
           endDate: m.endDate ? new Date(m.endDate) : null,
-          ratePerDay: m.dailyRate ? Number(m.dailyRate) : null,
+          ratePerDay: m.dailyRate ?? m.ratePerDay ?? m.rate ? Number(m.dailyRate ?? m.ratePerDay ?? m.rate) : null,
           skills: Array.isArray(m.skills) ? m.skills.join(", ") : (m.skills ?? null),
-          notes: m.notes ?? null,
+          notes: m.notes ?? m.comments ?? null,
         })),
       });
       break;
     }
 
     case "risk_register": {
-      const risks: any[] = content.risks ?? [];
+      const risks: any[] = (content.risks ?? content.riskRegister ?? content.riskItems ?? []) as any[];
       if (risks.length === 0) return;
       await prisma.risk.deleteMany({ where: { projectId } });
       await prisma.risk.createMany({
@@ -96,7 +105,7 @@ export async function syncArtifactToTables(
     }
 
     case "milestone_plan": {
-      const milestones: any[] = content.milestones ?? [];
+      const milestones: any[] = (content.milestones ?? content.milestoneList ?? content.milestoneRegister ?? []) as any[];
       if (milestones.length === 0) return;
       await prisma.milestone.deleteMany({ where: { projectId } });
       await prisma.milestone.createMany({

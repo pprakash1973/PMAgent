@@ -4,7 +4,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { anthropic } from "@/lib/ai";
+import { anthropic, ARTIFACT_SCHEMA_HINTS } from "@/lib/ai";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 
 function extractJson(text: string): Record<string, unknown> {
@@ -107,14 +107,27 @@ export async function POST(
     return NextResponse.json({ error: err.message }, { status: 422 });
   }
 
-  const existingContent = existingArtifact?.content
-    ? JSON.stringify(existingArtifact.content, null, 2)
-    : "{}";
+  const isFirstUpload = !existingArtifact?.content;
+  const existingContent = isFirstUpload
+    ? null
+    : JSON.stringify(existingArtifact!.content, null, 2);
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16000,
-    system: `You are a PMO AI assistant. The user has downloaded an artifact, edited it, and re-uploaded it.
+  const schemaHint = ARTIFACT_SCHEMA_HINTS[type] ?? null;
+
+  const systemPrompt = isFirstUpload
+    ? `You are a PMO AI assistant. The user is uploading a ${type.replace(/_/g, " ")} document created in an external tool.
+Your job is to extract all information from the uploaded file and structure it as a valid ${type.replace(/_/g, " ")} artifact JSON.
+
+Required JSON structure (use EXACTLY these top-level keys):
+${schemaHint ?? "Use standard PMO artifact structure appropriate for " + type.replace(/_/g, " ")}
+
+Rules:
+- Extract EVERY piece of information from the uploaded file — do not drop rows, entries, or values.
+- Use the exact key names shown above — do not rename or restructure.
+- For array fields, produce one object per row/item in the upload.
+- Leave fields empty string or empty array rather than omitting them.
+Return ONLY the complete artifact as valid JSON wrapped in \`\`\`json ... \`\`\` blocks.`
+    : `You are a PMO AI assistant. The user has downloaded an artifact, edited it, and re-uploaded it.
 Your job is to merge the uploaded content into the existing artifact JSON while preserving its structure and schema.
 
 Rules:
@@ -123,11 +136,16 @@ Rules:
 - Edited values in the upload override the existing values for the same field.
 - Keep existing fields that the upload does not mention.
 - Preserve the existing JSON shape/keys exactly; do not rename or restructure keys.
-Return ONLY the complete merged artifact as valid JSON wrapped in \`\`\`json ... \`\`\` blocks.`,
-    messages: [
-      {
-        role: "user",
-        content: `Artifact type: ${type}
+Return ONLY the complete merged artifact as valid JSON wrapped in \`\`\`json ... \`\`\` blocks.`;
+
+  const userMessage = isFirstUpload
+    ? `Artifact type: ${type}
+
+Uploaded file content (extracted text):
+${extractedText.slice(0, 12000)}
+
+Extract all data from the upload and return it as a complete ${type.replace(/_/g, " ")} JSON artifact using the required key structure.`
+    : `Artifact type: ${type}
 
 Existing artifact JSON:
 ${existingContent}
@@ -135,9 +153,13 @@ ${existingContent}
 Uploaded file content (extracted text from the user's edited document):
 ${extractedText.slice(0, 12000)}
 
-Merge the uploaded data into the artifact JSON, making sure every addition and edit from the upload is reflected. Return the complete updated artifact as JSON only.`,
-      },
-    ],
+Merge the uploaded data into the artifact JSON, making sure every addition and edit from the upload is reflected. Return the complete updated artifact as JSON only.`;
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 16000,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
   });
 
   if (message.stop_reason === "max_tokens") {

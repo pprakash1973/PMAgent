@@ -47,6 +47,38 @@ Arrays should have 3–8 items unless the schema requires more.
 Base all figures and content strictly on the provided project context — do not fabricate numbers.
 ${GUARDRAIL_SYSTEM_ADDENDUM}`;
 
+/**
+ * Canonical top-level JSON keys for each artifact type.
+ * Used by the upload route to tell the AI what structure to produce
+ * when there is no existing artifact to infer the schema from.
+ */
+export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
+  project_charter:       "projectTitle, projectCode, version, projectDescription, businessCase, objectives, successCriteria, scope {inScope, outOfScope}, deliverables, milestones, budget, stakeholders, risks, assumptions, constraints, approvalSignatures",
+  business_case:         "title, executiveSummary, problemStatement, proposedSolution, objectives, benefits, costs, risks, alternatives, recommendation, roi",
+  stakeholder_register:  "stakeholders (array of {id, name, role, organization, email, power, interest, currentEngagement, desiredEngagement, communicationNeeds, notes})",
+  assumption_log:        "assumptions (array of {id, description, category, impact, owner, dateLogged, status})",
+  benefits_register:     "benefits (array of {id, description, type, owner, targetDate, measure, baselineValue, targetValue, status, notes})",
+  scope_statement:       "projectScope, inScope (array), outOfScope (array), deliverables (array), acceptanceCriteria (array), constraints (array), assumptions (array)",
+  wbs:                   "phases (array of {id, name, deliverables (array of {id, name, owner, estimatedDays, workPackages (array of {id, name, owner, estimatedDays, dependencies})})})",
+  milestone_plan:        "milestones (array of {id, name, plannedDate, forecastDate, status, owner, deliverables, description})",
+  resource_plan:         "teamDirectory (array of {id, name, role, department, skills, allocationPercent, startDate, endDate, dailyRate, currency, notes}), resourceCalendar, skillsMatrix, resourceConstraints, trainingNeeds",
+  cost_plan:             "currency, estimatingMethod, laborEstimates (array of {role, resource, phase, estimatedDays, dailyRate, totalCost}), nonLaborCosts, totalBudget, contingencyReserve, managementReserve, bac, fundingRequirements",
+  raid_register:         "risks (array of {id, description, probability, impact, status, owner, mitigation}), assumptions (array), issues (array of {id, description, severity, status, owner, resolution, dueDate}), dependencies (array)",
+  risk_register:         "risks (array of {id, statement, category, probability, impact, riskScore, owner, responseActions, status})",
+  communication_plan:    "stakeholderComms (array of {stakeholder, information, format, frequency, owner, channel})",
+  raci_matrix:           "activities (array of {id, activity, phase, assignments (object keyed by role: R|A|C|I)}), roles (array of strings)",
+  quality_plan:          "qualityObjectives, qualityStandards (array), qualityActivities (array of {activity, phase, owner, tool, acceptance}), metrics (array)",
+  action_log:            "actions (array of {id, description, owner, dueDate, priority, status, notes})",
+  issue_register:        "issues (array of {id, description, severity, status, owner, resolutionPlan, dateRaised, dueDate})",
+  decision_log:          "decisions (array of {id, description, decisionMade, rationale, owner, date, impact, alternatives})",
+  weekly_status:         "reportDate, reportingPeriod, overallStatus, scheduleStatus, costStatus, scopeStatus, qualityStatus, accomplishments, plannedNextPeriod, risks, issues, decisions, metrics",
+  monthly_status:        "reportDate, reportingPeriod, overallStatus, executiveSummary, milestoneStatus (array), budgetSummary, schedulePerformance, keyRisks, keyIssues, decisionsRequired",
+  change_log:            "changes (array of {id, title, description, requestedBy, dateSubmitted, impact, status, approvedBy, implementationDate})",
+  lessons_learned:       "lessons (array of {id, phase, category, description, impact, recommendation, owner, status})",
+  closure_report:        "projectName, closureDate, sponsor, pm, objectivesAchievement (array), deliverablesStatus (array), budgetSummary, scheduleSummary, lessonsLearned (array), openItems (array), approvalSignatures (array)",
+  traceability_matrix:   "requirements (array of {id, description, source, wbsRef, milestone, deliverable, acceptanceCriteria, validationMethod, owner, status})",
+};
+
 export async function generateArtifact(
   artifactType: string,
   projectContext: Record<string, unknown>,
