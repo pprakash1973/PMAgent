@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { GUARDRAIL_SYSTEM_ADDENDUM } from "@/lib/guardrails";
 
 export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -43,7 +44,8 @@ const PMI_SYSTEM_PROMPT = `You are a senior PMO AI assistant with deep expertise
 Generate concise, PMBOK-aligned project management artifacts.
 Return ONLY valid JSON — no prose, no markdown outside the JSON block.
 Arrays should have 3–8 items unless the schema requires more.
-Base all figures and content strictly on the provided project context — do not fabricate numbers.`;
+Base all figures and content strictly on the provided project context — do not fabricate numbers.
+${GUARDRAIL_SYSTEM_ADDENDUM}`;
 
 export async function generateArtifact(
   artifactType: string,

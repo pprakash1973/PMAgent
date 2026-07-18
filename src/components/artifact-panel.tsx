@@ -132,20 +132,24 @@ export function ArtifactPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifactType }),
       });
-      if (!res.ok) throw new Error("Generation failed");
-      const artifact = await res.json();
+      const data = await res.json();
+      if (!res.ok) {
+        // Guardrail block (422) — surface the specific error message to the PM
+        const msg = data?.error?.message ?? data?.error ?? "Generation failed";
+        throw new Error(msg);
+      }
       setLocalArtifacts((prev) => {
         const existing = prev.findIndex((a) => a.artifactType === artifactType);
         if (existing >= 0) {
           const copy = [...prev];
-          copy[existing] = artifact;
+          copy[existing] = data;
           return copy;
         }
-        return [...prev, artifact];
+        return [...prev, data];
       });
       toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
-    } catch {
-      toast({ title: "Generation failed", description: "Please try again", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Generation blocked", description: err.message || "Please try again", variant: "destructive" });
     } finally {
       setGenerating(null);
     }

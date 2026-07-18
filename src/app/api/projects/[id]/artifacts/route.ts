@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateArtifact } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
+import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 
 export const maxDuration = 300;
 
@@ -44,6 +45,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const catalogEntry = ARTIFACT_CATALOG.find((a) => a.type === artifactType);
   if (!catalogEntry) {
     return NextResponse.json({ error: { code: "INVALID_ARTIFACT" } }, { status: 400 });
+  }
+
+  // ── Guardrail pre-flight (GR-1, GR-2, GR-4, GR-8, GR-9) ──────────────────
+  const existingArtifacts = await prisma.artifact.findMany({
+    where: { projectId: id },
+    select: { artifactType: true },
+  });
+  try {
+    const guardrailResult = runGuardrails(artifactType, {
+      name: project.name,
+      description: project.description,
+      startDate: project.startDate,
+      endDate: project.endDate,
+      budget: project.budget,
+      existingArtifactTypes: existingArtifacts.map((a) => a.artifactType),
+      hasRequirementsDoc: project.requirementsDocs.length > 0,
+      milestoneCount: project.milestones.length,
+      riskCount: project.risks.length,
+    });
+    // Attach non-blocking warnings to response header for UI to surface
+    if (guardrailResult.warnings.length > 0) {
+      console.warn(`[guardrails] ${artifactType}:`, guardrailResult.warnings);
+    }
+  } catch (err) {
+    if (err instanceof GuardrailError) {
+      return NextResponse.json(
+        { error: { code: err.code, message: err.message } },
+        { status: 422 }
+      );
+    }
+    throw err;
   }
 
   const projectContext = {
