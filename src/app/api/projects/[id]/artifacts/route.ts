@@ -171,7 +171,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   // Sync artifact content into live DB tables (RAID tab, Resources tab, milestones)
-  await syncArtifactToTables(id, artifactType, content).catch(() => {});
+  await syncArtifactToTables(id, artifactType, content).catch((err) => {
+    console.error(`[artifact-sync] generate sync failed for ${artifactType}:`, err);
+  });
 
   return NextResponse.json(artifact, { status: 201 });
 }

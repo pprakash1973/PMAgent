@@ -199,7 +199,9 @@ Merge the uploaded data into the artifact JSON, making sure every addition and e
   }
 
   // Sync artifact content into live DB tables (RAID tab, Resources tab, milestones)
-  await syncArtifactToTables(id, type, mergedContent).catch(() => {});
+  await syncArtifactToTables(id, type, mergedContent).catch((err) => {
+    console.error(`[artifact-sync] upload sync failed for ${type}:`, err);
+  });
 
   return NextResponse.json(artifact);
 }

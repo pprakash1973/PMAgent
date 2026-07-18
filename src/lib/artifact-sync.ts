@@ -4,6 +4,61 @@
  */
 import { prisma } from "@/lib/db";
 
+/** Parse a number from any value — strips %, $, commas, spaces before parsing. */
+function parseNum(val: any, fallback = 0): number {
+  if (val == null) return fallback;
+  if (typeof val === "number") return isNaN(val) ? fallback : val;
+  const cleaned = String(val).replace(/[%$,\s]/g, "");
+  const n = Number(cleaned);
+  return isNaN(n) ? fallback : n;
+}
+
+/** Parse a nullable number (returns null when absent/invalid). */
+function parseNumOrNull(val: any): number | null {
+  if (val == null) return null;
+  const n = parseNum(val, NaN);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Find a team/resource array in content regardless of where the AI put it.
+ * Tries known top-level keys first, then scans one level deep for any array
+ * whose items have both a 'name' and a 'role' field.
+ */
+function extractTeamArray(content: any): any[] {
+  const direct =
+    content.teamDirectory ??
+    content.team ??
+    content.resources ??
+    content.members ??
+    content.teamMembers ??
+    content.roster ??
+    null;
+  if (Array.isArray(direct) && direct.length > 0) return direct;
+
+  // Scan one level deep for nested arrays that look like team member lists
+  for (const val of Object.values(content)) {
+    if (!val || typeof val !== "object") continue;
+    // Check if val itself is an object with an array key
+    for (const nested of Object.values(val as object)) {
+      if (Array.isArray(nested) && nested.length > 0) {
+        const first = nested[0];
+        if (first && typeof first === "object" && ("name" in first || "role" in first)) {
+          return nested as any[];
+        }
+      }
+    }
+    // val might be the array itself
+    if (Array.isArray(val) && val.length > 0) {
+      const first = (val as any[])[0];
+      if (first && typeof first === "object" && ("name" in first || "role" in first)) {
+        return val as any[];
+      }
+    }
+  }
+  return [];
+}
+
 export async function syncArtifactToTables(
   projectId: string,
   artifactType: string,
@@ -12,30 +67,21 @@ export async function syncArtifactToTables(
   switch (artifactType) {
 
     case "resource_plan": {
-      // Accept any common key name the AI or an upload might produce
-      const team: any[] = (
-        content.teamDirectory ??
-        content.team ??
-        content.resources ??
-        content.members ??
-        content.teamMembers ??
-        content.roster ??
-        []
-      ) as any[];
+      const team = extractTeamArray(content);
       if (team.length === 0) return;
       await prisma.projectResource.deleteMany({ where: { projectId } });
       await prisma.projectResource.createMany({
         data: team.map((m: any) => ({
           projectId,
-          name: String(m.name ?? "Unknown"),
-          role: String(m.role ?? m.title ?? m.position ?? "Team Member"),
+          name: String(m.name ?? m.resourceName ?? m.fullName ?? "Unknown"),
+          role: String(m.role ?? m.title ?? m.position ?? m.jobTitle ?? "Team Member"),
           email: m.email ? String(m.email) : null,
-          allocationPct: Number(m.allocationPercent ?? m.allocationPct ?? m.allocation ?? 100),
+          allocationPct: Math.round(parseNum(m.allocationPercent ?? m.allocationPct ?? m.allocation, 100)),
           startDate: m.startDate ? new Date(m.startDate) : null,
           endDate: m.endDate ? new Date(m.endDate) : null,
-          ratePerDay: m.dailyRate ?? m.ratePerDay ?? m.rate ? Number(m.dailyRate ?? m.ratePerDay ?? m.rate) : null,
-          skills: Array.isArray(m.skills) ? m.skills.join(", ") : (m.skills ?? null),
-          notes: m.notes ?? m.comments ?? null,
+          ratePerDay: parseNumOrNull(m.dailyRate ?? m.ratePerDay ?? m.rate ?? m.dayRate),
+          skills: Array.isArray(m.skills) ? m.skills.join(", ") : (m.skills ? String(m.skills) : null),
+          notes: m.notes ?? m.comments ?? m.remarks ?? null,
         })),
       });
       break;

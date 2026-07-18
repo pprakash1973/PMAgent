@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toaster";
 import {
   FileText, Presentation, Users, Target, Network, Flag, Coins, AlertTriangle,
@@ -92,6 +93,7 @@ export function ArtifactPanel({
   currentPhase?: string;
   engagementMode?: string;
 }) {
+  const router = useRouter();
   const [generating, setGenerating] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -186,6 +188,7 @@ export function ArtifactPanel({
         return [...prev, artifact];
       });
       setExpanded(artifactType);
+      router.refresh();
       toast({ title: isNew ? "Artifact created from upload" : "Artifact updated", description: `AI extracted and structured ${artifactType.replace(/_/g, " ")}` });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message || "Please try again", variant: "destructive" });
