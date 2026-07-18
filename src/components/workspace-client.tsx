@@ -293,6 +293,7 @@ function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
           selections={project.artifactSelections}
           catalog={catalog}
           currentPhase={project.currentPhase || "initiation"}
+          engagementMode={project.engagementMode || "detailed"}
         />
       </div>
 
@@ -585,6 +586,7 @@ function spiColor(spi: number | null) {
 }
 
 function ScheduleTab({ project }: { project: any }) {
+  const isGovernance = project.engagementMode === "high_level";
   const [tasks, setTasks] = useState<any[]>([]);
   const [resources, setResources] = useState<any[]>([]);
   const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number } | null>(null);
@@ -717,7 +719,13 @@ function ScheduleTab({ project }: { project: any }) {
       {/* ── Header bar ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Project Schedule</div>
-        {tasks.length > 0 && <span style={{ fontSize: "11.5px", color: C.text3 }}>{tasks.length} tasks · {phases.length} phases</span>}
+        {tasks.length > 0 && (
+          <span style={{ fontSize: "11.5px", color: C.text3 }}>
+            {isGovernance
+              ? `${tasks.filter(t => t.phase !== "Milestones").length} deliverables · ${tasks.filter(t => t.phase === "Milestones").length} milestones`
+              : `${tasks.length} tasks · ${phases.length} phases`}
+          </span>
+        )}
         <div style={{ flex: 1 }} />
         {tasks.length > 0 && (
           <a
@@ -748,7 +756,9 @@ function ScheduleTab({ project }: { project: any }) {
         >
           {generating
             ? <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
-            : tasks.length > 0 ? "↺ Regenerate from WBS" : "✦ Generate from WBS"
+            : tasks.length > 0
+              ? (isGovernance ? "↺ Regenerate Timeline" : "↺ Regenerate from WBS")
+              : (isGovernance ? "✦ Generate High-Level Timeline" : "✦ Generate from WBS")
           }
         </button>
       </div>
@@ -762,17 +772,33 @@ function ScheduleTab({ project }: { project: any }) {
       {tasks.length === 0 && !error && (
         <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "32px 24px", textAlign: "center" as const }}>
           <div style={{ fontSize: 36, marginBottom: 14 }}>📅</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.primary, marginBottom: 8 }}>No schedule yet</div>
-          <div style={{ fontSize: 13, color: C.text2, maxWidth: 440, margin: "0 auto 18px" }}>
-            Generate a schedule from your WBS artifact. The AI will sequence all work packages using critical-path scheduling, respecting dependencies and a 5-day working week.
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.primary, marginBottom: 8 }}>
+            {isGovernance ? "No high-level timeline yet" : "No schedule yet"}
+          </div>
+          <div style={{ fontSize: 13, color: C.text2, maxWidth: 480, margin: "0 auto 18px" }}>
+            {isGovernance
+              ? "Generate a week-level deliverable timeline from your WBS. Each deliverable becomes a weekly band — milestones from your Milestone Plan are shown as diamond markers. Day-to-day task tracking stays in your client tool."
+              : "Generate a schedule from your WBS artifact. The AI will sequence all work packages using critical-path scheduling, respecting dependencies and a 5-day working week."}
           </div>
           <div style={{ fontSize: 12, color: C.text3 }}>
-            You can also upload a new WBS (via the Artifacts tab) and then regenerate.
+            {isGovernance
+              ? "You need a WBS artifact (and optionally a Milestone Plan) in the Artifacts tab first."
+              : "You can also upload a new WBS (via the Artifacts tab) and then regenerate."}
           </div>
         </div>
       )}
 
-      {tasks.length > 0 && (
+      {tasks.length > 0 && isGovernance && (
+        <GovernanceTimeline tasks={tasks} project={project} onProgress={async (taskId, pct) => {
+          const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ percentComplete: pct }),
+          });
+          if (res.ok) { const u = await res.json(); setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...u } : t)); }
+        }} />
+      )}
+
+      {tasks.length > 0 && !isGovernance && (
         <>
           {/* ── EVM KPI strip ── */}
           <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
@@ -979,8 +1005,228 @@ function ScheduleTab({ project }: { project: any }) {
           </div>
         </>
       )}
+      {/* end !isGovernance */}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+// ── Governance week-level timeline ─────────────────────────────────────────────
+
+function GovernanceTimeline({ tasks, project, onProgress }: {
+  tasks: any[];
+  project: any;
+  onProgress: (taskId: string, pct: number) => Promise<void>;
+}) {
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editPct, setEditPct] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (editId && inputRef.current) inputRef.current.focus(); }, [editId]);
+
+  const deliverables = tasks.filter(t => t.phase !== "Milestones");
+  const milestones = tasks.filter(t => t.phase === "Milestones");
+
+  // Build week headers spanning the full project
+  const allDates = tasks.flatMap(t => [new Date(t.baselineStart), new Date(t.baselineFinish)]);
+  const minMs = Math.min(...allDates.map(d => d.getTime()));
+  const maxMs = Math.max(...allDates.map(d => d.getTime()));
+  // Snap to Monday for start
+  const timelineStart = new Date(minMs);
+  while (timelineStart.getDay() !== 1) timelineStart.setDate(timelineStart.getDate() - 1);
+  // Snap to Sunday for end
+  const timelineEnd = new Date(maxMs);
+  while (timelineEnd.getDay() !== 0) timelineEnd.setDate(timelineEnd.getDate() + 1);
+  const totalMs = Math.max(timelineEnd.getTime() - timelineStart.getTime(), 1);
+
+  // Generate week buckets
+  const weeks: Date[] = [];
+  const cur = new Date(timelineStart);
+  while (cur <= timelineEnd) {
+    weeks.push(new Date(cur));
+    cur.setDate(cur.getDate() + 7);
+  }
+
+  const today = new Date();
+  const todayPct = Math.max(0, Math.min(100, ((today.getTime() - timelineStart.getTime()) / totalMs) * 100));
+
+  function leftPct(d: Date) {
+    return ((d.getTime() - timelineStart.getTime()) / totalMs) * 100;
+  }
+  function widthPct(s: Date, e: Date) {
+    return Math.max(0.8, ((e.getTime() - s.getTime()) / totalMs) * 100);
+  }
+
+  const fmtWeek = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const phases = Array.from(new Set(deliverables.map(t => t.phase)));
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
+      {/* Week header */}
+      <div style={{ display: "flex", background: C.surface2, borderBottom: `1px solid ${C.borderLight}` }}>
+        <div style={{ width: 260, flexShrink: 0, padding: "8px 16px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>
+          Deliverable
+        </div>
+        <div style={{ width: 40, flexShrink: 0, padding: "8px 4px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, textAlign: "center" as const }}>%</div>
+        <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+          <div style={{ display: "flex", height: "100%" }}>
+            {weeks.map((w, i) => (
+              <div key={i} style={{
+                flex: 1, borderLeft: `1px solid ${C.borderLight}`, padding: "6px 2px 4px",
+                font: `500 9px 'IBM Plex Mono'`, color: C.text3, textAlign: "center" as const, whiteSpace: "nowrap" as const,
+                overflow: "hidden",
+              }}>
+                {weeks.length <= 20 ? fmtWeek(w) : i % 2 === 0 ? fmtWeek(w) : ""}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Phase groups + deliverable rows */}
+      {phases.map(phase => (
+        <div key={phase}>
+          <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "6px 16px" }}>
+            <div style={{ width: 260, font: `700 10.5px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".03em", textTransform: "uppercase" as const }}>{phase}</div>
+            <div style={{ flex: 1 }} />
+          </div>
+          {deliverables.filter(t => t.phase === phase).map(t => {
+            const s = new Date(t.baselineStart);
+            const e = new Date(t.baselineFinish);
+            const left = leftPct(s);
+            const width = widthPct(s, e);
+            const weeks = Math.round(t.baselineDays / 5);
+            const pctColor = t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.text3;
+            const isEditing = editId === t.id;
+
+            return (
+              <div key={t.id} style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, minHeight: 44 }}>
+                <div style={{ width: 260, flexShrink: 0, padding: "8px 16px 8px 20px" }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
+                  <div style={{ fontSize: 11, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
+                    {fmtWeek(s)} → {fmtWeek(e)} · {weeks}w
+                  </div>
+                </div>
+                {/* % complete */}
+                <div style={{ width: 40, flexShrink: 0, textAlign: "center" as const, cursor: "pointer" }}
+                  onClick={() => { if (!isEditing) { setEditId(t.id); setEditPct(t.percentComplete); } }}>
+                  {isEditing ? (
+                    <input ref={inputRef} type="number" min={0} max={100} value={editPct}
+                      onChange={ev => setEditPct(Number(ev.target.value))}
+                      onKeyDown={ev => {
+                        if (ev.key === "Enter") { onProgress(t.id, editPct); setEditId(null); }
+                        if (ev.key === "Escape") setEditId(null);
+                      }}
+                      onBlur={() => { onProgress(t.id, editPct); setEditId(null); }}
+                      style={{ width: 34, height: 22, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5, padding: 0 }}
+                    />
+                  ) : (
+                    <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, color: pctColor }}>
+                      {t.percentComplete}%
+                    </span>
+                  )}
+                </div>
+                {/* Week bar */}
+                <div style={{ flex: 1, position: "relative", height: 44 }}>
+                  {todayPct >= 0 && todayPct <= 100 && (
+                    <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 1.5, background: C.red, opacity: 0.45, zIndex: 2 }} />
+                  )}
+                  <div style={{
+                    position: "absolute", top: "50%", transform: "translateY(-50%)",
+                    left: `${left}%`, width: `${width}%`,
+                    height: 20, borderRadius: 5, background: "#e2e5ea", overflow: "hidden",
+                  }}>
+                    <div style={{
+                      position: "absolute", top: 0, left: 0, bottom: 0,
+                      width: `${t.percentComplete}%`,
+                      background: t.percentComplete === 100 ? C.green : C.primary,
+                      borderRadius: 5, transition: "width .3s",
+                    }} />
+                  </div>
+                  {/* Week count label inside bar */}
+                  {width > 4 && (
+                    <div style={{
+                      position: "absolute", top: "50%", transform: "translateY(-50%)",
+                      left: `${left + 0.4}%`,
+                      font: `600 10px 'IBM Plex Mono'`, color: t.percentComplete > 50 ? "#fff" : C.text3,
+                      pointerEvents: "none", zIndex: 3,
+                    }}>
+                      {weeks}w
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      {/* Milestone row */}
+      {milestones.length > 0 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", background: "#fef8ec", borderTop: `1px solid ${C.borderLight}`, padding: "6px 16px" }}>
+            <div style={{ width: 260, font: `700 10.5px 'IBM Plex Sans'`, color: "#b45309", letterSpacing: ".03em", textTransform: "uppercase" as const }}>Milestones</div>
+          </div>
+          <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, minHeight: 44, alignItems: "center" }}>
+            <div style={{ width: 300, flexShrink: 0 }} />
+            <div style={{ flex: 1, position: "relative", height: 44 }}>
+              {todayPct >= 0 && todayPct <= 100 && (
+                <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 1.5, background: C.red, opacity: 0.45, zIndex: 2 }} />
+              )}
+              {milestones.map(m => {
+                const d = new Date(m.baselineStart);
+                const left = leftPct(d);
+                return (
+                  <div key={m.id} title={`${m.name} — ${fmtWeek(d)}`} style={{
+                    position: "absolute", top: "50%", left: `${left}%`,
+                    transform: "translate(-50%, -50%) rotate(45deg)",
+                    width: 12, height: 12,
+                    background: "#f59e0b", border: "2px solid #b45309",
+                    zIndex: 4, cursor: "default",
+                  }} />
+                );
+              })}
+            </div>
+          </div>
+          {/* Milestone labels below */}
+          {milestones.map(m => {
+            const d = new Date(m.baselineStart);
+            const left = leftPct(d);
+            return (
+              <div key={m.id + "-lbl"} style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, minHeight: 28, alignItems: "center" }}>
+                <div style={{ width: 300, flexShrink: 0, padding: "4px 16px 4px 20px", fontSize: 12, color: "#b45309", fontWeight: 500 }}>{m.name}</div>
+                <div style={{ flex: 1, position: "relative", height: 28 }}>
+                  <div style={{ position: "absolute", top: "50%", left: `${left}%`, transform: "translateY(-50%)", font: `500 10px 'IBM Plex Mono'`, color: C.text3, whiteSpace: "nowrap" as const }}>
+                    {fmtWeek(d)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Legend */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 18px", borderTop: `1px solid ${C.borderLight}`, background: C.surface2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 20, height: 8, borderRadius: 3, background: C.green }} />
+          <span style={{ fontSize: 10.5, color: C.text3 }}>Complete</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 20, height: 8, borderRadius: 3, background: C.primary }} />
+          <span style={{ fontSize: 10.5, color: C.text3 }}>In Progress</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 14, height: 14, background: "#f59e0b", border: "2px solid #b45309", transform: "rotate(45deg)" }} />
+          <span style={{ fontSize: 10.5, color: C.text3, marginLeft: 4 }}>Milestone</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 1.5, height: 14, background: C.red, opacity: 0.5 }} />
+          <span style={{ fontSize: 10.5, color: C.text3 }}>Today</span>
+        </div>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 10.5, color: C.text3 }}>Click % to update delivery progress · day-to-day tasks tracked in client tool</span>
+      </div>
     </div>
   );
 }

@@ -90,26 +90,61 @@ export async function POST(
   const wbs = wbsArtifact.content as any;
   const phases: any[] = wbs.phases ?? [];
 
-  // Flatten to work packages
+  const isGovernance = project.engagementMode === "high_level";
+
+  // Flatten tasks — Governance: deliverable level (week-snapped); Detailed: work packages
   const allTasks: WPTask[] = [];
-  for (const phase of phases) {
-    for (const deliverable of phase.deliverables ?? []) {
-      for (const wp of deliverable.workPackages ?? []) {
+  if (isGovernance) {
+    // One task per deliverable, duration snapped up to nearest week (5 working days)
+    for (const phase of phases) {
+      for (const deliverable of phase.deliverables ?? []) {
+        // Sum work package days or fall back to deliverable-level estimate
+        const rawDays = deliverable.workPackages?.reduce(
+          (sum: number, wp: any) => sum + Number(wp.estimatedDays ?? 5), 0
+        ) ?? Number(deliverable.estimatedDays ?? 5);
+        // Snap up to nearest week
+        const weeks = Math.max(1, Math.ceil(rawDays / 5));
         allTasks.push({
-          wbsCode: String(wp.id ?? wp.wbsCode ?? ""),
-          name: String(wp.name ?? ""),
+          wbsCode: String(deliverable.id ?? deliverable.wbsCode ?? ""),
+          name: String(deliverable.name ?? ""),
           phase: String(phase.name ?? ""),
-          owner: String(wp.owner ?? ""),
-          estimatedDays: Number(wp.estimatedDays ?? 1),
-          dependencies: Array.isArray(wp.dependencies) ? wp.dependencies.map(String) : [],
+          owner: String(deliverable.owner ?? phase.owner ?? ""),
+          estimatedDays: weeks * 5,
+          dependencies: Array.isArray(deliverable.dependencies)
+            ? deliverable.dependencies.map(String)
+            : [],
         });
+      }
+    }
+  } else {
+    for (const phase of phases) {
+      for (const deliverable of phase.deliverables ?? []) {
+        for (const wp of deliverable.workPackages ?? []) {
+          allTasks.push({
+            wbsCode: String(wp.id ?? wp.wbsCode ?? ""),
+            name: String(wp.name ?? ""),
+            phase: String(phase.name ?? ""),
+            owner: String(wp.owner ?? ""),
+            estimatedDays: Number(wp.estimatedDays ?? 1),
+            dependencies: Array.isArray(wp.dependencies) ? wp.dependencies.map(String) : [],
+          });
+        }
       }
     }
   }
 
   if (allTasks.length === 0) {
-    return NextResponse.json({ error: "WBS has no work packages to schedule." }, { status: 422 });
+    return NextResponse.json({
+      error: isGovernance
+        ? "WBS has no deliverables to schedule."
+        : "WBS has no work packages to schedule.",
+    }, { status: 422 });
   }
+
+  // In Governance mode also pull milestones to append as zero-day markers
+  const milestoneArtifact = isGovernance
+    ? await prisma.artifact.findFirst({ where: { projectId: id, artifactType: "milestone_plan" }, orderBy: { updatedAt: "desc" } })
+    : null;
 
   const projectStart = project.startDate ? new Date(project.startDate) : new Date();
 
@@ -185,6 +220,34 @@ export async function POST(
       };
     })
     .filter(Boolean) as any[];
+
+  // In Governance mode, append milestones as zero-day marker tasks
+  if (isGovernance && milestoneArtifact?.content) {
+    const mlContent = milestoneArtifact.content as any;
+    const mlList: any[] = mlContent.milestones ?? [];
+    const baseSort = rows.length;
+    for (let i = 0; i < mlList.length; i++) {
+      const m = mlList[i];
+      const dt = m.plannedDate ?? m.forecastDate ?? m.targetDate;
+      if (!dt) continue;
+      const d = new Date(dt);
+      rows.push({
+        projectId: id,
+        wbsCode: `MS-${i + 1}`,
+        name: String(m.name ?? `Milestone ${i + 1}`),
+        phase: "Milestones",
+        owner: m.owner ?? "",
+        resourceId: null,
+        sortOrder: baseSort + i,
+        baselineStart: d,
+        baselineFinish: d,
+        baselineDays: 0,
+        dependencies: [],
+        percentComplete: 0,
+        status: "not_started",
+      } as any);
+    }
+  }
 
   await prisma.scheduleTask.createMany({ data: rows });
 

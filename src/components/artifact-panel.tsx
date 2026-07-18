@@ -72,18 +72,25 @@ function triggerDownload(url: string) {
   document.body.removeChild(a);
 }
 
+// Artifacts that require detailed execution tracking — not applicable in Governance mode
+const GOVERNANCE_LOCKED = new Set([
+  "wbs", "resource_plan", "cost_plan", "raci_matrix", "traceability_matrix",
+]);
+
 export function ArtifactPanel({
   projectId,
   artifacts,
   selections,
   catalog,
   currentPhase = "initiation",
+  engagementMode = "detailed",
 }: {
   projectId: string;
   artifacts: Artifact[];
   selections: Selection[];
   catalog: CatalogEntry[];
   currentPhase?: string;
+  engagementMode?: string;
 }) {
   const [generating, setGenerating] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -328,8 +335,26 @@ export function ArtifactPanel({
                 const phaseBorder = isCurrent || isDone ? meta.border : C.border;
                 const phaseBorderLight = isCurrent || isDone ? meta.borderLight : C.border;
 
+                // Governance-locked card — greyed out, no actions
+                if (engagementMode === "high_level" && GOVERNANCE_LOCKED.has(entry.type)) {
+                  return (
+                    <div key={entry.type} title="Not available in Governance mode — tracked in your client execution tool" style={{
+                      border: `1.5px dashed #d4d7de`, borderRadius: 12, padding: "16px 12px",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
+                      minHeight: 132, background: "#f2f3f5", opacity: 0.78,
+                    }}>
+                      <Icon style={{ width: 26, height: 26, color: "#b8bcc8" }} />
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "#9ca3b0", marginTop: 8, lineHeight: 1.25 }}>{entry.label}</div>
+                      <div style={{ fontSize: 11, color: "#c5c9d4", margin: "2px 0 10px" }}>Governance locked</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 500, color: "#b8bcc8" }}>
+                        <Lock style={{ width: 12, height: 12 }} /> Client tool
+                      </div>
+                    </div>
+                  );
+                }
+
                 if (!artifact && !isGen) {
-                  // Not generated — dashed card
+                  // Not generated — dashed card with Generate + Upload
                   return (
                     <div key={entry.type} style={{
                       border: `1.5px dashed ${phaseBorderLight}`, borderRadius: 12, padding: "16px 12px",
@@ -339,18 +364,33 @@ export function ArtifactPanel({
                       <Icon style={{ width: 26, height: 26, color: C.textMuted }} />
                       <div style={{ fontSize: 13, fontWeight: 500, color: C.text2, marginTop: 8 }}>{entry.label}</div>
                       <div style={{ fontSize: 11, color: C.textMuted, margin: "1px 0 10px" }}>Not generated</div>
-                      <button
-                        onClick={() => generate(entry.type)}
-                        disabled={busy}
-                        style={{
-                          height: 28, padding: "0 12px", background: C.primary, color: "#fff",
-                          border: "none", borderRadius: 8, cursor: busy ? "default" : "pointer",
-                          font: `600 12px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 5,
-                          opacity: busy ? 0.6 : 1,
-                        }}
-                      >
-                        <Wand2 style={{ width: 13, height: 13 }} /> Generate
-                      </button>
+                      <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap" as const }}>
+                        <button
+                          onClick={() => generate(entry.type)}
+                          disabled={busy}
+                          style={{
+                            height: 27, padding: "0 10px", background: C.primary, color: "#fff",
+                            border: "none", borderRadius: 7, cursor: busy ? "default" : "pointer",
+                            font: `600 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
+                            opacity: busy ? 0.6 : 1,
+                          }}
+                        >
+                          <Wand2 style={{ width: 12, height: 12 }} /> Generate
+                        </button>
+                        <button
+                          onClick={() => handleUploadClick(entry.type)}
+                          disabled={busy}
+                          style={{
+                            height: 27, padding: "0 10px", background: C.surface, color: C.text2,
+                            border: `1px solid ${C.border}`, borderRadius: 7, cursor: busy ? "default" : "pointer",
+                            font: `500 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
+                            opacity: busy ? 0.6 : 1,
+                          }}
+                        >
+                          <Upload style={{ width: 12, height: 12 }} />
+                          {isUp ? "Uploading…" : "Upload"}
+                        </button>
+                      </div>
                       {guardrailErrors[entry.type] && (
                         <div style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 11, marginTop: 6, lineHeight: 1.4, textAlign: "center" }}>
                           {guardrailErrors[entry.type]}
