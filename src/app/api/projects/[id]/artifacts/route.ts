@@ -78,6 +78,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     throw err;
   }
 
+  // For RTM: fetch schedule tasks + existing WBS/charter artifacts to ground traceability
+  let scheduleTasks: { name: string; phase: string | null }[] = [];
+  let wbsContent: unknown = null;
+  if (artifactType === "traceability_matrix") {
+    const [tasks, wbsArtifact] = await Promise.all([
+      prisma.scheduleTask.findMany({ where: { projectId: id }, select: { name: true, phase: true }, take: 100 }),
+      prisma.artifact.findFirst({ where: { projectId: id, artifactType: "wbs" }, select: { content: true } }),
+    ]);
+    scheduleTasks = tasks;
+    wbsContent = wbsArtifact?.content ?? null;
+  }
+
   const projectContext = {
     name: project.name,
     code: project.code,
@@ -91,6 +103,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     teamSize: project.teamSize,
     description: project.description,
     milestones: project.milestones,
+    ...(artifactType === "traceability_matrix" && {
+      scheduleTasks,
+      wbsStructure: wbsContent,
+    }),
   };
 
   const requirements = project.requirementsDocs[0]?.extractedContent

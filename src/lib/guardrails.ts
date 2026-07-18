@@ -30,7 +30,8 @@ const UPSTREAM_REQUIRED: Record<string, string[]> = {
   monthly_status:     ["project_charter"],
   change_log:         ["project_charter"],
   lessons_learned:    ["project_charter"],
-  closure_report:     ["project_charter", "milestone_plan"],
+  closure_report:       ["project_charter", "milestone_plan"],
+  traceability_matrix:  ["project_charter", "wbs", "milestone_plan"],
 };
 
 // Mandatory project fields per artifact type (GR-2)
@@ -126,6 +127,15 @@ export function runGuardrails(
   if (REQUIRES_BASELINE.has(artifactType) && !hasMinScope) {
     warnings.push(
       "WARN: Project has no start/end date baseline. Status report accuracy may be limited."
+    );
+  }
+
+  // ── GR-5: Traceability matrix requires a requirements document ───────────────
+  if (artifactType === "traceability_matrix" && !project.hasRequirementsDoc) {
+    throw new GuardrailError(
+      "ERR-REQ-005",
+      "ERROR: Requirements Traceability Matrix requires an uploaded requirements document (SRS, BRD, or SOW). " +
+      "Upload a requirements document in the Requirements tab first."
     );
   }
 

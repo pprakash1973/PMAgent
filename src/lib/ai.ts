@@ -696,6 +696,53 @@ Return JSON with:
 
     // ── EXECUTION ─────────────────────────────────────────────────────────────
 
+    traceability_matrix: `Generate a Requirements Traceability Matrix (RTM) per PMBOK 6th Ed Process 5.5 (Validate Scope) and IEEE 830.
+CRITICAL: Every requirement MUST be sourced ONLY from the requirements document provided below. Do NOT invent requirements.
+Map each requirement forward to: WBS/deliverable → schedule milestone → acceptance criteria → test/validation approach.
+
+Return JSON with:
+- projectName (string)
+- documentVersion (string): "1.0"
+- preparedDate (string): ISO date
+- summary (object): {
+    totalRequirements (number),
+    functional (number),
+    nonFunctional (number),
+    businessRules (number),
+    fullyTraced (number),
+    partiallyTraced (number),
+    notTraced (number)
+  }
+- requirements (array of {
+    id (string): REQ-001, REQ-002… — sequential
+    category (string): Functional | Non-Functional | Business Rule | Constraint | Interface | Security | Performance | Compliance
+    source (string): exact section/page reference from the requirements document (e.g. "Section 3.2", "Page 5")
+    requirementStatement (string): verbatim or faithfully paraphrased requirement from the source doc — NEVER fabricated
+    priority (string): Must Have | Should Have | Could Have | Won't Have (MoSCoW)
+    complexity (string): Low | Medium | High
+    wbsRef (string): mapped WBS code or deliverable name from project context (e.g. "1.2.3 Authentication Module")
+    milestone (string): linked milestone name from project context
+    deliverable (string): specific deliverable this requirement maps to
+    acceptanceCriteria (string): measurable, testable criterion — how the PM/customer will verify this is met
+    validationMethod (string): Inspection | Testing | Demonstration | Analysis | Review
+    owner (string): team or role responsible for implementing this requirement
+    status (string): Not Started | In Progress | Implemented | Verified | Accepted
+    traceabilityStatus (string): Fully Traced | Partially Traced | Not Traced
+    notes (string): gaps, risks, or dependencies related to this requirement
+  })
+- traceabilityGaps (array of {
+    gapId (string): GAP-001…
+    description (string): what is missing or not covered
+    impact (string): High | Medium | Low
+    recommendation (string): what should be done to close the gap
+  })
+- changeHistory (array of {
+    version (string),
+    date (string),
+    changedBy (string),
+    description (string)
+  })`,
+
     action_log: `Generate an Action Log for project execution tracking per PMBOK 6th Ed 4.3 (Direct and Manage Project Work).
 Return JSON with:
 - actions (array of {

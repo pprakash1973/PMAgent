@@ -56,6 +56,7 @@ export const ARTIFACT_CATALOG = [
   { type: "raci_matrix", label: "RACI Matrix", phase: "planning" },
   { type: "quality_plan", label: "Quality Plan", phase: "planning" },
   // Execution
+  { type: "traceability_matrix", label: "Requirements Traceability Matrix", phase: "execution" },
   { type: "action_log", label: "Action Log", phase: "execution" },
   { type: "issue_register", label: "Issue Register", phase: "execution" },
   { type: "decision_log", label: "Decision Log", phase: "execution" },
@@ -83,6 +84,7 @@ export const ARTIFACT_FORMAT: Record<string, "xlsx" | "pptx" | "docx"> = {
   raid_register:    "xlsx",
   risk_register:    "xlsx",
   raci_matrix:      "xlsx",
+  traceability_matrix: "xlsx",
   action_log:       "xlsx",
   issue_register:   "xlsx",
   decision_log:     "xlsx",
