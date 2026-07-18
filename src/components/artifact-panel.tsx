@@ -92,6 +92,7 @@ export function ArtifactPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
   const [autoGenQueue, setAutoGenQueue] = useState<string[]>([]);
   const [autoGenDone, setAutoGenDone] = useState(false);
   const searchParams = useSearchParams();
@@ -126,6 +127,7 @@ export function ArtifactPanel({
   async function generate(artifactType: string) {
     setGenerating(artifactType);
     setMenuFor(null);
+    setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
     try {
       const res = await fetch(`/api/projects/${projectId}/artifacts`, {
         method: "POST",
@@ -134,10 +136,11 @@ export function ArtifactPanel({
       });
       const data = await res.json();
       if (!res.ok) {
-        // Guardrail block (422) — surface the specific error message to the PM
         const msg = data?.error?.message ?? data?.error ?? "Generation failed";
-        throw new Error(msg);
+        setGuardrailErrors((prev) => ({ ...prev, [artifactType]: msg }));
+        return;
       }
+      setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
       setLocalArtifacts((prev) => {
         const existing = prev.findIndex((a) => a.artifactType === artifactType);
         if (existing >= 0) {
@@ -149,7 +152,7 @@ export function ArtifactPanel({
       });
       toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
     } catch (err: any) {
-      toast({ title: "Generation blocked", description: err.message || "Please try again", variant: "destructive" });
+      setGuardrailErrors((prev) => ({ ...prev, [artifactType]: err.message || "Generation failed" }));
     } finally {
       setGenerating(null);
     }
@@ -348,6 +351,11 @@ export function ArtifactPanel({
                       >
                         <Wand2 style={{ width: 13, height: 13 }} /> Generate
                       </button>
+                      {guardrailErrors[entry.type] && (
+                        <div style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 11, marginTop: 6, lineHeight: 1.4, textAlign: "center" }}>
+                          {guardrailErrors[entry.type]}
+                        </div>
+                      )}
                     </div>
                   );
                 }

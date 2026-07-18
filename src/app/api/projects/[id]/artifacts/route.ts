@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       milestones: true,
       risks: true,
-      requirementsDocs: { where: { pmConfirmed: true }, orderBy: { createdAt: "desc" }, take: 1 },
+      requirementsDocs: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
 

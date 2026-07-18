@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusQuestionnaire } from "@/components/status-questionnaire";
 import { BurndownDownloadButton } from "@/components/burndown-download-button";
@@ -937,13 +938,42 @@ function ScheduleTab({ project }: { project: any }) {
 // ── Requirements tab ───────────────────────────────────────────────────────────
 
 function RequirementsTab({ project }: { project: any }) {
-  const docs = project.requirementsDocs || [];
+  const router = useRouter();
+  const [docs, setDocs] = React.useState<any[]>(project.requirementsDocs || []);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const [extracted, setExtracted] = React.useState<any | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    setExtracted(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/projects/${project.id}/requirements`, { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({ error: res.statusText || "Upload failed" }));
+      if (!res.ok) throw new Error(data?.error || "Upload failed");
+      setDocs((prev) => [data.doc, ...prev]);
+      setExtracted(data.extractedContent);
+      router.refresh();
+    } catch (err: any) {
+      setUploadError(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  const colors: Record<string, string> = { PDF: "#b83b3b", DOCX: "#2b5cb8", DOC: "#2b5cb8", XLSX: "#1b7a46", XLS: "#1b7a46" };
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" as const }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
         {docs.map((doc: any) => {
           const ext = doc.fileName?.split(".").pop()?.toUpperCase() || "DOC";
-          const colors: Record<string, string> = { PDF: "#b83b3b", DOCX: "#2b5cb8", DOC: "#2b5cb8", XLSX: "#1b7a46", XLS: "#1b7a46" };
           return (
             <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 11, padding: "10px 14px" }}>
               <div style={{ width: 30, height: 30, borderRadius: 7, background: colors[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", font: "700 9px 'IBM Plex Sans'" }}>{ext}</div>
@@ -954,13 +984,57 @@ function RequirementsTab({ project }: { project: any }) {
             </div>
           );
         })}
-        <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `1.5px dashed ${C.primaryBorder}`, borderRadius: 11, padding: "10px 18px", color: C.primary, fontSize: "12.5px", fontWeight: 600, background: "#faf9ff", cursor: "pointer" }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M5 20h14" stroke="#4f5bd5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          Upload requirements
-          <input type="file" style={{ display: "none" }} />
+        <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `1.5px dashed ${C.primaryBorder}`, borderRadius: 11, padding: "10px 18px", color: uploading ? C.text3 : C.primary, fontSize: "12.5px", fontWeight: 600, background: "#faf9ff", cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? 0.7 : 1 }}>
+          {uploading ? (
+            <>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="#4f5bd5" strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>
+              Extracting…
+            </>
+          ) : (
+            <>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M5 20h14" stroke="#4f5bd5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              Upload requirements
+            </>
+          )}
+          <input type="file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv" style={{ display: "none" }} disabled={uploading} onChange={handleFileChange} />
         </label>
       </div>
-      {docs.length === 0 && (
+
+      {uploadError && (
+        <div style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 12, marginBottom: 12 }}>{uploadError}</div>
+      )}
+
+      {extracted && (
+        <div style={{ background: "#f0faf5", border: "1px solid #01B27C", borderRadius: 12, padding: "16px 18px", marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#007a55", marginBottom: 10 }}>AI Extracted Content</div>
+          {extracted.objectives?.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>Objectives</div>
+              {extracted.objectives.map((o: string, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {o}</div>)}
+            </div>
+          )}
+          {extracted.inScope?.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>In Scope</div>
+              {extracted.inScope.map((s: string, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {s}</div>)}
+            </div>
+          )}
+          {extracted.stakeholders?.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>Stakeholders</div>
+              {extracted.stakeholders.map((s: any, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {s.name} — {s.role}</div>)}
+            </div>
+          )}
+          {extracted.constraints?.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>Constraints</div>
+              {extracted.constraints.map((c: string, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {c}</div>)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {docs.length === 0 && !extracted && (
         <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "24px 20px", textAlign: "center" as const }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>✦</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: C.primary, marginBottom: 6 }}>No requirements documents uploaded</div>

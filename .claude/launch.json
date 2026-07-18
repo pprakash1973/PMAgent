@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "pm-agent-dev",
+      "name": "pm-agent",
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm run dev -- --port 3001"],
       "port": 3001
