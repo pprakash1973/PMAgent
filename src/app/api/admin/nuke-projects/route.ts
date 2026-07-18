@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
   // Delete all project-related data in dependency order
   await prisma.healthScore.deleteMany({});
   await prisma.statusReport.deleteMany({});
+  await prisma.costEntry.deleteMany({});
   await prisma.scheduleTask.deleteMany({});
   await prisma.backlogItem.deleteMany({});
   await prisma.sprint.deleteMany({});

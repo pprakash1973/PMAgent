@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { formatDate, formatCurrency, methodologyLabel } from "@/lib/utils";
+import { ProjectDeleteButton } from "@/components/project-delete-button";
 
 function ragColor(s: string) {
   if (s === "green") return "#007a55";
@@ -125,13 +126,16 @@ export default async function ProjectsPage() {
                     )}
                   </div>
                 </div>
-                <div style={{ textAlign: "right" as const, flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, fontWeight: 500, color: "#5b616e", border: "1px solid #d3d7de", borderRadius: 999, padding: "3px 10px", textTransform: "capitalize" as const }}>
-                    {project.status}
-                  </span>
-                  <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 8 }}>{project.pmOwner.fullName}</div>
+                <div style={{ textAlign: "right" as const, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "#5b616e", border: "1px solid #d3d7de", borderRadius: 999, padding: "3px 10px", textTransform: "capitalize" as const }}>
+                      {project.status}
+                    </span>
+                    <ProjectDeleteButton projectId={project.id} projectName={project.name} />
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#8a909c" }}>{project.pmOwner.fullName}</div>
                   {project.endDate && (
-                    <div className="mono" style={{ fontSize: 11, color: "#8a909c", marginTop: 2 }}>Due {formatDate(project.endDate)}</div>
+                    <div className="mono" style={{ fontSize: 11, color: "#8a909c" }}>Due {formatDate(project.endDate)}</div>
                   )}
                 </div>
               </div>
