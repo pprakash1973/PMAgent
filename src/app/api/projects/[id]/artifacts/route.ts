@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { generateArtifact } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
+import { syncArtifactToTables } from "@/lib/artifact-sync";
 
 export const maxDuration = 300;
 
@@ -168,6 +169,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
     update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
   });
+
+  // Sync artifact content into live DB tables (RAID tab, Resources tab, milestones)
+  await syncArtifactToTables(id, artifactType, content).catch(() => {});
 
   return NextResponse.json(artifact, { status: 201 });
 }

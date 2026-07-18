@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
+import { syncArtifactToTables } from "@/lib/artifact-sync";
 
 function extractJson(text: string): Record<string, unknown> {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
@@ -174,6 +175,9 @@ Merge the uploaded data into the artifact JSON, making sure every addition and e
       },
     });
   }
+
+  // Sync artifact content into live DB tables (RAID tab, Resources tab, milestones)
+  await syncArtifactToTables(id, type, mergedContent).catch(() => {});
 
   return NextResponse.json(artifact);
 }

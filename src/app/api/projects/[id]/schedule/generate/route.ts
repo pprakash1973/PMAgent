@@ -113,6 +113,24 @@ export async function POST(
 
   const projectStart = project.startDate ? new Date(project.startDate) : new Date();
 
+  // Fetch resource roster for assignment matching
+  const roster = await prisma.projectResource.findMany({ where: { projectId: id } });
+  // Build a lookup: lowercase name/role → resource id
+  function matchResource(owner: string): string | null {
+    if (!owner || roster.length === 0) return null;
+    const needle = owner.toLowerCase().trim();
+    // Exact name match first
+    const exact = roster.find(r => r.name.toLowerCase() === needle);
+    if (exact) return exact.id;
+    // Partial name match
+    const partial = roster.find(r => needle.includes(r.name.toLowerCase()) || r.name.toLowerCase().includes(needle));
+    if (partial) return partial.id;
+    // Role match
+    const byRole = roster.find(r => r.role.toLowerCase().includes(needle) || needle.includes(r.role.toLowerCase()));
+    if (byRole) return byRole.id;
+    return null;
+  }
+
   // Sort topologically
   const order = topoSort(allTasks);
   const taskByCode: Record<string, WPTask> = {};
@@ -156,6 +174,7 @@ export async function POST(
         name: t.name,
         phase: t.phase,
         owner: t.owner,
+        resourceId: matchResource(t.owner),
         sortOrder: i,
         baselineStart: start[code],
         baselineFinish: finish[code],

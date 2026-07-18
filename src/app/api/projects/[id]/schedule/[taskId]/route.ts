@@ -75,6 +75,8 @@ export async function PATCH(
   if (body.actualFinish) data.actualFinish = new Date(body.actualFinish);
   if (pct > 0 && !task.actualStart && !body.actualStart) data.actualStart = new Date();
   if (pct === 100 && !task.actualFinish && !body.actualFinish) data.actualFinish = new Date();
+  if ("resourceId" in body) data.resourceId = body.resourceId || null;
+  if ("estimatedHours" in body) data.estimatedHours = body.estimatedHours ? Number(body.estimatedHours) : null;
 
   const updated = await prisma.scheduleTask.update({
     where: { id: taskId },

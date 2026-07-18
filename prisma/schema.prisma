@@ -128,6 +128,7 @@ model Project {
   artifactSelections ArtifactSelection[]
   scheduleTasks      ScheduleTask[]
   costEntries        CostEntry[]
+  resources          ProjectResource[]
 
   @@unique([orgId, code])
 }
@@ -334,6 +335,8 @@ model ScheduleTask {
   name            String
   phase           String
   owner           String?
+  resourceId      String?
+  estimatedHours  Float?
   sortOrder       Int       @default(0)
   baselineStart   DateTime
   baselineFinish  DateTime
@@ -347,7 +350,27 @@ model ScheduleTask {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id])
+  project  Project          @relation(fields: [projectId], references: [id])
+  resource ProjectResource? @relation(fields: [resourceId], references: [id])
+}
+
+model ProjectResource {
+  id             String    @id @default(cuid())
+  projectId      String
+  name           String
+  role           String
+  email          String?
+  allocationPct  Int       @default(100)
+  startDate      DateTime?
+  endDate        DateTime?
+  ratePerDay     Float?
+  skills         String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project       Project        @relation(fields: [projectId], references: [id])
+  scheduleTasks ScheduleTask[]
 }
 
 model CostEntry {

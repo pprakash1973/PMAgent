@@ -586,6 +586,7 @@ function spiColor(spi: number | null) {
 
 function ScheduleTab({ project }: { project: any }) {
   const [tasks, setTasks] = useState<any[]>([]);
+  const [resources, setResources] = useState<any[]>([]);
   const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -595,21 +596,34 @@ function ScheduleTab({ project }: { project: any }) {
   const [dateEditId, setDateEditId] = useState<string | null>(null);
   const [dateEditField, setDateEditField] = useState<"actualStart" | "actualFinish" | null>(null);
   const [dateEditVal, setDateEditVal] = useState("");
+  const [assignEditId, setAssignEditId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadSchedule = useCallback(async () => {
-    const res = await fetch(`/api/projects/${project.id}/schedule`);
-    if (res.ok) {
-      const data = await res.json();
+    const [schedRes, resRes] = await Promise.all([
+      fetch(`/api/projects/${project.id}/schedule`),
+      fetch(`/api/projects/${project.id}/resources`),
+    ]);
+    if (schedRes.ok) {
+      const data = await schedRes.json();
       setTasks(data.tasks ?? []);
       setKpi(data.kpi ?? null);
     }
+    if (resRes.ok) setResources(await resRes.json());
     setLoading(false);
   }, [project.id]);
 
   useEffect(() => { loadSchedule(); }, [loadSchedule]);
   useEffect(() => { if (editId && inputRef.current) inputRef.current.focus(); }, [editId]);
+  useEffect(() => {
+    if (!assignEditId) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("select")) setAssignEditId(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [assignEditId]);
 
   async function generate() {
     setGenerating(true);
@@ -650,6 +664,21 @@ function ScheduleTab({ project }: { project: any }) {
     if (res.ok) {
       const updated = await res.json();
       setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated } : t));
+    }
+  }
+
+  async function saveAssignee(taskId: string, resourceId: string | null) {
+    setAssignEditId(null);
+    const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resourceId }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      // merge resource object from local resources list
+      const resource = resourceId ? resources.find(r => r.id === resourceId) ?? null : null;
+      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated, resource } : t));
     }
   }
 
@@ -800,8 +829,29 @@ function ScheduleTab({ project }: { project: any }) {
                       <div style={{ width: 320, flexShrink: 0, padding: "9px 16px 9px 20px" }}>
                         <div style={{ fontSize: 14, fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
                         <div style={{ fontSize: 12, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
-                          {t.wbsCode} · {t.owner || "Unassigned"} · {t.baselineDays}d
+                          {t.wbsCode} · {t.baselineDays}d
                         </div>
+                        {/* Assignee selector */}
+                        {assignEditId === t.id ? (
+                          <select
+                            autoFocus
+                            defaultValue={t.resource?.id ?? ""}
+                            onBlur={e => saveAssignee(t.id, e.target.value || null)}
+                            onChange={e => saveAssignee(t.id, e.target.value || null)}
+                            style={{ fontSize: 11, height: 22, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "0 4px", marginTop: 4, fontFamily: "'IBM Plex Sans',sans-serif", background: C.surface, maxWidth: 240 }}
+                          >
+                            <option value="">— Unassigned —</option>
+                            {resources.map(r => <option key={r.id} value={r.id}>{r.name} ({r.role})</option>)}
+                          </select>
+                        ) : (
+                          <div
+                            onClick={() => resources.length > 0 && setAssignEditId(t.id)}
+                            title={resources.length === 0 ? "Add team members in the Resources tab first" : "Click to assign"}
+                            style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: t.resource ? C.primary : C.text3, background: t.resource ? C.primaryLight : "transparent", border: t.resource ? `1px solid ${C.primaryBorder}` : "1px dashed " + C.borderLight, borderRadius: 5, padding: "1px 7px", cursor: resources.length > 0 ? "pointer" : "default", maxWidth: 200 }}
+                          >
+                            {t.resource ? `👤 ${t.resource.name}` : resources.length > 0 ? "+ Assign" : "No resources"}
+                          </div>
+                        )}
                         {/* Actual start / finish — click to edit */}
                         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
                           {(["actualStart", "actualFinish"] as const).map(field => {
@@ -931,6 +981,173 @@ function ScheduleTab({ project }: { project: any }) {
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+// ── Resources tab ──────────────────────────────────────────────────────────────
+
+const ROLES = ["Project Manager", "Business Analyst", "Developer", "QA Engineer", "Architect", "Designer", "DevOps", "Scrum Master", "Data Engineer", "Product Owner", "Consultant", "Other"];
+
+function ResourcesTab({ project }: { project: any }) {
+  const [resources, setResources] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [showForm, setShowForm] = React.useState(false);
+  const [editId, setEditId] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<string | null>(null);
+  const emptyForm = { name: "", role: "Developer", email: "", allocationPct: 100, startDate: "", endDate: "", ratePerDay: "", skills: "", notes: "" };
+  const [form, setForm] = React.useState(emptyForm);
+
+  async function load() {
+    const res = await fetch(`/api/projects/${project.id}/resources`);
+    if (res.ok) setResources(await res.json());
+    setLoading(false);
+  }
+  React.useEffect(() => { load(); }, [project.id]);
+
+  function openAdd() { setForm(emptyForm); setEditId(null); setShowForm(true); }
+  function openEdit(r: any) {
+    setForm({
+      name: r.name, role: r.role, email: r.email || "", allocationPct: r.allocationPct,
+      startDate: r.startDate ? r.startDate.slice(0, 10) : "",
+      endDate: r.endDate ? r.endDate.slice(0, 10) : "",
+      ratePerDay: r.ratePerDay ?? "", skills: r.skills || "", notes: r.notes || "",
+    });
+    setEditId(r.id); setShowForm(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    const url = editId ? `/api/projects/${project.id}/resources/${editId}` : `/api/projects/${project.id}/resources`;
+    const method = editId ? "PATCH" : "POST";
+    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    if (res.ok) { await load(); setShowForm(false); }
+    setSaving(false);
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Remove this resource? Tasks assigned to them will become unassigned.")) return;
+    setDeleting(id);
+    await fetch(`/api/projects/${project.id}/resources/${id}`, { method: "DELETE" });
+    await load();
+    setDeleting(null);
+  }
+
+  const allocationColor = (pct: number) => pct > 100 ? C.red : pct >= 80 ? C.amber : C.green;
+
+  if (loading) return <div style={{ padding: "40px 0", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>Loading…</div>;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 18 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>Resource Roster</div>
+        {resources.length > 0 && <span style={{ fontSize: 11.5, color: C.text3, marginLeft: 10 }}>{resources.length} team member{resources.length !== 1 ? "s" : ""}</span>}
+        <div style={{ flex: 1 }} />
+        <button onClick={openAdd} style={{ height: 32, padding: "0 14px", background: C.primary, color: "#fff", border: "none", borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          + Add Resource
+        </button>
+      </div>
+
+      {/* Add / Edit form */}
+      {showForm && (
+        <div style={{ background: C.surface, border: `1.5px solid ${C.primaryBorder}`, borderRadius: 12, padding: "18px 20px", marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.primary, marginBottom: 14 }}>{editId ? "Edit Resource" : "Add Team Member"}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            {[
+              { label: "Name *", key: "name", type: "text", placeholder: "Full name" },
+              { label: "Email", key: "email", type: "email", placeholder: "m365@company.com" },
+              { label: "Rate / Day ($)", key: "ratePerDay", type: "number", placeholder: "0" },
+            ].map(f => (
+              <label key={f.key} style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: C.text2 }}>{f.label}</span>
+                <input type={f.type} placeholder={f.placeholder} value={(form as any)[f.key]}
+                  onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                  style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif", outline: "none" }} />
+              </label>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <label style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.text2 }}>Role *</span>
+              <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif", background: C.surface }}>
+                {ROLES.map(r => <option key={r}>{r}</option>)}
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.text2 }}>Allocation %</span>
+              <input type="number" min={10} max={200} value={form.allocationPct}
+                onChange={e => setForm(p => ({ ...p, allocationPct: Number(e.target.value) }))}
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.text2 }}>Start Date</span>
+              <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.text2 }}>End Date</span>
+              <input type="date" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+            </label>
+          </div>
+          <label style={{ display: "flex", flexDirection: "column" as const, gap: 4, marginBottom: 14 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: C.text2 }}>Skills / Technologies</span>
+            <input type="text" placeholder="e.g. React, Node.js, AWS" value={form.skills}
+              onChange={e => setForm(p => ({ ...p, skills: e.target.value }))}
+              style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={save} disabled={saving || !form.name.trim()}
+              style={{ height: 32, padding: "0 18px", background: form.name.trim() ? C.primary : C.surface2, color: form.name.trim() ? "#fff" : C.text3, border: "none", borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: form.name.trim() ? "pointer" : "not-allowed" }}>
+              {saving ? "Saving…" : editId ? "Save Changes" : "Add Resource"}
+            </button>
+            <button onClick={() => setShowForm(false)} style={{ height: 32, padding: "0 14px", background: "none", border: `1px solid ${C.border}`, borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer", color: C.text2 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Roster table */}
+      {resources.length === 0 && !showForm ? (
+        <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "32px 24px", textAlign: "center" as const }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>👥</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.primary, marginBottom: 8 }}>No team members yet</div>
+          <div style={{ fontSize: 13, color: C.text2, maxWidth: 420, margin: "0 auto 18px" }}>Add your project team here. Once added, you can assign resources directly to schedule tasks.</div>
+          <button onClick={openAdd} style={{ height: 34, padding: "0 18px", background: C.primary, color: "#fff", border: "none", borderRadius: 8, font: `600 13px 'IBM Plex Sans'`, cursor: "pointer" }}>+ Add First Resource</button>
+        </div>
+      ) : resources.length > 0 && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+          {/* Table header */}
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 2fr 80px 80px 80px 80px", background: C.surface2, borderBottom: `1px solid ${C.border}`, padding: "8px 16px", gap: 8 }}>
+            {["Name", "Role", "Email", "Alloc %", "Start", "End", ""].map((h, i) => (
+              <div key={i} style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em" }}>{h}</div>
+            ))}
+          </div>
+          {resources.map((r, idx) => (
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 2fr 80px 80px 80px 80px", padding: "11px 16px", gap: 8, borderTop: idx === 0 ? "none" : `1px solid ${C.borderLight}`, alignItems: "center", background: idx % 2 === 0 ? C.surface : C.surface2 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{r.name}</div>
+                {r.skills && <div style={{ fontSize: 10.5, color: C.text3, marginTop: 1 }}>{r.skills}</div>}
+              </div>
+              <div style={{ fontSize: 12, color: C.text2 }}>{r.role}</div>
+              <div style={{ fontSize: 11.5, color: C.text3, fontFamily: "'IBM Plex Mono',monospace" }}>{r.email || "—"}</div>
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 700, color: allocationColor(r.allocationPct), background: allocationColor(r.allocationPct) + "20", borderRadius: 6, padding: "2px 7px" }}>
+                  {r.allocationPct}%
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.text3, fontFamily: "'IBM Plex Mono',monospace" }}>{r.startDate ? r.startDate.slice(0, 10) : "—"}</div>
+              <div style={{ fontSize: 11.5, color: C.text3, fontFamily: "'IBM Plex Mono',monospace" }}>{r.endDate ? r.endDate.slice(0, 10) : "—"}</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => openEdit(r)} title="Edit" style={{ width: 28, height: 28, border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.text2, fontSize: 13 }}>✎</button>
+                <button onClick={() => remove(r.id)} disabled={deleting === r.id} title="Remove" style={{ width: 28, height: 28, border: `1px solid ${C.border}`, borderRadius: 7, background: C.surface, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.red, fontSize: 13, opacity: deleting === r.id ? 0.5 : 1 }}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1392,7 +1609,7 @@ function CostTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const TABS = ["Artifacts", "RAID", "Schedule", "Cost", "Requirements", "Weekly Status"];
+const TABS = ["Artifacts", "RAID", "Schedule", "Resources", "Cost", "Requirements", "Weekly Status"];
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const [tab, setTab] = useState("Artifacts");
@@ -1447,6 +1664,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} />}
       {tab === "RAID" && <RAIDTab project={project} />}
       {tab === "Schedule" && <ScheduleTab project={project} />}
+      {tab === "Resources" && <ResourcesTab project={project} />}
       {tab === "Cost" && <CostTab project={project} />}
       {tab === "Requirements" && <RequirementsTab project={project} />}
       {tab === "Weekly Status" && <StatusTab project={project} />}

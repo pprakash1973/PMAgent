@@ -47,6 +47,7 @@ export async function GET(
   const tasks = await prisma.scheduleTask.findMany({
     where: { projectId: id },
     orderBy: { sortOrder: "asc" },
+    include: { resource: { select: { id: true, name: true, role: true, email: true } } },
   });
 
   const kpi = computeEVM(tasks);
