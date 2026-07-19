@@ -93,7 +93,7 @@ export function ArtifactPanel({
   engagementMode?: string;
 }) {
   const router = useRouter();
-  const [generating, setGenerating] = useState<string | null>(null);
+  const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [localArtifacts, setLocalArtifacts] = useState(artifacts);
@@ -107,7 +107,7 @@ export function ArtifactPanel({
   const activeTypes = selections.filter((s) => s.selectionStatus === "active").map((s) => s.artifactType);
 
   async function generate(artifactType: string) {
-    setGenerating(artifactType);
+    setGenerating((prev) => new Set(prev).add(artifactType));
     setMenuFor(null);
     setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
     try {
@@ -136,7 +136,7 @@ export function ArtifactPanel({
     } catch (err: any) {
       setGuardrailErrors((prev) => ({ ...prev, [artifactType]: err.message || "Generation failed" }));
     } finally {
-      setGenerating(null);
+      setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
     }
   }
 
@@ -209,7 +209,7 @@ export function ArtifactPanel({
 
   const currentIdx = PHASE_ORDER.indexOf(currentPhase);
   const generatedCount = localArtifacts.length;
-  const busy = !!generating || !!uploading;
+  const isUploading = !!uploading;
 
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px" }}>
@@ -243,11 +243,14 @@ export function ArtifactPanel({
         </div>
       </div>
 
-      {/* Generating banner */}
-      {generating && (
+      {/* Generating banner — shows when any sub-agents are running */}
+      {generating.size > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
           <Loader2 className="animate-spin" style={{ width: 14, height: 14, flexShrink: 0 }} />
-          Generating <span style={{ fontWeight: 600 }}>{generating.replace(/_/g, " ")}</span> — this takes 20–40 seconds…
+          {generating.size === 1
+            ? <>Generating <span style={{ fontWeight: 600 }}>{[...generating][0].replace(/_/g, " ")}</span> — this takes 20–40 seconds…</>
+            : <><span style={{ fontWeight: 600 }}>{generating.size} sub-agents</span> generating in parallel — each will appear as it completes…</>
+          }
         </div>
       )}
 
@@ -293,11 +296,13 @@ export function ArtifactPanel({
               {phaseItems.map((entry) => {
                 const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
                 const Icon = ARTIFACT_ICON[entry.type] ?? FileText;
-                const isGen = generating === entry.type;
+                const isGen = generating.has(entry.type);
                 const isUp = uploading === entry.type;
                 const isDel = deleting === entry.type;
                 const isExpanded = expanded === entry.type;
                 const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
+                // Only block upload/delete on this specific card; generate is always free
+                const cardBusy = isUp || isDel;
 
                 const phaseBorder = isCurrent || isDone ? meta.border : C.border;
                 const phaseBorderLight = isCurrent || isDone ? meta.borderLight : C.border;
@@ -335,24 +340,22 @@ export function ArtifactPanel({
                       <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap" as const }}>
                         <button
                           onClick={() => generate(entry.type)}
-                          disabled={busy}
                           style={{
                             height: 27, padding: "0 10px", background: C.primary, color: "#fff",
-                            border: "none", borderRadius: 7, cursor: busy ? "default" : "pointer",
+                            border: "none", borderRadius: 7, cursor: "pointer",
                             font: `600 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
-                            opacity: busy ? 0.6 : 1,
                           }}
                         >
                           <Wand2 style={{ width: 12, height: 12 }} /> Generate
                         </button>
                         <button
                           onClick={() => handleUploadClick(entry.type)}
-                          disabled={busy}
+                          disabled={isUploading}
                           style={{
                             height: 27, padding: "0 10px", background: C.surface, color: C.text2,
-                            border: `1px solid ${C.border}`, borderRadius: 7, cursor: busy ? "default" : "pointer",
+                            border: `1px solid ${C.border}`, borderRadius: 7, cursor: isUploading ? "default" : "pointer",
                             font: `500 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
-                            opacity: busy ? 0.6 : 1,
+                            opacity: isUploading ? 0.6 : 1,
                           }}
                         >
                           <Upload style={{ width: 12, height: 12 }} />
@@ -368,11 +371,27 @@ export function ArtifactPanel({
                   );
                 }
 
-                // Generated (or generating) — solid card
+                // Generating — dashed card with spinner (same layout as ungenerated)
+                if (!artifact && isGen) {
+                  return (
+                    <div key={entry.type} style={{
+                      border: `1.5px dashed ${C.primaryBorder}`,
+                      borderRadius: 12, padding: "16px 12px",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
+                      minHeight: 132, background: C.primaryLight,
+                    }}>
+                      <Loader2 className="animate-spin" style={{ width: 26, height: 26, color: C.primary }} />
+                      <div style={{ fontSize: 13, fontWeight: 500, color: C.primary, marginTop: 8 }}>{entry.label}</div>
+                      <div style={{ fontSize: 11, color: C.primary, margin: "1px 0 10px", opacity: 0.7 }}>Generating…</div>
+                    </div>
+                  );
+                }
+
+                // Generated — solid card
                 return (
                   <div key={entry.type} style={{
                     position: "relative", background: C.surface,
-                    border: `1.5px solid ${isExpanded ? phaseBorder : phaseBorder}`,
+                    border: `1.5px solid ${phaseBorder}`,
                     borderRadius: 12, padding: "14px 12px", textAlign: "center", minHeight: 132,
                     boxShadow: isExpanded ? `0 0 0 3px ${meta.bg}` : "none",
                     display: "flex", flexDirection: "column", alignItems: "center",
@@ -383,29 +402,23 @@ export function ArtifactPanel({
                     <Icon style={{ width: 26, height: 26, color: isGen ? C.textMuted : C.primary, marginTop: 4 }} />
                     <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginTop: 8, lineHeight: 1.25 }}>{entry.label}</div>
                     <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, marginBottom: 10 }}>
-                      {isGen ? "Generating…" : "Generated"}
+                      {isGen ? "Regenerating…" : "Generated"}
                     </div>
 
                     {/* Action row */}
                     <div style={{ marginTop: "auto", display: "flex", justifyContent: "center", gap: 4 }}>
-                      {isGen ? (
-                        <Loader2 className="animate-spin" style={{ width: 16, height: 16, color: C.primary }} />
-                      ) : (
-                        <>
-                          <IconBtn title={isExpanded ? "Hide" : "View"} onClick={() => setExpanded(isExpanded ? null : entry.type)} active={isExpanded}>
-                            {isExpanded ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
-                          </IconBtn>
-                          <IconBtn title="Download" onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)}>
-                            <Download style={{ width: 15, height: 15 }} />
-                          </IconBtn>
-                          <IconBtn title="Regenerate" onClick={() => generate(entry.type)} disabled={busy}>
-                            {isUp ? <Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> : <RefreshCw style={{ width: 15, height: 15 }} />}
-                          </IconBtn>
-                          <IconBtn title="More" onClick={() => setMenuFor(menuFor === entry.type ? null : entry.type)} active={menuFor === entry.type}>
-                            {isDel ? <Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> : <MoreHorizontal style={{ width: 15, height: 15 }} />}
-                          </IconBtn>
-                        </>
-                      )}
+                      <IconBtn title={isExpanded ? "Hide" : "View"} onClick={() => setExpanded(isExpanded ? null : entry.type)} active={isExpanded}>
+                        {isExpanded ? <EyeOff style={{ width: 15, height: 15 }} /> : <Eye style={{ width: 15, height: 15 }} />}
+                      </IconBtn>
+                      <IconBtn title="Download" onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)}>
+                        <Download style={{ width: 15, height: 15 }} />
+                      </IconBtn>
+                      <IconBtn title={isGen ? "Regenerating…" : "Regenerate"} onClick={() => generate(entry.type)} disabled={isGen}>
+                        {isGen ? <Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> : <RefreshCw style={{ width: 15, height: 15 }} />}
+                      </IconBtn>
+                      <IconBtn title="More" onClick={() => setMenuFor(menuFor === entry.type ? null : entry.type)} active={menuFor === entry.type}>
+                        {isDel ? <Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> : <MoreHorizontal style={{ width: 15, height: 15 }} />}
+                      </IconBtn>
                     </div>
 
                     {/* Overflow menu */}
@@ -417,9 +430,9 @@ export function ArtifactPanel({
                           background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9,
                           boxShadow: "0 6px 20px rgba(0,0,0,.12)", padding: 5, minWidth: 158, textAlign: "left",
                         }}>
-                          <MenuItem icon={<Upload style={{ width: 14, height: 14 }} />} label={isUp ? "Merging…" : "Upload new version"} onClick={() => handleUploadClick(entry.type)} disabled={busy} />
+                          <MenuItem icon={<Upload style={{ width: 14, height: 14 }} />} label={isUp ? "Merging…" : "Upload new version"} onClick={() => handleUploadClick(entry.type)} disabled={cardBusy} />
                           <MenuItem icon={isExpanded ? <EyeOff style={{ width: 14, height: 14 }} /> : <Eye style={{ width: 14, height: 14 }} />} label={isExpanded ? "Hide document" : "View document"} onClick={() => { setExpanded(isExpanded ? null : entry.type); setMenuFor(null); }} />
-                          <MenuItem icon={<Trash2 style={{ width: 14, height: 14 }} />} label="Delete" onClick={() => deleteArtifact(entry.type)} disabled={busy} danger />
+                          <MenuItem icon={<Trash2 style={{ width: 14, height: 14 }} />} label="Delete" onClick={() => deleteArtifact(entry.type)} disabled={cardBusy} danger />
                         </div>
                       </>
                     )}
