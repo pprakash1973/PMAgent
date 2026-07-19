@@ -149,9 +149,7 @@ export default function NewProjectPage() {
       if (!res.ok) throw new Error(data.error?.message);
 
       toast({ title: "Project created!", description: data.name });
-      // If created from file, auto-generate artifacts
-      const suffix = (mode === "upload" && parsed) ? "?autoGenerate=1" : "";
-      router.push(`/dashboard/projects/${data.id}${suffix}`);
+      router.push(`/dashboard/projects/${data.id}`);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setLoading(false);
