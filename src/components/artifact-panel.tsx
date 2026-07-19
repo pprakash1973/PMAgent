@@ -103,7 +103,6 @@ export function ArtifactPanel({
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
-  const [autoGenQueue, setAutoGenQueue] = useState<string[]>([]);
   const [autoGenDone, setAutoGenDone] = useState(false);
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -111,28 +110,44 @@ export function ArtifactPanel({
 
   const activeTypes = selections.filter((s) => s.selectionStatus === "active").map((s) => s.artifactType);
 
+  // Auto-generate initiation phase artifacts on new project creation — uses batch endpoint (parallel)
   useEffect(() => {
     if (searchParams.get("autoGenerate") !== "1" || autoGenDone) return;
-    const coreTypes = ["project_charter", "stakeholder_register", "risk_register", "wbs"];
-    const toGenerate = coreTypes.filter((t) => !localArtifacts.some((a) => a.artifactType === t));
-    if (toGenerate.length > 0) {
-      setAutoGenQueue(toGenerate);
-      setShowAll(true);
-    } else {
-      setAutoGenDone(true);
-    }
+    // Only initiation phase artifacts — never generate planning/execution/closure on creation
+    const toGenerate = catalog
+      .filter((c) => c.phase === "initiation" && !localArtifacts.some((a) => a.artifactType === c.type))
+      .map((c) => c.type);
+    if (toGenerate.length === 0) { setAutoGenDone(true); return; }
+    setShowAll(true);
+    setBatchGenerating(new Set(toGenerate));
+    fetch(`/api/projects/${projectId}/artifacts/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ artifactTypes: toGenerate }),
+    })
+      .then((res) => res.json())
+      .then(({ succeeded, failed }) => {
+        if (succeeded?.length > 0) {
+          setLocalArtifacts((prev) => {
+            let next = [...prev];
+            for (const artifact of succeeded) {
+              const idx = next.findIndex((a) => a.artifactType === artifact.artifactType);
+              if (idx >= 0) { next[idx] = artifact; } else { next = [...next, artifact]; }
+            }
+            return next;
+          });
+          router.refresh();
+        }
+        if (failed?.length > 0) {
+          const errs: Record<string, string> = {};
+          for (const f of failed) errs[f.type] = f.reason;
+          setGuardrailErrors((prev) => ({ ...prev, ...errs }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => { setBatchGenerating(new Set()); setAutoGenDone(true); });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (autoGenQueue.length === 0 || generating) return;
-    const next = autoGenQueue[0];
-    setAutoGenQueue((q) => q.slice(1));
-    generate(next).then(() => {
-      if (autoGenQueue.length <= 1) setAutoGenDone(true);
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoGenQueue, generating]);
 
   async function generate(artifactType: string) {
     setGenerating(artifactType);
@@ -168,17 +183,18 @@ export function ArtifactPanel({
     }
   }
 
-  async function generateAll() {
-    // Collect types that are not yet generated and not governance-locked
+  async function generatePhase(phase: string) {
+    // Collect un-generated types for this phase only (respects governance locks)
     const toGenerate = catalog
       .filter((c) => {
+        if (c.phase !== phase) return false;
         if (engagementMode === "high_level" && GOVERNANCE_LOCKED.has(c.type)) return false;
         return !localArtifacts.some((a) => a.artifactType === c.type);
       })
       .map((c) => c.type);
 
     if (toGenerate.length === 0) {
-      toast({ title: "All artifacts already generated", description: "Nothing left to generate." });
+      toast({ title: `All ${PHASE_META[phase]?.label ?? phase} artifacts already generated`, description: "Nothing left to generate for this phase." });
       return;
     }
 
@@ -219,7 +235,7 @@ export function ArtifactPanel({
 
       toast({
         title: `Generated ${succeeded.length} artifact${succeeded.length !== 1 ? "s" : ""}`,
-        description: failed.length > 0 ? `${failed.length} could not be generated — see cards for details.` : "All artifacts ready.",
+        description: failed.length > 0 ? `${failed.length} could not be generated — see cards for details.` : `All ${PHASE_META[phase]?.label ?? phase} artifacts ready.`,
       });
     } catch (err: any) {
       toast({ title: "Batch generation failed", description: err.message || "Please try again", variant: "destructive" });
@@ -295,11 +311,10 @@ export function ArtifactPanel({
     if (file && target) uploadArtifact(target, file);
   }
 
-  const isAutoGenerating = autoGenQueue.length > 0 || (searchParams.get("autoGenerate") === "1" && !autoGenDone && generating !== null);
   const currentIdx = PHASE_ORDER.indexOf(currentPhase);
-
   const generatedCount = localArtifacts.length;
   const isBatchRunning = batchGenerating.size > 0;
+  const isAutoGenerating = searchParams.get("autoGenerate") === "1" && !autoGenDone && isBatchRunning;
   const busy = !!generating || !!uploading || isBatchRunning;
 
   return (
@@ -322,24 +337,6 @@ export function ArtifactPanel({
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button
-            onClick={generateAll}
-            disabled={busy}
-            style={{
-              height: 30, padding: "0 12px", background: isBatchRunning ? C.primaryLight : C.primary,
-              color: isBatchRunning ? C.primary : "#fff",
-              border: `1px solid ${isBatchRunning ? C.primaryBorder : C.primary}`,
-              borderRadius: 8, cursor: busy ? "default" : "pointer",
-              font: `600 12px 'IBM Plex Sans',sans-serif`,
-              display: "flex", alignItems: "center", gap: 5,
-              opacity: busy && !isBatchRunning ? 0.5 : 1,
-            }}
-          >
-            {isBatchRunning
-              ? <><Loader2 className="animate-spin" style={{ width: 13, height: 13 }} /> Generating {batchGenerating.size} artifacts…</>
-              : <><Zap style={{ width: 13, height: 13 }} /> Generate all</>
-            }
-          </button>
-          <button
             onClick={() => setShowAll((v) => !v)}
             style={{
               height: 30, padding: "0 12px", background: C.surface, color: C.text2,
@@ -356,10 +353,7 @@ export function ArtifactPanel({
       {isAutoGenerating && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
           <Sparkles style={{ width: 14, height: 14, flexShrink: 0 }} />
-          Auto-generating core artifacts…
-          <span style={{ fontWeight: 600 }}>
-            {generating ? generating.replace(/_/g, " ") : ""} {autoGenQueue.length > 0 ? `(${autoGenQueue.length} remaining)` : ""}
-          </span>
+          Auto-generating <span style={{ fontWeight: 600 }}>{batchGenerating.size} Initiation artifacts in parallel</span> — all will appear at once when ready…
           <Loader2 className="animate-spin" style={{ width: 14, height: 14, marginLeft: "auto", flexShrink: 0 }} />
         </div>
       )}
@@ -369,7 +363,7 @@ export function ArtifactPanel({
           Generating <span style={{ fontWeight: 600 }}>{generating.replace(/_/g, " ")}</span> — this takes 20–40 seconds…
         </div>
       )}
-      {isBatchRunning && (
+      {isBatchRunning && !isAutoGenerating && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
           <Zap style={{ width: 14, height: 14, flexShrink: 0 }} />
           <span style={{ fontWeight: 600 }}>{batchGenerating.size} sub-agents</span> generating in parallel — all artifacts will appear at once when complete…
@@ -405,6 +399,36 @@ export function ArtifactPanel({
               </span>
               {isCurrent ? <span style={{ fontSize: 11, color: meta.color }}>current phase</span> : null}
               <div style={{ flex: 1, height: 1, background: isCurrent || isDone ? meta.border : C.border, opacity: 0.4 }} />
+              {/* Phase-scoped generate button — only for current/upcoming phases with un-generated artifacts */}
+              {!isDone && doneCount < phaseItems.length && (() => {
+                const phaseUngenerated = phaseItems.filter((e) => {
+                  if (engagementMode === "high_level" && GOVERNANCE_LOCKED.has(e.type)) return false;
+                  return !localArtifacts.some((a) => a.artifactType === e.type);
+                });
+                if (phaseUngenerated.length === 0) return null;
+                const isBatchPhase = phaseUngenerated.some((e) => batchGenerating.has(e.type));
+                return (
+                  <button
+                    onClick={() => generatePhase(phase)}
+                    disabled={busy}
+                    style={{
+                      height: 26, padding: "0 10px",
+                      background: isBatchPhase ? meta.bg : meta.color,
+                      color: isBatchPhase ? meta.color : "#fff",
+                      border: `1px solid ${meta.border}`,
+                      borderRadius: 7, cursor: busy ? "default" : "pointer",
+                      font: `600 11px 'IBM Plex Sans',sans-serif`,
+                      display: "flex", alignItems: "center", gap: 4,
+                      opacity: busy && !isBatchPhase ? 0.5 : 1, flexShrink: 0,
+                    }}
+                  >
+                    {isBatchPhase
+                      ? <><Loader2 className="animate-spin" style={{ width: 11, height: 11 }} /> Generating…</>
+                      : <><Zap style={{ width: 11, height: 11 }} /> Generate {phaseUngenerated.length} artifact{phaseUngenerated.length !== 1 ? "s" : ""}</>
+                    }
+                  </button>
+                );
+              })()}
               {isDone ? (
                 <span style={{ fontSize: 11, color: C.green, display: "flex", alignItems: "center", gap: 3 }}><Check style={{ width: 13, height: 13 }} /> Gate passed</span>
               ) : isCurrent ? (
