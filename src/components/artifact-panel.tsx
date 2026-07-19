@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toaster";
 import {
@@ -102,6 +102,29 @@ export function ArtifactPanel({
   const [showAll, setShowAll] = useState(false);
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // On mount, fetch fresh artifacts from server — tab switches remount this component,
+  // so this ensures newly-generated artifacts appear even if generation completed on another tab.
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/artifacts`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (Array.isArray(data)) setLocalArtifacts(data); })
+      .catch(() => {/* keep prop-seeded state on error */});
+  }, [projectId]);
+
+  // Sync from prop when router.refresh() delivers fresh server data, but don't overwrite
+  // artifacts that are currently generating (they aren't in the DB yet).
+  useEffect(() => {
+    setLocalArtifacts((prev) => {
+      const serverMap = new Map(artifacts.map((a: Artifact) => [a.artifactType, a]));
+      // Merge: server wins for completed artifacts, keep prev entries for in-flight ones
+      const merged = [...artifacts];
+      for (const local of prev) {
+        if (!serverMap.has(local.artifactType)) merged.push(local);
+      }
+      return merged;
+    });
+  }, [artifacts]); // eslint-disable-line react-hooks/exhaustive-deps
   const uploadTargetRef = useRef<string | null>(null);
 
   const activeTypes = selections.filter((s) => s.selectionStatus === "active").map((s) => s.artifactType);
@@ -133,6 +156,7 @@ export function ArtifactPanel({
         return [...prev, data];
       });
       toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
+      router.refresh(); // sync server-side props so artifact persists across tab switches
     } catch (err: any) {
       setGuardrailErrors((prev) => ({ ...prev, [artifactType]: err.message || "Generation failed" }));
     } finally {
