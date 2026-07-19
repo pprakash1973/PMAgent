@@ -7,7 +7,7 @@ import {
   FileText, Presentation, Users, Target, Network, Flag, Coins, AlertTriangle,
   ShieldAlert, MessageSquare, Grid3x3, BadgeCheck, ClipboardList, AlertCircle,
   Gavel, FileBarChart, RefreshCw, GraduationCap, FileCheck, TrendingUp, ScrollText,
-  Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Sparkles, Check, Lock,
+  Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Sparkles, Check, Lock, Zap,
 } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
@@ -97,6 +97,7 @@ export function ArtifactPanel({
   const [generating, setGenerating] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [batchGenerating, setBatchGenerating] = useState<Set<string>>(new Set());
   const [localArtifacts, setLocalArtifacts] = useState(artifacts);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -164,6 +165,66 @@ export function ArtifactPanel({
       setGuardrailErrors((prev) => ({ ...prev, [artifactType]: err.message || "Generation failed" }));
     } finally {
       setGenerating(null);
+    }
+  }
+
+  async function generateAll() {
+    // Collect types that are not yet generated and not governance-locked
+    const toGenerate = catalog
+      .filter((c) => {
+        if (engagementMode === "high_level" && GOVERNANCE_LOCKED.has(c.type)) return false;
+        return !localArtifacts.some((a) => a.artifactType === c.type);
+      })
+      .map((c) => c.type);
+
+    if (toGenerate.length === 0) {
+      toast({ title: "All artifacts already generated", description: "Nothing left to generate." });
+      return;
+    }
+
+    setBatchGenerating(new Set(toGenerate));
+    setShowAll(true);
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}/artifacts/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ artifactTypes: toGenerate }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Batch generation failed", description: data?.error?.message ?? "Please try again", variant: "destructive" });
+        return;
+      }
+
+      const { succeeded, failed } = data as { succeeded: any[]; failed: { type: string; reason: string }[] };
+
+      if (succeeded.length > 0) {
+        setLocalArtifacts((prev) => {
+          let next = [...prev];
+          for (const artifact of succeeded) {
+            const idx = next.findIndex((a) => a.artifactType === artifact.artifactType);
+            if (idx >= 0) { next[idx] = artifact; } else { next = [...next, artifact]; }
+          }
+          return next;
+        });
+        router.refresh();
+      }
+
+      if (failed.length > 0) {
+        const newErrors: Record<string, string> = {};
+        for (const f of failed) newErrors[f.type] = f.reason;
+        setGuardrailErrors((prev) => ({ ...prev, ...newErrors }));
+      }
+
+      toast({
+        title: `Generated ${succeeded.length} artifact${succeeded.length !== 1 ? "s" : ""}`,
+        description: failed.length > 0 ? `${failed.length} could not be generated — see cards for details.` : "All artifacts ready.",
+      });
+    } catch (err: any) {
+      toast({ title: "Batch generation failed", description: err.message || "Please try again", variant: "destructive" });
+    } finally {
+      setBatchGenerating(new Set());
     }
   }
 
@@ -238,7 +299,8 @@ export function ArtifactPanel({
   const currentIdx = PHASE_ORDER.indexOf(currentPhase);
 
   const generatedCount = localArtifacts.length;
-  const busy = !!generating || !!uploading;
+  const isBatchRunning = batchGenerating.size > 0;
+  const busy = !!generating || !!uploading || isBatchRunning;
 
   return (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px" }}>
@@ -258,16 +320,36 @@ export function ArtifactPanel({
             Grouped by phase · {generatedCount} of {catalog.length} generated
           </div>
         </div>
-        <button
-          onClick={() => setShowAll((v) => !v)}
-          style={{
-            height: 30, padding: "0 12px", background: C.surface, color: C.text2,
-            border: `1px solid ${C.border}`, borderRadius: 8, cursor: "pointer",
-            font: `500 12px 'IBM Plex Sans',sans-serif`,
-          }}
-        >
-          {showAll ? "Show active only" : "Browse all artifacts"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            onClick={generateAll}
+            disabled={busy}
+            style={{
+              height: 30, padding: "0 12px", background: isBatchRunning ? C.primaryLight : C.primary,
+              color: isBatchRunning ? C.primary : "#fff",
+              border: `1px solid ${isBatchRunning ? C.primaryBorder : C.primary}`,
+              borderRadius: 8, cursor: busy ? "default" : "pointer",
+              font: `600 12px 'IBM Plex Sans',sans-serif`,
+              display: "flex", alignItems: "center", gap: 5,
+              opacity: busy && !isBatchRunning ? 0.5 : 1,
+            }}
+          >
+            {isBatchRunning
+              ? <><Loader2 className="animate-spin" style={{ width: 13, height: 13 }} /> Generating {batchGenerating.size} artifacts…</>
+              : <><Zap style={{ width: 13, height: 13 }} /> Generate all</>
+            }
+          </button>
+          <button
+            onClick={() => setShowAll((v) => !v)}
+            style={{
+              height: 30, padding: "0 12px", background: C.surface, color: C.text2,
+              border: `1px solid ${C.border}`, borderRadius: 8, cursor: "pointer",
+              font: `500 12px 'IBM Plex Sans',sans-serif`,
+            }}
+          >
+            {showAll ? "Show active only" : "Browse all artifacts"}
+          </button>
+        </div>
       </div>
 
       {/* Auto-gen / generating banners */}
@@ -281,10 +363,17 @@ export function ArtifactPanel({
           <Loader2 className="animate-spin" style={{ width: 14, height: 14, marginLeft: "auto", flexShrink: 0 }} />
         </div>
       )}
-      {!isAutoGenerating && generating && (
+      {!isAutoGenerating && generating && !isBatchRunning && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
           <Loader2 className="animate-spin" style={{ width: 14, height: 14, flexShrink: 0 }} />
           Generating <span style={{ fontWeight: 600 }}>{generating.replace(/_/g, " ")}</span> — this takes 20–40 seconds…
+        </div>
+      )}
+      {isBatchRunning && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
+          <Zap style={{ width: 14, height: 14, flexShrink: 0 }} />
+          <span style={{ fontWeight: 600 }}>{batchGenerating.size} sub-agents</span> generating in parallel — all artifacts will appear at once when complete…
+          <Loader2 className="animate-spin" style={{ width: 14, height: 14, marginLeft: "auto", flexShrink: 0 }} />
         </div>
       )}
 
@@ -357,44 +446,55 @@ export function ArtifactPanel({
                   );
                 }
 
+                const isBatchItem = batchGenerating.has(entry.type);
+
                 if (!artifact && !isGen) {
-                  // Not generated — dashed card with Generate + Upload
+                  // Not generated — dashed card with Generate + Upload (or batch spinner)
                   return (
                     <div key={entry.type} style={{
-                      border: `1.5px dashed ${phaseBorderLight}`, borderRadius: 12, padding: "16px 12px",
+                      border: `1.5px dashed ${isBatchItem ? C.primaryBorder : phaseBorderLight}`,
+                      borderRadius: 12, padding: "16px 12px",
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center",
                       minHeight: 132,
+                      background: isBatchItem ? C.primaryLight : undefined,
                     }}>
-                      <Icon style={{ width: 26, height: 26, color: C.textMuted }} />
-                      <div style={{ fontSize: 13, fontWeight: 500, color: C.text2, marginTop: 8 }}>{entry.label}</div>
-                      <div style={{ fontSize: 11, color: C.textMuted, margin: "1px 0 10px" }}>Not generated</div>
-                      <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap" as const }}>
-                        <button
-                          onClick={() => generate(entry.type)}
-                          disabled={busy}
-                          style={{
-                            height: 27, padding: "0 10px", background: C.primary, color: "#fff",
-                            border: "none", borderRadius: 7, cursor: busy ? "default" : "pointer",
-                            font: `600 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
-                            opacity: busy ? 0.6 : 1,
-                          }}
-                        >
-                          <Wand2 style={{ width: 12, height: 12 }} /> Generate
-                        </button>
-                        <button
-                          onClick={() => handleUploadClick(entry.type)}
-                          disabled={busy}
-                          style={{
-                            height: 27, padding: "0 10px", background: C.surface, color: C.text2,
-                            border: `1px solid ${C.border}`, borderRadius: 7, cursor: busy ? "default" : "pointer",
-                            font: `500 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
-                            opacity: busy ? 0.6 : 1,
-                          }}
-                        >
-                          <Upload style={{ width: 12, height: 12 }} />
-                          {isUp ? "Uploading…" : "Upload"}
-                        </button>
+                      {isBatchItem
+                        ? <Loader2 className="animate-spin" style={{ width: 26, height: 26, color: C.primary }} />
+                        : <Icon style={{ width: 26, height: 26, color: C.textMuted }} />
+                      }
+                      <div style={{ fontSize: 13, fontWeight: 500, color: isBatchItem ? C.primary : C.text2, marginTop: 8 }}>{entry.label}</div>
+                      <div style={{ fontSize: 11, color: isBatchItem ? C.primary : C.textMuted, margin: "1px 0 10px" }}>
+                        {isBatchItem ? "Generating…" : "Not generated"}
                       </div>
+                      {!isBatchItem && (
+                        <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap" as const }}>
+                          <button
+                            onClick={() => generate(entry.type)}
+                            disabled={busy}
+                            style={{
+                              height: 27, padding: "0 10px", background: C.primary, color: "#fff",
+                              border: "none", borderRadius: 7, cursor: busy ? "default" : "pointer",
+                              font: `600 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
+                              opacity: busy ? 0.6 : 1,
+                            }}
+                          >
+                            <Wand2 style={{ width: 12, height: 12 }} /> Generate
+                          </button>
+                          <button
+                            onClick={() => handleUploadClick(entry.type)}
+                            disabled={busy}
+                            style={{
+                              height: 27, padding: "0 10px", background: C.surface, color: C.text2,
+                              border: `1px solid ${C.border}`, borderRadius: 7, cursor: busy ? "default" : "pointer",
+                              font: `500 11.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 4,
+                              opacity: busy ? 0.6 : 1,
+                            }}
+                          >
+                            <Upload style={{ width: 12, height: 12 }} />
+                            {isUp ? "Uploading…" : "Upload"}
+                          </button>
+                        </div>
+                      )}
                       {guardrailErrors[entry.type] && (
                         <div style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 11, marginTop: 6, lineHeight: 1.4, textAlign: "center" }}>
                           {guardrailErrors[entry.type]}
