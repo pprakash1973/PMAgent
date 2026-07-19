@@ -32,6 +32,7 @@ const UPSTREAM_REQUIRED: Record<string, string[]> = {
   lessons_learned:    ["project_charter"],
   closure_report:       ["project_charter", "milestone_plan"],
   traceability_matrix:  ["project_charter", "wbs", "milestone_plan"],
+  evm_analysis:         ["project_charter", "cost_plan"],
 };
 
 // Mandatory project fields per artifact type (GR-2)
@@ -63,6 +64,7 @@ export interface ProjectSnapshot {
   hasRequirementsDoc?: boolean;        // confirmed requirements doc uploaded
   milestoneCount?: number;
   riskCount?: number;
+  costEntryCount?: number;
 }
 
 export interface GuardrailResult {
@@ -153,6 +155,28 @@ export function runGuardrails(
     warnings.push(
       "WARN-CHG-006: No baseline charter on record. Log each change request with an impact statement — do not silently overwrite the baseline."
     );
+  }
+
+  // ── GR-11: EVM requires cost entries ───────────────────────────────────────
+  if (artifactType === "evm_analysis") {
+    if (!project.budget) {
+      throw new GuardrailError(
+        "ERR-EVM-008",
+        "ERROR: EVM Analysis requires a project budget (BAC). Set the project budget before generating EVM."
+      );
+    }
+    if (!project.startDate || !project.endDate) {
+      throw new GuardrailError(
+        "ERR-EVM-009",
+        "ERROR: EVM Analysis requires project start and end dates to compute Planned Value. Set both dates first."
+      );
+    }
+    if (!project.costEntryCount || project.costEntryCount === 0) {
+      throw new GuardrailError(
+        "ERR-EVM-010",
+        "ERROR: No actual cost data found. Log at least one cost entry in the Cost tab before generating EVM Analysis."
+      );
+    }
   }
 
   // ── GR-10: WBS scope quality warning (Buchtik "car test") ──────────────────

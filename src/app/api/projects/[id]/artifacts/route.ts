@@ -48,11 +48,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: { code: "INVALID_ARTIFACT" } }, { status: 400 });
   }
 
-  // ── Guardrail pre-flight (GR-1, GR-2, GR-4, GR-8, GR-9) ──────────────────
-  const existingArtifacts = await prisma.artifact.findMany({
-    where: { projectId: id },
-    select: { artifactType: true },
-  });
+  // ── Guardrail pre-flight ────────────────────────────────────────────────────
+  const [existingArtifacts, costEntryCount] = await Promise.all([
+    prisma.artifact.findMany({ where: { projectId: id }, select: { artifactType: true } }),
+    artifactType === "evm_analysis"
+      ? prisma.costEntry.count({ where: { projectId: id } })
+      : Promise.resolve(0),
+  ]);
   try {
     const guardrailResult = runGuardrails(artifactType, {
       name: project.name,
@@ -62,6 +64,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       budget: project.budget,
       existingArtifactTypes: existingArtifacts.map((a) => a.artifactType),
       hasRequirementsDoc: project.requirementsDocs.length > 0,
+      costEntryCount,
       milestoneCount: project.milestones.length,
       riskCount: project.risks.length,
     });
@@ -91,6 +94,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     wbsContent = wbsArtifact?.content ?? null;
   }
 
+  // For EVM: fetch actual cost entries ordered by date
+  let costEntries: { date: Date; amount: number; category: string }[] = [];
+  if (artifactType === "evm_analysis") {
+    costEntries = await prisma.costEntry.findMany({
+      where: { projectId: id },
+      select: { date: true, amount: true, category: true },
+      orderBy: { date: "asc" },
+    });
+  }
+
   const projectContext = {
     name: project.name,
     code: project.code,
@@ -107,6 +120,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ...(artifactType === "traceability_matrix" && {
       scheduleTasks,
       wbsStructure: wbsContent,
+    }),
+    ...(artifactType === "evm_analysis" && {
+      costEntries: costEntries.map((e) => ({
+        date: e.date.toISOString().slice(0, 10),
+        amount: e.amount,
+        category: e.category,
+      })),
     }),
   };
 

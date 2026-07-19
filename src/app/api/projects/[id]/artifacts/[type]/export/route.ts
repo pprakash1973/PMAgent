@@ -8,6 +8,7 @@ import { ARTIFACT_FORMAT } from "@/lib/utils";
 import { buildXlsx } from "@/lib/export-xlsx";
 import { buildWbsXlsx } from "@/lib/export-wbs-xlsx";
 import { buildRtmXlsx } from "@/lib/export-rtm-xlsx";
+import { buildEvmXlsx } from "@/lib/export-evm-xlsx";
 import { buildPptx } from "@/lib/export-pptx";
 import { buildDocx } from "@/lib/export-docx";
 
@@ -37,7 +38,11 @@ export async function GET(
     let mimeType: string;
     let ext: string;
 
-    if (type === "traceability_matrix") {
+    if (type === "evm_analysis") {
+      buf = await buildEvmXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "traceability_matrix") {
       buf = await buildRtmXlsx(content);
       mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       ext = "xlsx";

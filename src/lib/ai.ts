@@ -787,6 +787,56 @@ Return JSON with:
 
     // ── EXECUTION ─────────────────────────────────────────────────────────────
 
+    evm_analysis: `Generate a full Earned Value Management (EVM) Analysis per PMI/PMBOK 7th Ed and the EVM Analysis skill formula set.
+
+INPUTS available in project context:
+- budget = BAC (Budget at Completion)
+- startDate / endDate = planned duration
+- costEntries = array of {date, amount, category} — these are the actual costs (AC) logged per date
+- milestones = planned milestone dates for schedule context
+
+COMPUTATION RULES (mandatory — follow exactly):
+1. Group costEntries by calendar month to form per-period AC values.
+2. PV per period = BAC × (elapsed months / total planned months). Use linear interpolation; note if plan appears non-linear.
+3. EV per period = BAC × estimated % complete. Derive % complete from milestones achieved vs total, or from cost-to-date ratio relative to plan if no milestone data. State your derivation method.
+4. For each period compute cumulative: PV, EV, AC, SV (EV-PV), CV (EV-AC), SPI (EV/PV), CPI (EV/AC), SV%, CV%.
+5. Use CUMULATIVE CPI of the latest period for forecasts — never average period CPIs.
+6. Forecasts (latest period): EAC = BAC/CPI, ETC = EAC-AC, SAC = planned_months/SPI, VAC_cost = BAC-EAC, VAC_schedule = planned_months-SAC, TCPI = (BAC-EV)/(BAC-AC).
+7. RAG: Green = CPI≥0.95 AND SPI≥0.95; Amber = either index 0.85–0.95; Red = either index <0.85 OR TCPI>1.10.
+8. Sanity-check: sign of SV must agree with SPI vs 1; sign of CV must agree with CPI vs 1; EAC>BAC iff CPI<1.
+
+Return JSON:
+- projectName (string)
+- analysisDate (string): ISO date of analysis (today)
+- bac (number): Budget at Completion
+- plannedDurationMonths (number)
+- currency (string)
+- derivationMethod (string): explain how EV % complete was derived
+- periods (array of {
+    period (string): "YYYY-MM",
+    periodLabel (string): "Month N — Mon YYYY",
+    pv (number), ev (number), ac (number),
+    sv (number), cv (number),
+    spi (number), cpi (number),
+    svPct (number), cvPct (number),
+    cumPv (number), cumEv (number), cumAc (number),
+    cumSv (number), cumCv (number),
+    cumSpi (number), cumCpi (number)
+  })
+- forecast (object): {
+    eac (number), etc (number), sac (number),
+    vacCost (number), vacSchedule (number), tcpi (number),
+    projectedEndDate (string): ISO date derived from SAC,
+    ragStatus (string): "Green" | "Amber" | "Red"
+  }
+- verdict (object): {
+    costHealth (string): plain-language cost status — over/on/under budget, % and absolute variance, projected overrun at completion,
+    scheduleHealth (string): plain-language schedule status — behind/on/ahead, projected finish vs planned,
+    recoveryOutlook (string): TCPI interpretation — is recovery realistic? If TCPI>1.10 say so explicitly,
+    recommendedActions (array of string): 2-4 concrete PM actions
+  }
+- interpretationTable (array of {metric, formula, value, interpretation}): one row each for SV, CV, SPI, CPI, EAC, ETC, SAC, VAC cost, VAC schedule, TCPI`,
+
     traceability_matrix: `Generate a Requirements Traceability Matrix (RTM) per PMBOK 6th Ed Process 5.5 (Validate Scope) and IEEE 830.
 CRITICAL: Every requirement MUST be sourced ONLY from the requirements document provided below. Do NOT invent requirements.
 Map each requirement forward to: WBS/deliverable → schedule milestone → acceptance criteria → test/validation approach.
