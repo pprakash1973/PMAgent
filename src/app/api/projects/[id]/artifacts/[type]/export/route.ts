@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
 import { buildXlsx } from "@/lib/export-xlsx";
+import { buildWbsXlsx } from "@/lib/export-wbs-xlsx";
 import { buildPptx } from "@/lib/export-pptx";
 import { buildDocx } from "@/lib/export-docx";
 
@@ -35,7 +36,11 @@ export async function GET(
     let mimeType: string;
     let ext: string;
 
-    if (format === "xlsx") {
+    if (type === "wbs") {
+      buf = await buildWbsXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (format === "xlsx") {
       buf = buildXlsx(type, content);
       mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       ext = "xlsx";
