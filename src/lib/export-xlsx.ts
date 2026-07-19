@@ -144,33 +144,49 @@ function riskRegister(content: any): XLSX.WorkBook {
 function wbs(content: any): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
-  // Sheet 1: WBS Hierarchy (indented tree, 4 levels)
-  const hierHeaders = ["WBS Code", "WBS Level", "Element Name", "Type", "Owner", "Est. Duration (days)", "Est. Effort (hrs)", "Est. Cost ($)", "Notes"];
+  // Sheet 1: WBS Hierarchy (Buchtik: includes componentType, 100percentCheck)
+  const hierHeaders = [
+    "WBS Code", "WBS Level", "Element Name", "Component Type",
+    "Work Package?", "Owner", "Est. Duration (days)", "Est. Effort (hrs)", "100% Check",
+  ];
   const hierRows: unknown[][] = [];
   let totalDays = 0;
   let totalWPs = 0;
   for (const phase of content.phases ?? []) {
-    hierRows.push([safeStr(phase.id), 2, safeStr(phase.name), "Summary", "", "", "", "", ""]);
+    hierRows.push([
+      safeStr(phase.id), 2, safeStr(phase.name),
+      safeStr(phase.componentType ?? "Discrete"), "No",
+      safeStr(phase.owner ?? ""), "", "", safeStr(phase["100percentCheck"] ?? ""),
+    ]);
     for (const del of phase.deliverables ?? []) {
-      hierRows.push([safeStr(del.id), 3, "  " + safeStr(del.name), "Summary", "", "", "", "", ""]);
+      hierRows.push([
+        safeStr(del.id), 3, "  " + safeStr(del.name),
+        safeStr(del.componentType ?? "Discrete"), "No",
+        safeStr(del.owner ?? ""), "", "", safeStr(del["100percentCheck"] ?? ""),
+      ]);
       for (const wp of del.workPackages ?? []) {
         const days = Number(wp.estimatedDays) || 0;
         totalDays += days;
         totalWPs++;
         hierRows.push([
-          safeStr(wp.id), 4, "    " + safeStr(wp.name), "Work Package",
-          safeStr(wp.owner), days || "", days ? days * 8 : "", "", safeStr(wp.acceptanceCriteria ?? ""),
+          safeStr(wp.id), 4, "    " + safeStr(wp.name),
+          safeStr(wp.componentType ?? "Discrete"), "Yes",
+          safeStr(wp.owner ?? ""), days || "", days ? days * 8 : "", "",
         ]);
       }
     }
   }
   const hierWs = tableSheet(hierHeaders, hierRows);
-  hierWs["!cols"] = cols([14, 10, 36, 14, 20, 18, 16, 14, 40]);
+  hierWs["!cols"] = cols([14, 10, 38, 16, 14, 22, 18, 16, 44]);
   addFreezeRow(hierWs);
   XLSX.utils.book_append_sheet(wb, hierWs, "WBS Hierarchy");
 
-  // Sheet 2: WBS Dictionary (work packages only)
-  const dictHeaders = ["WBS Code", "Work Package Name", "Description", "In Scope", "Out of Scope", "Acceptance Criteria", "Owner", "Dependencies", "Est. Duration", "Est. Effort (hrs)", "Assumptions", "Constraints"];
+  // Sheet 2: WBS Dictionary (work packages only, now includes Out of Scope from AI)
+  const dictHeaders = [
+    "WBS Code", "Work Package Name", "Work Description",
+    "In Scope", "Out of Scope", "Acceptance Criteria",
+    "Owner", "Dependencies", "Est. Duration (days)", "Est. Effort (hrs)",
+  ];
   const dictRows: unknown[][] = [];
   for (const phase of content.phases ?? []) {
     for (const del of phase.deliverables ?? []) {
@@ -180,32 +196,34 @@ function wbs(content: any): XLSX.WorkBook {
           safeStr(wp.name),
           safeStr(wp.description),
           safeStr(wp.name) + " completed and accepted",
-          "Work outside of " + safeStr(del.name),
+          safeStr(wp.outOfScope ?? ("Work outside of " + safeStr(del.name))),
           safeStr(wp.acceptanceCriteria ?? "Delivered and signed off by owner"),
-          safeStr(wp.owner),
+          safeStr(wp.owner ?? ""),
           Array.isArray(wp.dependencies) ? wp.dependencies.join(", ") : safeStr(wp.dependencies ?? ""),
           safeStr(wp.estimatedDays ?? ""),
           wp.estimatedDays ? Number(wp.estimatedDays) * 8 : "",
-          "",
-          "",
         ]);
       }
     }
   }
   const dictWs = tableSheet(dictHeaders, dictRows);
-  dictWs["!cols"] = cols([12, 28, 40, 30, 30, 36, 20, 20, 14, 14, 30, 24]);
+  dictWs["!cols"] = cols([12, 28, 44, 30, 36, 40, 22, 20, 16, 16]);
   addFreezeRow(dictWs);
   XLSX.utils.book_append_sheet(wb, dictWs, "WBS Dictionary");
 
   // Sheet 3: Scope Baseline Summary
+  const sbs = content.scopeBaselineSummary ?? {};
   const scopeData: unknown[][] = [
     ["SCOPE BASELINE SUMMARY", ""],
     ["", ""],
     ["Project", safeStr(content.projectName)],
-    ["WBS Top-Level Code", safeStr(content.wbsCode ?? "1.0")],
-    ["Total Work Packages", totalWPs],
-    ["Total Estimated Days", totalDays],
-    ["Total Estimated Hours", totalDays * 8],
+    ["WBS Top-Level Code", safeStr(content.wbsCode ?? "1")],
+    ["Structuring Approach", safeStr(content.structuringApproach ?? sbs.structuringApproach ?? "")],
+    ["Total Components", sbs.totalComponents ?? ""],
+    ["Total Work Packages", sbs.totalWorkPackages ?? totalWPs],
+    ["Total Estimated Days", sbs.totalEstimatedDays ?? totalDays],
+    ["Total Estimated Hours", (sbs.totalEstimatedDays ?? totalDays) * 8],
+    ["Max Depth (levels)", sbs.maxDepth ?? 4],
     ["", ""],
     ["Phase", "Work Packages", "Est. Days"],
     ...(content.phases ?? []).map((p: any) => {
@@ -216,11 +234,29 @@ function wbs(content: any): XLSX.WorkBook {
     }),
     ["", ""],
     ["Control Accounts", ""],
-    ...((content.scopeBaselineSummary?.controlAccounts ?? []).map((ca: string) => ["", safeStr(ca)])),
+    ...((sbs.controlAccounts ?? []).map((ca: string) => ["", safeStr(ca)])),
+    ["", ""],
+    ["Note", safeStr(sbs.note ?? "Scope baseline = Scope Statement + WBS + WBS Dictionary. Changes after approval require formal change control.")],
   ];
   const scopeWs = XLSX.utils.aoa_to_sheet(scopeData);
   scopeWs["!cols"] = cols([30, 20, 18]);
   XLSX.utils.book_append_sheet(wb, scopeWs, "Scope Baseline Summary");
+
+  // Sheet 4: Quality Audit (Buchtik 16-point checklist)
+  const auditHeaders = ["#", "Quality Check", "Result", "Evidence"];
+  const auditRows: unknown[][] = (content.qualityAudit ?? []).map((q: any) => [
+    safeStr(q.check),
+    safeStr(q.description),
+    safeStr(q.result),
+    safeStr(q.evidence),
+  ]);
+  if (auditRows.length === 0) {
+    auditRows.push(["—", "Quality audit not generated", "N/A", "Re-generate WBS to include audit"]);
+  }
+  const auditWs = tableSheet(auditHeaders, auditRows);
+  auditWs["!cols"] = cols([4, 52, 10, 60]);
+  addFreezeRow(auditWs);
+  XLSX.utils.book_append_sheet(wb, auditWs, "Quality Audit");
 
   return wb;
 }

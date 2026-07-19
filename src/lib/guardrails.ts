@@ -155,6 +155,16 @@ export function runGuardrails(
     );
   }
 
+  // ── GR-10: WBS scope quality warning (Buchtik "car test") ──────────────────
+  if (artifactType === "wbs" && project.description && project.description.trim().length < 100) {
+    warnings.push(
+      "WARN-WBS-007: Project scope description is very brief (< 100 characters). " +
+      "A thin scope input risks a vague WBS that fails the Buchtik 'car test' — two stakeholders " +
+      "may picture different deliverables. Provide a scope statement, SOW, or requirements document " +
+      "for a higher-quality, unambiguous WBS."
+    );
+  }
+
   return { pass: true, warnings };
 }
 
