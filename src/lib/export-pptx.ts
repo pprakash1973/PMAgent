@@ -361,11 +361,11 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   });
   // Left text
   cov.addText("UST", { x: 0.55, y: 0.45, w: 2, h: 0.45, fontSize: 18, bold: true, color: TEAL_L, fontFace: "Aptos" });
-  cov.addText(title, { x: 0.55, y: 1.1, w: 6.7, h: 2.0, fontSize: 30, bold: true, color: WHITE, align: "left", wrap: true, fontFace: "Aptos" });
+  cov.addText(title, { x: 0.55, y: 1.1, w: 6.7, h: 2.0, fontSize: 32, bold: true, color: WHITE, align: "left", wrap: true, fontFace: "Aptos" });
   cov.addShape(pptx.ShapeType.rect, { x: 0.55, y: 3.25, w: 2.4, h: 0.06, fill: { color: TEAL_L } });
-  cov.addText(`Project Charter  v${safeStr(content.version ?? "1.0")}`, { x: 0.55, y: 3.4, w: 6.7, h: 0.45, fontSize: 14, color: MID_WASH, fontFace: "Aptos" });
-  cov.addText(safeStr(content.date ?? ""), { x: 0.55, y: 3.95, w: 6.7, h: 0.4, fontSize: 11, color: TEAL_L, fontFace: "Aptos" });
-  cov.addText("UST Project Management Office", { x: 0.55, y: 4.55, w: 6.7, h: 0.35, fontSize: 10, color: DARK_GRAY, fontFace: "Aptos" });
+  cov.addText(`Project Charter  v${safeStr(content.version ?? "1.0")}`, { x: 0.55, y: 3.4, w: 6.7, h: 0.45, fontSize: 16, color: MID_WASH, fontFace: "Aptos" });
+  cov.addText(safeStr(content.date ?? ""), { x: 0.55, y: 3.95, w: 6.7, h: 0.4, fontSize: 10, color: TEAL_L, fontFace: "Aptos" });
+  cov.addText("UST Project Management Office", { x: 0.55, y: 4.45, w: 6.7, h: 0.35, fontSize: 10, color: DARK_GRAY, fontFace: "Aptos" });
   const sponsor = safeStr(content.sponsor ?? content.projectSponsor ?? "");
   if (sponsor) cov.addText(`Sponsor: ${sponsor}`, { x: 0.55, y: 5.05, w: 6.7, h: 0.3, fontSize: 9.5, color: DARK_GRAY, fontFace: "Aptos" });
   cov.addText(FOOTER_TEXT, { x: 0.4, y: 6.95, w: 7.0, h: 0.3, fontSize: 7, color: DARK_GRAY, fontFace: "Aptos" });
@@ -382,7 +382,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     s2.addShape(pptx.ShapeType.rect, { x, y: 0.85, w: 4.1, h: 3.8, fill: { color: WASH }, line: { color: MID_WASH, width: 0.75 } });
     // Icon circle
     s2.addShape(pptx.ShapeType.ellipse, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fill: { color: col.color } });
-    s2.addText(col.icon, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fontSize: 18, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
+    s2.addText(col.icon, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fontSize: 22, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
     s2.addText(col.label, { x, y: 1.85, w: 4.1, h: 0.38, fontSize: 10, bold: true, color: col.color, align: "center", fontFace: "Aptos" });
     s2.addText(col.text.slice(0, 250), { x: x + 0.12, y: 2.3, w: 3.86, h: 2.25, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
   });
@@ -492,18 +492,18 @@ function buildCharter(pptx: any, content: any, projectName: string) {
       const dotX = qx + (si % 3) * 0.5;
       const dotY = qy + Math.floor(si / 3) * 0.35;
       const dotColor = PHASE_COLORS[si % PHASE_COLORS.length];
-      s6.addShape(pptx.ShapeType.ellipse, { x: dotX, y: dotY, w: 0.28, h: 0.28, fill: { color: dotColor } });
+      s6.addShape(pptx.ShapeType.ellipse, { x: dotX, y: dotY, w: 0.38, h: 0.38, fill: { color: dotColor } });
       s6.addText(safeStr(sh.name ?? "").split(" ").map((w: string) => w[0]).join("").slice(0, 2), {
-        x: dotX, y: dotY, w: 0.28, h: 0.28, fontSize: 6, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos",
+        x: dotX, y: dotY, w: 0.38, h: 0.38, fontSize: 9, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos",
       });
     });
     // Stakeholder table (right side)
     const tHeaders = ["Name", "Role", "Influence", "Interest", "Engagement"];
     const tRows = stk.slice(0, 8).map((sh: any, ri: number) => tHeaders.map((_, ci) => ({
       text: safeStr([sh.name, sh.role ?? sh.title, sh.power, sh.interest, sh.currentEngagement ?? sh.engagementLevel ?? "—"][ci] ?? ""),
-      options: { fontSize: 8, color: SOFT_BLACK, fill: { color: ri % 2 === 0 ? WHITE : WASH }, fontFace: "Aptos" },
+      options: { fontSize: 9, color: SOFT_BLACK, fill: { color: ri % 2 === 0 ? WHITE : WASH }, fontFace: "Aptos" },
     })));
-    const tHeader = tHeaders.map((h) => ({ text: h, options: { bold: true, color: WHITE, fill: { color: PETROL }, fontSize: 8, fontFace: "Aptos" } }));
+    const tHeader = tHeaders.map((h) => ({ text: h, options: { bold: true, color: WHITE, fill: { color: PETROL }, fontSize: 9, fontFace: "Aptos" } }));
     s6.addTable([tHeader, ...tRows], { x: 6.1, y: 0.88, w: 6.93, colW: [1.8, 1.8, 1.0, 1.0, 1.33], border: { color: MID_WASH } });
   }
 
