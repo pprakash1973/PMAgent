@@ -4,8 +4,8 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useState } from "react";
 
-const CAN_PORTFOLIO = ["delivery_manager", "delivery_head", "admin"];
-const CAN_EXECUTIVE = ["delivery_head", "admin"];
+const CAN_PORTFOLIO = ["dm", "dh", "admin"];
+const CAN_EXECUTIVE = ["dh", "admin"];
 
 // UST brand tokens
 const UST_PETROL    = "#003C51";
@@ -64,11 +64,11 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
         </svg>
       </div>
 
-      {railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
+      {role !== "dh" && railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/></svg>,
         "Projects"
       )}
-      {showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
+      {role !== "dh" && showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 13h5v8H3zM10 8h5v13h-5zM17 3h4v18h-4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>,
         "Portfolio"
       )}
@@ -110,7 +110,7 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
   );
 }
 
-function TopBar({ children }: { children?: React.ReactNode }) {
+function TopBar({ children, role }: { children?: React.ReactNode; role?: string }) {
   const router = useRouter();
   return (
     <div style={{
@@ -126,17 +126,19 @@ function TopBar({ children }: { children?: React.ReactNode }) {
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
         <span style={{ fontSize: "12.5px" }}>Search or ask…</span>
       </div>
-      <button
-        onClick={() => router.push("/dashboard/projects/new")}
-        style={{
-          height: 36, padding: "0 15px", background: UST_TEAL, color: "#fff", border: "none",
-          borderRadius: 9, font: "600 12.5px 'Aptos','Calibri',sans-serif", cursor: "pointer",
-          display: "flex", alignItems: "center", gap: 7, boxShadow: "0 2px 6px rgba(0,110,116,.3)",
-        }}
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
-        New Project
-      </button>
+      {role !== "dh" && (
+        <button
+          onClick={() => router.push("/dashboard/projects/new")}
+          style={{
+            height: 36, padding: "0 15px", background: UST_TEAL, color: "#fff", border: "none",
+            borderRadius: 9, font: "600 12.5px 'Aptos','Calibri',sans-serif", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 7, boxShadow: "0 2px 6px rgba(0,110,116,.3)",
+          }}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
+          New Project
+        </button>
+      )}
     </div>
   );
 }
@@ -284,7 +286,7 @@ export function AppShell({
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden" }}>
       <LeftRail role={role} userName={userName} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <TopBar>{topBarContent}</TopBar>
+        <TopBar role={role}>{topBarContent}</TopBar>
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           {children}
         </div>

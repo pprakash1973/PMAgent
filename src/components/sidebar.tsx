@@ -15,10 +15,10 @@ const navItems = (role: string) => {
   if (role === "pm" || role === "admin") {
     base.push({ href: "/dashboard/projects", label: "My Projects", icon: FolderKanban });
   }
-  if (role === "delivery_manager" || role === "admin") {
+  if (role === "dm" || role === "admin") {
     base.push({ href: "/dashboard/portfolio", label: "Portfolio", icon: BarChart3 });
   }
-  if (role === "delivery_head" || role === "admin") {
+  if (role === "dh" || role === "admin") {
     base.push({ href: "/dashboard/executive", label: "Executive View", icon: TrendingUp });
   }
   if (role === "admin") {

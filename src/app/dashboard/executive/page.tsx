@@ -7,8 +7,9 @@ import { HealthDonut, EVMScatter, SpiDistribution } from "@/components/executive
 import { getProductivityStatsForUser } from "@/lib/productivity";
 import { ProductivityMeter } from "@/components/productivity-meter";
 import { SteeringDeckGenerator } from "@/components/steering-deck-generator";
+import DhDashboardClient, { type DhProject, type TrendPoint } from "./dh-dashboard-client";
 
-const CAN_EXECUTIVE = ["delivery_head", "admin"];
+const CAN_EXECUTIVE = ["dh", "admin"];
 
 function ragColor(s: string) {
   if (s === "green") return "#158a5a";
@@ -67,6 +68,120 @@ export default async function ExecutivePage() {
   const user = session!.user as any;
   if (!CAN_EXECUTIVE.includes(user.role)) redirect("/dashboard/projects");
 
+  // ── DH persona: scoped executive dashboard ────────────────────────────────
+  if (user.role === "dh") {
+    const assignments = await prisma.clientAssignment.findMany({
+      where: { userId: user.id },
+      include: { client: { include: { cluster: true } } },
+    });
+    const clientIds = assignments.map((a) => a.clientId);
+
+    const rawProjects = await prisma.project.findMany({
+      where: clientIds.length ? { clientId: { in: clientIds }, deletedAt: null } : { id: "none" },
+      include: {
+        pmOwner:  { select: { fullName: true } },
+        client:   { include: { cluster: true } },
+        program:  { select: { name: true } },
+        scheduleTasks: { select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true } },
+        costEntries:   { select: { amount: true } },
+        statusReports: {
+          orderBy: { reportDate: "desc" },
+          take: 6,
+          include: { healthScore: true },
+        },
+      },
+    });
+
+    // Compute live EVM per project (reuse helper below)
+    const now = Date.now();
+    const dhProjects: DhProject[] = rawProjects.map((p) => {
+      const tasks = p.scheduleTasks;
+      let pv = 0, ev = 0;
+      for (const t of tasks) {
+        if (!t.baselineStart || !t.baselineFinish) continue;
+        const s = new Date(t.baselineStart).getTime();
+        const f = new Date(t.baselineFinish).getTime();
+        const dur = f - s;
+        const plannedPct = now <= s ? 0 : now >= f ? 1 : dur > 0 ? (now - s) / dur : 0;
+        pv += t.baselineDays * plannedPct;
+        ev += t.baselineDays * (t.percentComplete / 100);
+      }
+      const liveSpi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
+      const storedSpi = p.statusReports[0]?.healthScore?.spi ?? null;
+      const storedCpi = p.statusReports[0]?.healthScore?.cpi ?? null;
+      const spi = liveSpi ?? storedSpi;
+
+      const schedPct = tasks.length
+        ? Math.round(tasks.reduce((s, t) => s + t.percentComplete, 0) / tasks.length)
+        : 0;
+      const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
+      const budPct = p.budget && p.budget > 0 ? Math.round((totalSpent / p.budget) * 100) : 0;
+
+      // derive RAG from live SPI + stored health
+      let rag: "red" | "amber" | "green" = p.healthStatus as any ?? "green";
+      if (spi !== null) {
+        if (spi < 0.8) rag = "red";
+        else if (spi < 0.9 && rag === "green") rag = "amber";
+      }
+
+      return {
+        id:          p.id,
+        name:        p.name,
+        clientId:    p.clientId ?? "",
+        clientName:  (p.client as any)?.name ?? "—",
+        clusterId:   (p.client as any)?.cluster?.id ?? "",
+        clusterName: (p.client as any)?.cluster?.name ?? "—",
+        clusterType: (p.client as any)?.cluster?.type ?? "geography",
+        programName: (p.program as any)?.name ?? "—",
+        pmName:      p.pmOwner.fullName,
+        rag,
+        spi:         spi ?? null,
+        cpi:         storedCpi ?? null,
+        schedPct,
+        budPct,
+        budget:      p.budget ?? null,
+        phase:       (p as any).currentPhase ?? "initiation",
+      };
+    });
+
+    // Build 6-month trend from status reports
+    const trends: TrendPoint[] = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (5 - i));
+      const label = d.toLocaleString("en", { month: "short" });
+      const yr = d.getFullYear(), mo = d.getMonth();
+      const reports: Array<{ spi: number | null; cpi: number | null; rag: string | null }> = [];
+      for (const p of rawProjects) {
+        for (const r of p.statusReports) {
+          const rd = new Date(r.reportDate);
+          if (rd.getFullYear() === yr && rd.getMonth() === mo) {
+            reports.push({ spi: r.healthScore?.spi ?? null, cpi: r.healthScore?.cpi ?? null, rag: r.healthScore?.ragStatus ?? null });
+          }
+        }
+      }
+      const spiVals = reports.map(r => r.spi).filter((v): v is number => v !== null);
+      const cpiVals = reports.map(r => r.cpi).filter((v): v is number => v !== null);
+      const greenCount = reports.filter(r => r.rag === "green").length;
+      return {
+        label,
+        avgSpi:    spiVals.length ? spiVals.reduce((a,b) => a+b,0)/spiVals.length : null,
+        avgCpi:    cpiVals.length ? cpiVals.reduce((a,b) => a+b,0)/cpiVals.length : null,
+        healthPct: reports.length ? Math.round(greenCount / reports.length * 100) : null,
+      };
+    });
+
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <DhDashboardClient
+          projects={dhProjects}
+          trends={trends}
+          userName={user.name ?? user.email ?? "DH"}
+        />
+      </div>
+    );
+  }
+
+  // ── Admin: original org-wide executive page ────────────────────────────────
   const projects = await prisma.project.findMany({
     where: { orgId: user.orgId, deletedAt: null },
     include: {

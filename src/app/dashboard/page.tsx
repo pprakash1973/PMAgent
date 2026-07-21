@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,8 @@ import { ProductivityMeter } from "@/components/productivity-meter";
 export default async function DashboardPage() {
   const session = await auth();
   const user = session!.user as any;
+
+  if (user.role === "dh") redirect("/dashboard/executive");
 
   const projects = await prisma.project.findMany({
     where: {
