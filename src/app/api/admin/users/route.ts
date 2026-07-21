@@ -60,9 +60,45 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const data = createSchema.parse(body);
 
-    const existing = await prisma.user.findUnique({ where: { email: data.email } });
+    const existing = await prisma.user.findFirst({
+      where: { email: data.email },
+      include: {
+        programAssignments: {
+          include: { program: { include: { client: { include: { cluster: true } } } } },
+        },
+        clientAssignments: {
+          include: { client: { include: { cluster: true } } },
+        },
+      },
+    });
     if (existing) {
-      return NextResponse.json({ error: { code: "DUPLICATE_EMAIL", message: "Email already exists" } }, { status: 409 });
+      // Build a human-readable mapping summary
+      let mapping = "";
+      if (existing.programAssignments.length) {
+        mapping = existing.programAssignments
+          .map((a) => `${a.program.client.cluster.name} › ${a.program.client.name} › ${a.program.name}`)
+          .join(", ");
+      } else if (existing.clientAssignments.length) {
+        mapping = existing.clientAssignments
+          .map((a) => `${a.client.cluster.name} › ${a.client.name}`)
+          .join(", ");
+      }
+      return NextResponse.json(
+        {
+          error: {
+            code: "DUPLICATE_EMAIL",
+            message: `A user with this email already exists (${existing.status}).${mapping ? ` Current mapping: ${mapping}.` : ""} Deactivate the existing account before creating a new one.`,
+            existingUser: {
+              id: existing.id,
+              fullName: existing.fullName,
+              role: existing.role,
+              status: existing.status,
+              mapping,
+            },
+          },
+        },
+        { status: 409 }
+      );
     }
 
     const newUser = await prisma.user.create({

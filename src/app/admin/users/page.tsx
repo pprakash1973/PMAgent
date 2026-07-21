@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
-import { Plus, Copy, RefreshCw, UserX, Loader2, X, Check, ChevronRight, Lock } from "lucide-react";
+import { Plus, Copy, RefreshCw, UserX, Loader2, X, Check, ChevronRight, Lock, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -48,6 +48,7 @@ export default function UsersPage() {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
+  const [duplicateInfo, setDuplicateInfo] = useState<{ id: string; fullName: string; role: string; status: string; mapping: string } | null>(null);
 
   // hierarchy state
   const [clusters, setClusters] = useState<ClusterItem[]>([]);
@@ -93,6 +94,7 @@ export default function UsersPage() {
     setForm(emptyForm);
     setStep(1);
     setInviteUrl(null);
+    setDuplicateInfo(null);
     setSelCluster("");
     setSelClient("");
     setSelPrograms([]);
@@ -117,6 +119,7 @@ export default function UsersPage() {
   async function createUser(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    setDuplicateInfo(null);
     try {
       const payload: any = { ...form };
       if (form.role === "pm" || form.role === "dm") payload.programIds = selPrograms;
@@ -128,9 +131,29 @@ export default function UsersPage() {
         body: JSON.stringify(payload),
       });
       const data = await res.json();
+      if (res.status === 409 && data.error?.existingUser) {
+        setDuplicateInfo(data.error.existingUser);
+        return;
+      }
       if (!res.ok) throw new Error(data.error?.message || "Failed");
       setInviteUrl(data.inviteUrl);
       await load();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function deactivateAndRetry() {
+    if (!duplicateInfo) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/users/${duplicateInfo.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Deactivation failed");
+      setDuplicateInfo(null);
+      await load();
+      toast({ title: "User deactivated", description: "You can now re-invite them with a new mapping." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -193,6 +216,54 @@ export default function UsersPage() {
             </div>
           ) : (
             <form onSubmit={createUser}>
+              {/* Duplicate user conflict banner */}
+              {duplicateInfo && (
+                <div className="mb-5 rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-amber-800">User already exists for this email</p>
+                      <p className="text-sm text-amber-700 mt-0.5">
+                        <span className="font-medium">{duplicateInfo.fullName}</span>
+                        {" "}({ROLE_LABELS[duplicateInfo.role] || duplicateInfo.role})
+                        {" "}— status: <span className="font-medium capitalize">{duplicateInfo.status}</span>
+                      </p>
+                      {duplicateInfo.mapping && (
+                        <p className="text-xs text-amber-700 mt-1">
+                          Current mapping: <span className="font-medium">{duplicateInfo.mapping}</span>
+                        </p>
+                      )}
+                      <p className="text-xs text-amber-600 mt-2">
+                        Deactivate the existing account first, then re-invite with the new mapping.
+                      </p>
+                    </div>
+                  </div>
+                  {duplicateInfo.status !== "deactivated" && (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-amber-400 text-amber-800 hover:bg-amber-100 text-xs"
+                        disabled={submitting}
+                        onClick={deactivateAndRetry}
+                      >
+                        {submitting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <UserX className="w-3 h-3 mr-1" />}
+                        Deactivate existing account
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-xs text-slate-500"
+                        onClick={() => setDuplicateInfo(null)}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Step indicator */}
               <div className="flex items-center gap-2 mb-5">
                 {[1, 2].map((s) => (
