@@ -30,6 +30,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         });
 
         if (!user || !user.passwordHash || user.deletedAt) return null;
+        if (user.status === "deactivated") return null;
+        if (user.status === "invited") return null; // must accept invite first
 
         const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (!valid) return null;

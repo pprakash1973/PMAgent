@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +13,12 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 type Mode = "form" | "nl" | "upload";
+interface ClientOption { id: string; name: string; cluster: { name: string }; }
 
 const emptyForm = {
   name: "",
   customer: "",
+  clientId: "",
   projectType: "fixed_price",
   methodology: "waterfall",
   engagementMode: "detailed",
@@ -37,6 +39,13 @@ export default function NewProjectPage() {
   const [loading, setLoading] = useState(false);
   const [nlText, setNlText] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const [availableClients, setAvailableClients] = useState<ClientOption[]>([]);
+
+  useEffect(() => {
+    fetch("/api/clients").then((r) => r.json()).then((d) => {
+      if (Array.isArray(d.clients)) setAvailableClients(d.clients);
+    }).catch(() => {});
+  }, []);
 
   // Upload state
   const fileRef = useRef<HTMLInputElement>(null);
@@ -125,10 +134,12 @@ export default function NewProjectPage() {
     if (mode === "nl") {
       payload = { naturalLanguage: nlText, engagementMode: form.engagementMode };
     } else {
+      const { clientId, ...rest } = form;
       payload = {
-        ...form,
+        ...rest,
         budget: form.budget ? parseFloat(form.budget) : undefined,
         teamSize: form.teamSize ? parseInt(form.teamSize) : undefined,
+        ...(clientId ? { clientId } : {}),
       };
       if (mode === "upload" && parsed) {
         payload.requirementsText = parsed.requirementsText;
@@ -308,10 +319,10 @@ export default function NewProjectPage() {
               </Card>
 
               {/* Show form fields pre-filled from doc (always shown so user can edit) */}
-              <ProjectFormFields form={form} update={update} />
+              <ProjectFormFields form={form} update={update} availableClients={availableClients} />
             </>
           ) : (
-            <ProjectFormFields form={form} update={update} />
+            <ProjectFormFields form={form} update={update} availableClients={availableClients} />
           )}
 
           {form.engagementMode === "high_level" && mode !== "nl" && (
@@ -345,7 +356,7 @@ export default function NewProjectPage() {
   );
 }
 
-function ProjectFormFields({ form, update }: { form: typeof emptyForm; update: (f: string, v: string) => void }) {
+function ProjectFormFields({ form, update, availableClients }: { form: typeof emptyForm; update: (f: string, v: string) => void; availableClients: ClientOption[] }) {
   return (
     <>
       <Card>
@@ -356,8 +367,23 @@ function ProjectFormFields({ form, update }: { form: typeof emptyForm; update: (
             <Input placeholder="ERP Implementation — Retail" value={form.name} onChange={(e) => update("name", e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label>Customer / Client</Label>
-            <Input placeholder="Acme Retail" value={form.customer} onChange={(e) => update("customer", e.target.value)} />
+            <Label>Customer / Client {availableClients.length > 0 && <span className="text-xs text-slate-400">(select from list)</span>}</Label>
+            {availableClients.length > 0 ? (
+              <Select value={form.clientId} onValueChange={(v) => {
+                const c = availableClients.find((x) => x.id === v);
+                update("clientId", v);
+                update("customer", c?.name || "");
+              }}>
+                <SelectTrigger><SelectValue placeholder="Select client…" /></SelectTrigger>
+                <SelectContent>
+                  {availableClients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.cluster.name} › {c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input placeholder="Acme Retail" value={form.customer} onChange={(e) => update("customer", e.target.value)} />
+            )}
           </div>
           <div className="space-y-2">
             <Label>Industry</Label>

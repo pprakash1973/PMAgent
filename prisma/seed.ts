@@ -50,8 +50,15 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: "admin@pmAgent.dev" },
-    create: { orgId: org.id, email: "admin@pmAgent.dev", fullName: "Dave Admin", passwordHash: hash, role: "admin" },
-    update: {},
+    create: { orgId: org.id, email: "admin@pmAgent.dev", fullName: "Dave Admin", passwordHash: hash, role: "admin", status: "active" },
+    update: { role: "admin", status: "active" },
+  });
+
+  // Canonical admin account as specified in PRD
+  await prisma.user.upsert({
+    where: { email: "Admin@pmAgent.dev" },
+    create: { orgId: org.id, email: "Admin@pmAgent.dev", fullName: "Platform Admin", passwordHash: hash, role: "admin", status: "active" },
+    update: { role: "admin", status: "active" },
   });
 
   const bu = await prisma.businessUnit.upsert({
