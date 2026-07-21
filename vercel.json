@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx prisma generate && npx prisma db push && next build",
+  "buildCommand": "npx prisma generate && npx prisma db push && node scripts/migrate-admin-module.js && next build",
   "installCommand": "npm install",
   "framework": "nextjs",
   "regions": ["iad1"]
