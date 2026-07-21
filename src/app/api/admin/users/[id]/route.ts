@@ -3,10 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 
 const patchSchema = z.object({
   role: z.enum(["pm", "dm", "dh", "admin"]).optional(),
   fullName: z.string().optional(),
+  password: z.string().min(8).optional(),
   programIds: z.array(z.string()).optional(),
   clientIds: z.array(z.string()).optional(),
 });
@@ -19,9 +21,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json();
   const data = patchSchema.parse(body);
 
+  const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : undefined;
+
   const updated = await prisma.user.update({
     where: { id },
-    data: { ...(data.role && { role: data.role }), ...(data.fullName && { fullName: data.fullName }) },
+    data: {
+      ...(data.role && { role: data.role }),
+      ...(data.fullName && { fullName: data.fullName }),
+      ...(passwordHash && { passwordHash }),
+    },
   });
 
   const role = data.role ?? updated.role;
