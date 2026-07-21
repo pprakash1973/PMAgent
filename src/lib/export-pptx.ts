@@ -66,7 +66,7 @@ function contentSlide(pptx: any, title: string, projectName: string, pageNum: nu
   slide.background = { color: WHITE };
   // Teal header bar
   slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.72, fill: { color: TEAL } });
-  slide.addText(title, { x: 0.3, y: 0, w: 12.73, h: 0.72, fontSize: 15, bold: true, color: WHITE, valign: "middle", fontFace: "Aptos" });
+  slide.addText(title, { x: 0.3, y: 0, w: 12.73, h: 0.72, fontSize: 18, bold: true, color: WHITE, valign: "middle", fontFace: "Aptos" });
   addFooter(slide, projectName, pageNum);
   return slide;
 }
@@ -356,8 +356,8 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   ];
   stats.forEach((s, i) => {
     const sx = 7.85 + i * 1.83;
-    cov.addText(s.value, { x: sx, y: 5.4, w: 1.7, h: 0.55, fontSize: 18, bold: true, color: WHITE, align: "center", fontFace: "Aptos" });
-    cov.addText(s.label, { x: sx, y: 5.95, w: 1.7, h: 0.3, fontSize: 8.5, color: TEAL_L, align: "center", fontFace: "Aptos" });
+    cov.addText(s.value, { x: sx, y: 5.4, w: 1.7, h: 0.55, fontSize: 22, bold: true, color: WHITE, align: "center", fontFace: "Aptos" });
+    cov.addText(s.label, { x: sx, y: 5.95, w: 1.7, h: 0.3, fontSize: 9, color: TEAL_L, align: "center", fontFace: "Aptos" });
   });
   // Left text
   cov.addText("UST", { x: 0.55, y: 0.45, w: 2, h: 0.45, fontSize: 18, bold: true, color: TEAL_L, fontFace: "Aptos" });
@@ -384,7 +384,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     s2.addShape(pptx.ShapeType.ellipse, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fill: { color: col.color } });
     s2.addText(col.icon, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fontSize: 18, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
     s2.addText(col.label, { x, y: 1.85, w: 4.1, h: 0.38, fontSize: 10, bold: true, color: col.color, align: "center", fontFace: "Aptos" });
-    s2.addText(col.text.slice(0, 250), { x: x + 0.12, y: 2.3, w: 3.86, h: 2.25, fontSize: 9.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+    s2.addText(col.text.slice(0, 250), { x: x + 0.12, y: 2.3, w: 3.86, h: 2.25, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
   });
   // Dark KPI strip
   kpiStrip(pptx, s2, [
@@ -404,7 +404,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   s3.addText("✓  IN SCOPE", { x: 0.3, y: 0.85, w: 6.1, h: 0.5, fontSize: 11, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
   inScope.slice(0, 8).forEach((s: unknown, i: number) => {
     s3.addShape(pptx.ShapeType.ellipse, { x: 0.48, y: 1.55 + i * 0.6, w: 0.22, h: 0.22, fill: { color: GREEN } });
-    s3.addText(safeStr(s), { x: 0.78, y: 1.48 + i * 0.6, w: 5.4, h: 0.5, fontSize: 10.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+    s3.addText(safeStr(s), { x: 0.78, y: 1.48 + i * 0.6, w: 5.4, h: 0.5, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
   });
   // Out-of-scope panel
   s3.addShape(pptx.ShapeType.rect, { x: 6.93, y: 0.85, w: 6.1, h: 5.9, fill: { color: "FFF0EE" }, line: { color: RED, width: 1.5 } });
@@ -412,7 +412,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   s3.addText("✗  OUT OF SCOPE", { x: 6.93, y: 0.85, w: 6.1, h: 0.5, fontSize: 11, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
   outScope.slice(0, 8).forEach((s: unknown, i: number) => {
     s3.addShape(pptx.ShapeType.ellipse, { x: 7.11, y: 1.55 + i * 0.6, w: 0.22, h: 0.22, fill: { color: RED } });
-    s3.addText(safeStr(s), { x: 7.41, y: 1.48 + i * 0.6, w: 5.4, h: 0.5, fontSize: 10.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+    s3.addText(safeStr(s), { x: 7.41, y: 1.48 + i * 0.6, w: 5.4, h: 0.5, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
   });
 
   // ── Slide 4: Objectives — card grid ──
@@ -424,7 +424,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     const col_color = PHASE_COLORS[i % PHASE_COLORS.length];
     s4.addShape(pptx.ShapeType.roundRect, { x, y, w: 4.1, h: 2.5, fill: { color: WASH }, line: { color: col_color, width: 1.5 }, rectRadius: 0.1 });
     s4.addShape(pptx.ShapeType.rect, { x, y, w: 4.1, h: 0.42, fill: { color: col_color } });
-    s4.addText(`Objective ${i + 1}`, { x, y, w: 4.1, h: 0.42, fontSize: 9.5, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
+    s4.addText(`Objective ${i + 1}`, { x, y, w: 4.1, h: 0.42, fontSize: 10, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
     s4.addText(safeStr(obj).slice(0, 200), { x: x + 0.1, y: y + 0.5, w: 3.9, h: 1.9, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
   });
 
@@ -478,10 +478,10 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     const qLabels = ["MANAGE CLOSELY", "KEEP INFORMED", "KEEP SATISFIED", "MONITOR"];
     [[0.3, 0.88], [2.95, 0.88], [0.3, 3.57], [2.95, 3.57]].forEach(([qx, qy], qi) => {
       s6.addShape(pptx.ShapeType.rect, { x: qx, y: qy, w: 2.6, h: 2.64, fill: { color: qColors[qi] }, line: { color: MID_WASH, width: 0.5 } });
-      s6.addText(qLabels[qi], { x: qx, y: qy, w: 2.6, h: 0.3, fontSize: 6.5, bold: true, color: DARK_GRAY, align: "center", valign: "middle", fontFace: "Aptos" });
+      s6.addText(qLabels[qi], { x: qx, y: qy, w: 2.6, h: 0.3, fontSize: 8, bold: true, color: DARK_GRAY, align: "center", valign: "middle", fontFace: "Aptos" });
     });
     // Axis labels
-    s6.addText("↑ Power", { x: 0.3, y: 2.1, w: 0.5, h: 0.4, fontSize: 6.5, color: DARK_GRAY, align: "center", fontFace: "Aptos" });
+    s6.addText("↑ Power", { x: 0.3, y: 2.1, w: 0.5, h: 0.4, fontSize: 8, color: DARK_GRAY, align: "center", fontFace: "Aptos" });
     s6.addText("Power / Influence →", { x: 0.3, y: 6.5, w: 5.5, h: 0.3, fontSize: 7, color: DARK_GRAY, align: "center", fontFace: "Aptos" });
     // Stakeholder dots
     stk.slice(0, 10).forEach((sh: any, si: number) => {
@@ -518,7 +518,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     s7.addShape(pptx.ShapeType.roundRect, { x: 0.3, y: 0.88 + i * 1.45, w: 7.5, h: 1.3, fill: { color: WASH }, line: { color: lvlColor, width: 2 }, rectRadius: 0.08 });
     s7.addShape(pptx.ShapeType.rect, { x: 0.3, y: 0.88 + i * 1.45, w: 1.1, h: 1.3, fill: { color: lvlColor } });
     s7.addText(level.slice(0, 8).toUpperCase(), { x: 0.3, y: 0.88 + i * 1.45, w: 1.1, h: 1.3, fontSize: 7.5, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
-    s7.addText(rText.slice(0, 130), { x: 1.5, y: 0.93 + i * 1.45, w: 5.6, h: 0.9, fontSize: 9.5, color: SOFT_BLACK, wrap: true, valign: "middle", fontFace: "Aptos" });
+    s7.addText(rText.slice(0, 130), { x: 1.5, y: 0.93 + i * 1.45, w: 5.6, h: 0.9, fontSize: 10, color: SOFT_BLACK, wrap: true, valign: "middle", fontFace: "Aptos" });
     const prob = typeof r === "object" ? safeStr(r.probability ?? "") : "";
     const imp = typeof r === "object" ? safeStr(r.impact ?? "") : "";
     // P/I pills: shape + text separately (fill on addText is not valid in PptxGenJS)
@@ -571,14 +571,14 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   const assumptions = content.assumptions ?? [];
   const constraints = content.constraints ?? [];
   if (assumptions.length) {
-    s8.addText("Key Assumptions", { x: 0.3, y: 2.7, w: 6.1, h: 0.35, fontSize: 11, bold: true, color: TEAL, fontFace: "Aptos" });
+    s8.addText("Key Assumptions", { x: 0.3, y: 2.7, w: 6.1, h: 0.35, fontSize: 10, bold: true, color: TEAL, fontFace: "Aptos" });
     assumptions.slice(0, 4).forEach((a: unknown, i: number) => {
       s8.addShape(pptx.ShapeType.ellipse, { x: 0.38, y: 3.18 + i * 0.55, w: 0.2, h: 0.2, fill: { color: TEAL } });
       s8.addText(safeStr(a), { x: 0.68, y: 3.1 + i * 0.55, w: 5.7, h: 0.48, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
     });
   }
   if (constraints.length) {
-    s8.addText("Constraints", { x: 6.9, y: 2.7, w: 6.1, h: 0.35, fontSize: 11, bold: true, color: RED, fontFace: "Aptos" });
+    s8.addText("Constraints", { x: 6.9, y: 2.7, w: 6.1, h: 0.35, fontSize: 10, bold: true, color: RED, fontFace: "Aptos" });
     constraints.slice(0, 4).forEach((c: unknown, i: number) => {
       s8.addShape(pptx.ShapeType.rect, { x: 6.98, y: 3.18 + i * 0.55, w: 0.2, h: 0.2, fill: { color: RED } });
       s8.addText(safeStr(c), { x: 7.28, y: 3.1 + i * 0.55, w: 5.7, h: 0.48, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
