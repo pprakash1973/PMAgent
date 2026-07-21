@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { signIn, getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -211,12 +210,6 @@ export default function LoginPage() {
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Sign In
             </Button>
-            <p style={{ fontSize: 13, color: "#5b616e", textAlign: "center", marginTop: 2 }}>
-              No account?{" "}
-              <Link href="/register" style={{ color: "#006E74", fontWeight: 600, textDecoration: "none" }}>
-                Register your organization
-              </Link>
-            </p>
           </form>
 
           <p style={{ textAlign: "center", fontSize: 11, color: "#8a909c", marginTop: 34 }}>

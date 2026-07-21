@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Users, Building2, Briefcase, FolderKanban, LayoutDashboard, LogOut, ChevronRight } from "lucide-react";
+import { Users, Building2, Briefcase, FolderKanban, LayoutDashboard, LogOut, ChevronRight, Cpu } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ const nav = [
   { href: "/admin/clusters", icon: Building2, label: "Clusters" },
   { href: "/admin/clients", icon: Briefcase, label: "Clients" },
   { href: "/admin/programs", icon: FolderKanban, label: "Programs" },
+  { href: "/admin/model-config", icon: Cpu, label: "Model Router" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

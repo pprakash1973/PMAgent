@@ -101,6 +101,17 @@ async function main() {
       -- Project: add clientId and programId columns
       ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "clientId" TEXT REFERENCES "Client"("id");
       ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "programId" TEXT REFERENCES "Program"("id");
+
+      -- ModelConfig table (model router)
+      CREATE TABLE IF NOT EXISTS "ModelConfig" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "agent" TEXT NOT NULL UNIQUE,
+        "model" TEXT NOT NULL,
+        "maxTokens" INTEGER NOT NULL DEFAULT 8192,
+        "notes" TEXT,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedBy" TEXT
+      );
     `);
     console.log("Admin module migration applied successfully.");
 

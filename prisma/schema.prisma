@@ -511,3 +511,13 @@ model AuditLog {
   after     Json?
   createdAt DateTime @default(now())
 }
+
+model ModelConfig {
+  id        String   @id @default(cuid())
+  agent     String   @unique
+  model     String
+  maxTokens Int      @default(8192)
+  notes     String?
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}

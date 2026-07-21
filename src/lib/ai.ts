@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GUARDRAIL_SYSTEM_ADDENDUM } from "@/lib/guardrails";
+import { resolveModel } from "@/lib/model-router";
 
 export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -85,10 +86,11 @@ export async function generateArtifact(
   requirements?: string
 ): Promise<Record<string, unknown>> {
   const prompt = buildArtifactPrompt(artifactType, projectContext, requirements);
+  const { model, maxTokens } = await resolveModel("artifact");
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16000,
+    model,
+    max_tokens: maxTokens,
     system: PMI_SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
   });
@@ -97,9 +99,10 @@ export async function generateArtifact(
 }
 
 export async function generateProjectFromNL(description: string): Promise<Record<string, unknown>> {
+  const { model, maxTokens } = await resolveModel("nl_project");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 8000,
+    model,
+    max_tokens: maxTokens,
     system: `You are a senior PMO AI. Extract structured project fields from a natural language description or requirements document.
 Return JSON with these fields (infer from context; leave null if not found):
 - name (string): project name
@@ -148,9 +151,10 @@ export interface StatusQuestion {
 export async function generateStatusQuestions(
   projectContext: Record<string, unknown>
 ): Promise<StatusQuestion[]> {
+  const { model, maxTokens } = await resolveModel("status_questions");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 6000,
+    model,
+    max_tokens: maxTokens,
     system: `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
 Generate exactly 10 targeted questions based on the project's current context.
 
@@ -192,9 +196,10 @@ export async function generateStatusSummary(
 - Overdue tasks: ${liveEVM.overdueTasks}`
     : "";
 
+  const { model, maxTokens } = await resolveModel("status_summary");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 6000,
+    model,
+    max_tokens: maxTokens,
     system: `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
 Apply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.
 When live EVM data is provided, use those exact numbers in metricsNarrative and spi field — do not override them.
@@ -225,9 +230,10 @@ export async function generateScheduleRecovery(
   evm: { pv: number; ev: number; sv: number; spi: number; overdueTasks: number; overdueTaskNames: string[] },
   tasks: { name: string; phase: string; percentComplete: number; baselineDays: number; status: string }[]
 ): Promise<{ headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string }> {
+  const { model, maxTokens } = await resolveModel("schedule_recovery");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4000,
+    model,
+    max_tokens: maxTokens,
     system: `You are a PMO recovery specialist. A project is behind schedule (SPI < 0.8) and the PM needs a concrete recovery plan.
 Apply PMBOK schedule compression techniques: fast-tracking, crashing, scope reduction, resource reallocation.
 Return JSON with:
@@ -246,9 +252,10 @@ Return JSON with:
 }
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
+  const { model, maxTokens } = await resolveModel("requirements");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 8000,
+    model,
+    max_tokens: maxTokens,
     system: `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
 Return JSON with:
 - goals (array of strings): business/project goals
@@ -277,9 +284,10 @@ export async function chatCommand(
   command: string,
   context: Record<string, unknown>
 ): Promise<string> {
+  const { model, maxTokens } = await resolveModel("chat");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
+    model,
+    max_tokens: maxTokens,
     system: `You are a senior PMO AI copilot with PMBOK 6th/7th edition expertise.
 Help the user with project management tasks, artifact generation, and PMI best practices.
 You have access to the current project context. Respond concisely and helpfully.
@@ -309,9 +317,10 @@ export async function askPortfolio(
     admin: "The user is an org administrator with full visibility. Answer with portfolio-wide context, calling out governance or process gaps where relevant.",
   };
 
+  const { model, maxTokens } = await resolveModel("portfolio_chat");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1200,
+    model,
+    max_tokens: maxTokens,
     system: `You are the PM Agent portfolio copilot — a senior PMO AI with PMBOK 6th/7th edition expertise, embedded across a portfolio delivery platform.
 ${roleGuidance[role] ?? roleGuidance.pm}
 You have access to live portfolio data (projects, health, budget, risks, issues, milestones) provided as context below.
