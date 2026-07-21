@@ -94,16 +94,25 @@ async function main() {
     `);
     console.log("Admin module migration applied successfully.");
 
-    // Seed Admin@pmAgent.dev if not exists
+    // Ensure a default org exists for the admin account
+    const orgId = "seed-org-1";
+    await pool.query(`
+      INSERT INTO "Organization" ("id", "name", "tier", "createdAt")
+      VALUES ($1, 'UST PMO Platform', 'enterprise', NOW())
+      ON CONFLICT ("id") DO NOTHING
+    `, [orgId]);
+    console.log("Default org ensured.");
+
+    // Seed Admin@pmAgent.dev — always update passwordHash so credentials are predictable
     const bcrypt = require("bcryptjs");
     const { randomBytes } = require("crypto");
     const hash = await bcrypt.hash("Password123!", 10);
     const id = randomBytes(12).toString("hex");
     await pool.query(`
       INSERT INTO "User" ("id","orgId","email","fullName","passwordHash","role","status","approved","mfaEnabled","createdAt","updatedAt")
-      VALUES ($1, (SELECT id FROM "Organization" LIMIT 1), 'Admin@pmAgent.dev', 'Platform Admin', $2, 'admin', 'active', true, false, NOW(), NOW())
-      ON CONFLICT ("email") DO UPDATE SET "role"='admin', "status"='active'
-    `, [id, hash]);
+      VALUES ($1, $3, 'Admin@pmAgent.dev', 'Platform Admin', $2, 'admin', 'active', true, false, NOW(), NOW())
+      ON CONFLICT ("email") DO UPDATE SET "role"='admin', "status"='active', "passwordHash"=$2
+    `, [id, hash, orgId]);
     console.log("Admin@pmAgent.dev seeded/updated.");
   } finally {
     await pool.end();
