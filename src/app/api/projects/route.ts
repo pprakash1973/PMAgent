@@ -12,6 +12,8 @@ const createSchema = z.object({
   naturalLanguage: z.string().optional(),
   customer: z.string().optional(),
   clientId: z.string().optional(),
+  programId: z.string().optional(),
+  pmOwnerId: z.string().optional(),
   projectType: z.string().default("fixed_price"),
   methodology: z.string().default("waterfall"),
   engagementMode: z.enum(["detailed", "high_level"]).default("detailed"),
@@ -39,8 +41,21 @@ export async function GET() {
   const user = session.user as any;
 
   let where: Record<string, unknown> = { orgId: user.orgId, deletedAt: null };
+
   if (user.role === "pm") {
     where.pmOwnerId = user.id;
+  } else if (user.role === "dm") {
+    const programAssignments = await prisma.programAssignment.findMany({
+      where: { userId: user.id },
+      select: { programId: true },
+    });
+    where.programId = { in: programAssignments.map((a) => a.programId) };
+  } else if (user.role === "dh") {
+    const clientAssignments = await prisma.clientAssignment.findMany({
+      where: { userId: user.id },
+      select: { clientId: true },
+    });
+    where.clientId = { in: clientAssignments.map((a) => a.clientId) };
   }
 
   const projects = await prisma.project.findMany({
@@ -92,13 +107,34 @@ export async function POST(req: NextRequest) {
     // Generate unique code if not provided
     const code = data.code || data.name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) + "-" + Date.now().toString(36).toUpperCase();
 
+    // Resolve pmOwnerId: DM/DH can specify a PM; PM and admin default to self
+    let pmOwnerId = user.id;
+    if ((user.role === "dm" || user.role === "dh" || user.role === "admin") && data.pmOwnerId) {
+      pmOwnerId = data.pmOwnerId;
+    }
+
+    // PM: auto-resolve programId from their single assignment
+    let resolvedProgramId = data.programId;
+    let resolvedClientId = data.clientId;
+    if (user.role === "pm" && !resolvedProgramId) {
+      const assignment = await prisma.programAssignment.findFirst({
+        where: { userId: user.id },
+        include: { program: { include: { client: true } } },
+      });
+      if (assignment) {
+        resolvedProgramId = assignment.programId;
+        resolvedClientId = resolvedClientId || assignment.program.clientId;
+      }
+    }
+
     const project = await prisma.project.create({
       data: {
         orgId: user.orgId,
-        pmOwnerId: user.id,
+        pmOwnerId,
         name: data.name,
         code,
-        clientId: data.clientId,
+        clientId: resolvedClientId,
+        programId: resolvedProgramId,
         customer: data.customer,
         projectType: data.projectType,
         methodology: data.methodology,

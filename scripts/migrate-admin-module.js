@@ -88,6 +88,16 @@ async function main() {
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- ClientAssignment table (DH hierarchy)
+      CREATE TABLE IF NOT EXISTS "ClientAssignment" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "clientId" TEXT NOT NULL REFERENCES "Client"("id"),
+        "userId" TEXT NOT NULL REFERENCES "User"("id"),
+        "assignedBy" TEXT,
+        "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("clientId","userId")
+      );
+
       -- Project: add clientId and programId columns
       ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "clientId" TEXT REFERENCES "Client"("id");
       ALTER TABLE "Project" ADD COLUMN IF NOT EXISTS "programId" TEXT REFERENCES "Program"("id");

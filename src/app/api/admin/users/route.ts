@@ -10,7 +10,10 @@ const createSchema = z.object({
   fullName: z.string().min(1),
   email: z.string().email(),
   role: z.enum(["pm", "dm", "dh", "admin"]),
+  // PM: single program; DM: multiple programs
   programIds: z.array(z.string()).optional(),
+  // DH: multiple clients
+  clientIds: z.array(z.string()).optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -30,7 +33,16 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, email: true, fullName: true, role: true, status: true,
       createdAt: true, updatedAt: true,
-      programAssignments: { include: { program: { select: { id: true, name: true } } } },
+      programAssignments: {
+        include: {
+          program: {
+            include: { client: { include: { cluster: { select: { id: true, name: true } } } } },
+          },
+        },
+      },
+      clientAssignments: {
+        include: { client: { include: { cluster: { select: { id: true, name: true } } } } },
+      },
       invitations: { orderBy: { createdAt: "desc" }, take: 1 },
     },
     orderBy: { createdAt: "desc" },
@@ -53,7 +65,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: { code: "DUPLICATE_EMAIL", message: "Email already exists" } }, { status: 409 });
     }
 
-    // Create user in INVITED status, no password yet
     const newUser = await prisma.user.create({
       data: {
         orgId: admin.orgId,
@@ -61,11 +72,10 @@ export async function POST(req: NextRequest) {
         fullName: data.fullName,
         role: data.role,
         status: "invited",
-        passwordHash: await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10), // placeholder
+        passwordHash: await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10),
       },
     });
 
-    // Create invitation token
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
@@ -77,21 +87,30 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Assign to programs if DM
+    // PM: single program assignment
+    if (data.role === "pm" && data.programIds?.length) {
+      await prisma.programAssignment.create({
+        data: { programId: data.programIds[0], userId: newUser.id, assignedBy: admin.id },
+      });
+    }
+
+    // DM: multiple program assignments
     if (data.role === "dm" && data.programIds?.length) {
       await prisma.programAssignment.createMany({
-        data: data.programIds.map((pid) => ({
-          programId: pid,
-          userId: newUser.id,
-          assignedBy: admin.id,
-        })),
+        data: data.programIds.map((pid) => ({ programId: pid, userId: newUser.id, assignedBy: admin.id })),
         skipDuplicates: true,
       });
     }
 
-    // Return invite link (in production, email this; for now return in response)
-    const inviteUrl = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/accept-invite?token=${token}`;
+    // DH: multiple client assignments
+    if (data.role === "dh" && data.clientIds?.length) {
+      await prisma.clientAssignment.createMany({
+        data: data.clientIds.map((cid) => ({ clientId: cid, userId: newUser.id, assignedBy: admin.id })),
+        skipDuplicates: true,
+      });
+    }
 
+    const inviteUrl = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/accept-invite?token=${token}`;
     return NextResponse.json({ ...newUser, inviteUrl }, { status: 201 });
   } catch (err) {
     if (err instanceof z.ZodError) {

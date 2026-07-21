@@ -8,17 +8,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, Wand2, ClipboardList, ArrowLeft, Upload, FileText, CheckCircle2, X } from "lucide-react";
+import { Loader2, Wand2, ClipboardList, ArrowLeft, Upload, FileText, CheckCircle2, X, Lock } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 type Mode = "form" | "nl" | "upload";
-interface ClientOption { id: string; name: string; cluster: { name: string }; }
+
+interface ProgramItem { id: string; name: string; clientId: string; client: { name: string; cluster: { name: string } } }
+interface ClientItem { id: string; name: string; cluster: { name: string } }
+interface PMUser { id: string; fullName: string; email: string }
+
+interface MyAssignments {
+  role: string;
+  programs: ProgramItem[];
+  clients: (ClientItem & { id: string })[];
+}
 
 const emptyForm = {
   name: "",
   customer: "",
   clientId: "",
+  programId: "",
+  pmOwnerId: "",
   projectType: "fixed_price",
   methodology: "waterfall",
   engagementMode: "detailed",
@@ -39,13 +50,11 @@ export default function NewProjectPage() {
   const [loading, setLoading] = useState(false);
   const [nlText, setNlText] = useState("");
   const [form, setForm] = useState(emptyForm);
-  const [availableClients, setAvailableClients] = useState<ClientOption[]>([]);
 
-  useEffect(() => {
-    fetch("/api/clients").then((r) => r.json()).then((d) => {
-      if (Array.isArray(d.clients)) setAvailableClients(d.clients);
-    }).catch(() => {});
-  }, []);
+  // Hierarchy state
+  const [myAssignments, setMyAssignments] = useState<MyAssignments | null>(null);
+  const [availablePrograms, setAvailablePrograms] = useState<ProgramItem[]>([]);
+  const [availablePMs, setAvailablePMs] = useState<PMUser[]>([]);
 
   // Upload state
   const fileRef = useRef<HTMLInputElement>(null);
@@ -58,6 +67,50 @@ export default function NewProjectPage() {
     requirementsExtracted: Record<string, unknown>;
   } | null>(null);
   const [parseSummary, setParseSummary] = useState<string[]>([]);
+
+  // Load user's hierarchy assignments
+  useEffect(() => {
+    fetch("/api/me/assignments")
+      .then((r) => r.json())
+      .then((data: MyAssignments) => {
+        setMyAssignments(data);
+
+        if (data.role === "pm" && data.programs.length === 1) {
+          // Lock everything for a PM with a single program
+          const prog = data.programs[0];
+          setForm((f) => ({
+            ...f,
+            programId: prog.id,
+            clientId: prog.clientId,
+            customer: prog.client.name,
+          }));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load PMs when program selected (for DM/DH/admin)
+  useEffect(() => {
+    if (!form.programId || !myAssignments) return;
+    if (myAssignments.role === "pm") return;
+    fetch(`/api/users/pms?programId=${form.programId}`)
+      .then((r) => r.json())
+      .then((d) => setAvailablePMs(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, [form.programId, myAssignments]);
+
+  // For DH: load programs under selected client
+  useEffect(() => {
+    if (!form.clientId || !myAssignments || myAssignments.role !== "dh") return;
+    fetch(`/api/admin/programs?clientId=${form.clientId}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setAvailablePrograms(Array.isArray(d) ? d : []);
+        setForm((f) => ({ ...f, programId: "", pmOwnerId: "" }));
+        setAvailablePMs([]);
+      })
+      .catch(() => {});
+  }, [form.clientId, myAssignments]);
 
   function update(field: string, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -78,11 +131,10 @@ export default function NewProjectPage() {
 
       const pf = data.projectFields as Record<string, unknown>;
 
-      // Merge extracted fields into form
       setForm((f) => ({
         ...f,
         name: (pf.name as string) || f.name,
-        customer: (pf.customer as string) || f.customer,
+        customer: myAssignments?.role === "pm" ? f.customer : (pf.customer as string) || f.customer,
         projectType: (pf.projectType as string) || f.projectType,
         methodology: (pf.methodology as string) || f.methodology,
         industry: (pf.industry as string) || f.industry,
@@ -94,7 +146,6 @@ export default function NewProjectPage() {
         description: (pf.description as string) || f.description,
       }));
 
-      // Build summary bullets from requirements extraction
       const req = data.requirements as Record<string, unknown>;
       const bullets: string[] = [];
       if (Array.isArray(req.goals) && req.goals.length) bullets.push(`${req.goals.length} goal(s) identified`);
@@ -132,14 +183,22 @@ export default function NewProjectPage() {
     let payload: Record<string, unknown>;
 
     if (mode === "nl") {
-      payload = { naturalLanguage: nlText, engagementMode: form.engagementMode };
+      payload = {
+        naturalLanguage: nlText,
+        engagementMode: form.engagementMode,
+        ...(form.clientId ? { clientId: form.clientId } : {}),
+        ...(form.programId ? { programId: form.programId } : {}),
+        ...(form.pmOwnerId ? { pmOwnerId: form.pmOwnerId } : {}),
+      };
     } else {
-      const { clientId, ...rest } = form;
+      const { clientId, programId, pmOwnerId, ...rest } = form;
       payload = {
         ...rest,
         budget: form.budget ? parseFloat(form.budget) : undefined,
         teamSize: form.teamSize ? parseInt(form.teamSize) : undefined,
         ...(clientId ? { clientId } : {}),
+        ...(programId ? { programId } : {}),
+        ...(pmOwnerId ? { pmOwnerId } : {}),
       };
       if (mode === "upload" && parsed) {
         payload.requirementsText = parsed.requirementsText;
@@ -166,6 +225,8 @@ export default function NewProjectPage() {
       setLoading(false);
     }
   }
+
+  const role = myAssignments?.role;
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-6">
@@ -202,6 +263,7 @@ export default function NewProjectPage() {
 
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
+
           {/* Engagement Mode — always visible */}
           <Card>
             <CardHeader>
@@ -229,6 +291,133 @@ export default function NewProjectPage() {
             </CardContent>
           </Card>
 
+          {/* Hierarchy context card — PM: locked; DM: program picker; DH: client→program→PM */}
+          {role && role !== "admin" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Hierarchy</CardTitle>
+                <CardDescription>
+                  {role === "pm" ? "Your project will be created under your assigned program." :
+                   role === "dm" ? "Select the program and assign a PM." :
+                   "Select the client, program, and PM for this project."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* PM: locked display */}
+                {role === "pm" && myAssignments?.programs[0] && (
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { label: "Cluster", value: myAssignments.programs[0].client.cluster.name },
+                      { label: "Client", value: myAssignments.programs[0].client.name },
+                      { label: "Program", value: myAssignments.programs[0].name },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                        <span className="text-sm text-slate-500">{label}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-800">{value}</span>
+                          <Lock className="w-3 h-3 text-slate-400" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* DM: select from assigned programs */}
+                {role === "dm" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>Program</Label>
+                      <select
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                        value={form.programId}
+                        onChange={(e) => {
+                          const prog = myAssignments?.programs.find((p) => p.id === e.target.value);
+                          update("programId", e.target.value);
+                          if (prog) { update("clientId", prog.clientId); update("customer", prog.client.name); }
+                        }}
+                        required
+                      >
+                        <option value="">Select program…</option>
+                        {myAssignments?.programs.map((p) => (
+                          <option key={p.id} value={p.id}>{p.client.cluster.name} › {p.client.name} › {p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {form.programId && (
+                      <div className="space-y-1.5">
+                        <Label>Assign PM (optional)</Label>
+                        <select
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                          value={form.pmOwnerId}
+                          onChange={(e) => update("pmOwnerId", e.target.value)}
+                        >
+                          <option value="">Assign to me (acting PM)</option>
+                          {availablePMs.map((pm) => (
+                            <option key={pm.id} value={pm.id}>{pm.fullName} ({pm.email})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* DH: client → program → PM */}
+                {role === "dh" && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>Client</Label>
+                      <select
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                        value={form.clientId}
+                        onChange={(e) => {
+                          const c = myAssignments?.clients.find((x) => x.id === e.target.value);
+                          update("clientId", e.target.value);
+                          update("customer", c?.name || "");
+                        }}
+                        required
+                      >
+                        <option value="">Select client…</option>
+                        {myAssignments?.clients.map((c) => (
+                          <option key={c.id} value={c.id}>{c.cluster.name} › {c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {form.clientId && (
+                      <div className="space-y-1.5">
+                        <Label>Program</Label>
+                        <select
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                          value={form.programId}
+                          onChange={(e) => update("programId", e.target.value)}
+                        >
+                          <option value="">Select program…</option>
+                          {availablePrograms.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {form.programId && (
+                      <div className="space-y-1.5">
+                        <Label>Assign PM (optional)</Label>
+                        <select
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                          value={form.pmOwnerId}
+                          onChange={(e) => update("pmOwnerId", e.target.value)}
+                        >
+                          <option value="">No PM assigned yet</option>
+                          {availablePMs.map((pm) => (
+                            <option key={pm.id} value={pm.id}>{pm.fullName} ({pm.email})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {mode === "nl" ? (
             <Card>
               <CardHeader>
@@ -249,7 +438,6 @@ export default function NewProjectPage() {
             </Card>
           ) : mode === "upload" ? (
             <>
-              {/* File drop zone */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Upload Requirements Document</CardTitle>
@@ -294,14 +482,12 @@ export default function NewProjectPage() {
                           <X className="w-4 h-4" />
                         </button>
                       </div>
-
                       {parsing && (
                         <div className="flex items-center gap-2 text-sm text-[#4f5bd5] animate-pulse">
                           <Loader2 className="w-4 h-4 animate-spin" />
                           Extracting text and analysing requirements with AI…
                         </div>
                       )}
-
                       {parseSummary.length > 0 && (
                         <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
                           <p className="text-xs font-semibold text-green-800 uppercase tracking-wide">Extracted from document</p>
@@ -317,12 +503,10 @@ export default function NewProjectPage() {
                   )}
                 </CardContent>
               </Card>
-
-              {/* Show form fields pre-filled from doc (always shown so user can edit) */}
-              <ProjectFormFields form={form} update={update} availableClients={availableClients} />
+              <ProjectFormFields form={form} update={update} role={role} />
             </>
           ) : (
-            <ProjectFormFields form={form} update={update} availableClients={availableClients} />
+            <ProjectFormFields form={form} update={update} role={role} />
           )}
 
           {form.engagementMode === "high_level" && mode !== "nl" && (
@@ -356,7 +540,7 @@ export default function NewProjectPage() {
   );
 }
 
-function ProjectFormFields({ form, update, availableClients }: { form: typeof emptyForm; update: (f: string, v: string) => void; availableClients: ClientOption[] }) {
+function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; update: (f: string, v: string) => void; role?: string }) {
   return (
     <>
       <Card>
@@ -366,25 +550,21 @@ function ProjectFormFields({ form, update, availableClients }: { form: typeof em
             <Label>Project Name *</Label>
             <Input placeholder="ERP Implementation — Retail" value={form.name} onChange={(e) => update("name", e.target.value)} required />
           </div>
-          <div className="space-y-2">
-            <Label>Customer / Client {availableClients.length > 0 && <span className="text-xs text-slate-400">(select from list)</span>}</Label>
-            {availableClients.length > 0 ? (
-              <Select value={form.clientId} onValueChange={(v) => {
-                const c = availableClients.find((x) => x.id === v);
-                update("clientId", v);
-                update("customer", c?.name || "");
-              }}>
-                <SelectTrigger><SelectValue placeholder="Select client…" /></SelectTrigger>
-                <SelectContent>
-                  {availableClients.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.cluster.name} › {c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input placeholder="Acme Retail" value={form.customer} onChange={(e) => update("customer", e.target.value)} />
-            )}
-          </div>
+
+          {/* Customer only editable for admin/DM/DH — PM has it locked from hierarchy card */}
+          {(!role || role === "admin" || role === "dm" || role === "dh") && (
+            <div className="space-y-2">
+              <Label>Customer / Client</Label>
+              <Input
+                placeholder="Acme Retail"
+                value={form.customer}
+                onChange={(e) => update("customer", e.target.value)}
+                readOnly={role === "dm" || role === "dh"}
+                className={role === "dm" || role === "dh" ? "bg-slate-50 text-slate-600" : ""}
+              />
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label>Industry</Label>
             <Input placeholder="Retail, Financial Services, Healthcare..." value={form.industry} onChange={(e) => update("industry", e.target.value)} />

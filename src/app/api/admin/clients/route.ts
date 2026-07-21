@@ -12,12 +12,18 @@ const schema = z.object({
   accountOwner: z.string().optional(),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { error, user } = await requireAdmin();
   if (error) return error;
 
+  const { searchParams } = new URL(req.url);
+  const clusterId = searchParams.get("clusterId");
+
+  const where: any = { orgId: (user as any).orgId, deletedAt: null };
+  if (clusterId) where.clusterId = clusterId;
+
   const clients = await prisma.client.findMany({
-    where: { orgId: (user as any).orgId, deletedAt: null },
+    where,
     include: {
       cluster: { select: { id: true, name: true, type: true } },
       _count: { select: { programs: true, projects: true } },

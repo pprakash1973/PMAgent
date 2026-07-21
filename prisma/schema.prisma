@@ -64,6 +64,7 @@ model User {
   artifactSelections ArtifactSelection[]
   invitations        Invitation[]
   programAssignments ProgramAssignment[]
+  clientAssignments  ClientAssignment[]
 }
 
 model Account {
@@ -127,10 +128,11 @@ model Client {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  org      Organization @relation(fields: [orgId], references: [id])
-  cluster  Cluster      @relation(fields: [clusterId], references: [id])
-  programs Program[]
-  projects Project[]
+  org             Organization      @relation(fields: [orgId], references: [id])
+  cluster         Cluster           @relation(fields: [clusterId], references: [id])
+  programs        Program[]
+  projects        Project[]
+  userAssignments ClientAssignment[]
 
   @@unique([orgId, name])
 }
@@ -168,6 +170,19 @@ model ProgramAssignment {
   user    User    @relation(fields: [userId], references: [id])
 
   @@unique([programId, userId])
+}
+
+model ClientAssignment {
+  id         String   @id @default(cuid())
+  clientId   String
+  userId     String
+  assignedBy String?
+  assignedAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([clientId, userId])
 }
 
 model Invitation {

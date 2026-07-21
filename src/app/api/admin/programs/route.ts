@@ -12,12 +12,18 @@ const schema = z.object({
   dmIds: z.array(z.string()).optional(),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { error, user } = await requireAdmin();
   if (error) return error;
 
+  const { searchParams } = new URL(req.url);
+  const clientId = searchParams.get("clientId");
+
+  const where: any = { orgId: (user as any).orgId, deletedAt: null };
+  if (clientId) where.clientId = clientId;
+
   const programs = await prisma.program.findMany({
-    where: { orgId: (user as any).orgId, deletedAt: null },
+    where,
     include: {
       client: { include: { cluster: { select: { id: true, name: true } } } },
       assignments: { include: { user: { select: { id: true, fullName: true, email: true } } } },
