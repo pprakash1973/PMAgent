@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && node scripts/migrate-neon-phase.js && next build",
+    "build": "prisma generate && node scripts/migrate-neon-phase.js && node scripts/migrate-admin-module.js && next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
