@@ -5,11 +5,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
-import { buildXlsx } from "@/lib/export-xlsx";
 import { buildWbsXlsx } from "@/lib/export-wbs-xlsx";
 import { buildRtmXlsx } from "@/lib/export-rtm-xlsx";
 import { buildEvmXlsx } from "@/lib/export-evm-xlsx";
 import { buildRiskRegisterXlsx, buildIssueRegisterXlsx } from "@/lib/export-risk-issue-xlsx";
+import {
+  buildRaidRegisterXlsx,
+  buildScheduleXlsx,
+  buildBudgetXlsx,
+  buildRaciMatrixXlsx,
+  buildChangeLogXlsx,
+  buildLessonsLearnedXlsx,
+  buildStakeholderRegisterXlsx,
+  buildResourcePlanXlsx,
+  buildGenericLogXlsx,
+} from "@/lib/export-all-xlsx";
 import { buildPptx } from "@/lib/export-pptx";
 import { buildDocx } from "@/lib/export-docx";
 
@@ -59,8 +69,67 @@ export async function GET(
       buf = await buildWbsXlsx(content);
       mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       ext = "xlsx";
+    } else if (type === "raid_register") {
+      buf = await buildRaidRegisterXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "schedule" || type === "milestone_plan") {
+      buf = await buildScheduleXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "budget" || type === "cost_plan") {
+      buf = await buildBudgetXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "raci_matrix") {
+      buf = await buildRaciMatrixXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "change_log") {
+      buf = await buildChangeLogXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "lessons_learned" || type === "close_report") {
+      buf = await buildLessonsLearnedXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "stakeholder_register") {
+      buf = await buildStakeholderRegisterXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "resource_plan") {
+      buf = await buildResourcePlanXlsx(content);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "action_log") {
+      buf = await buildGenericLogXlsx(content, "Action Log",
+        ["id","action","owner","dueDate","priority","status","outcome"],
+        ["ID","Action","Owner","Due Date","Priority","Status","Outcome"]);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "decision_log") {
+      buf = await buildGenericLogXlsx(content, "Decision Log",
+        ["id","decision","rationale","decidedBy","decisionDate","impact","status"],
+        ["ID","Decision","Rationale","Decided By","Decision Date","Impact","Status"]);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "assumption_log") {
+      buf = await buildGenericLogXlsx(content, "Assumption Log",
+        ["id","assumption","category","owner","validationDate","status","impactIfWrong"],
+        ["ID","Assumption","Category","Owner","Validation Date","Status","Impact If Wrong"]);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
+    } else if (type === "benefits_register") {
+      buf = await buildGenericLogXlsx(content, "Benefits Register",
+        ["id","benefit","category","owner","plannedDate","actualDate","status","value"],
+        ["ID","Benefit","Category","Owner","Planned Date","Actual Date","Status","Value"]);
+      mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      ext = "xlsx";
     } else if (format === "xlsx") {
-      buf = buildXlsx(type, content);
+      // Fallback: should not reach here for xlsx types — all are handled above
+      buf = await buildGenericLogXlsx(content, type,
+        Object.keys((Object.values(content)[0] as any[])?.[0] ?? {}),
+        Object.keys((Object.values(content)[0] as any[])?.[0] ?? {}));
       mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       ext = "xlsx";
     } else if (format === "pptx") {
