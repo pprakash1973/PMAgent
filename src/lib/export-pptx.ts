@@ -34,6 +34,12 @@ function safeStr(v: unknown): string {
   return String(v);
 }
 
+// Strip parenthetical/bracketed qualifiers that AI appends to KPI values.
+// "USD 150,000 (Order-of-Magnitude...)" → "USD 150,000"
+function kpiVal(v: string): string {
+  return v.replace(/\s*[\(\[].*$/, "").trim().slice(0, 22) || v.slice(0, 22);
+}
+
 const FOOTER_TEXT = "Confidential and Proprietary. © 2026 UST Global Inc";
 
 // ── Shared slide helpers ───────────────────────────────────────────────────────
@@ -350,8 +356,8 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   // Stats panel (right, lower)
   cov.addShape(pptx.ShapeType.rect, { x: 7.65, y: 5.2, w: 5.5, h: 2.1, fill: { color: "004F5E" } });
   const stats = [
-    { label: "Budget", value: safeStr(content.budget?.total ?? content.budget ?? "TBD") },
-    { label: "Duration", value: safeStr(content.milestones?.[content.milestones?.length - 1]?.targetDate ?? "TBD") },
+    { label: "Budget", value: kpiVal(safeStr(content.budget?.total ?? content.budget ?? "TBD")) },
+    { label: "Duration", value: kpiVal(safeStr(content.milestones?.[content.milestones?.length - 1]?.targetDate ?? "TBD")) },
     { label: "Stakeholders", value: String(content.stakeholders?.length ?? "—") },
   ];
   stats.forEach((s, i) => {
@@ -360,7 +366,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     cov.addText(s.label, { x: sx, y: 5.95, w: 1.7, h: 0.3, fontSize: 9, color: TEAL_L, align: "center", fontFace: "Aptos" });
   });
   // Left text
-  cov.addText("UST", { x: 0.55, y: 0.45, w: 2, h: 0.45, fontSize: 18, bold: true, color: TEAL_L, fontFace: "Aptos" });
+  cov.addText("UST", { x: 0.55, y: 0.45, w: 2, h: 0.45, fontSize: 14, bold: true, color: TEAL_L, fontFace: "Aptos" });
   cov.addText(title, { x: 0.55, y: 1.1, w: 6.7, h: 2.0, fontSize: 32, bold: true, color: WHITE, align: "left", wrap: true, fontFace: "Aptos" });
   cov.addShape(pptx.ShapeType.rect, { x: 0.55, y: 3.25, w: 2.4, h: 0.06, fill: { color: TEAL_L } });
   cov.addText(`Project Charter  v${safeStr(content.version ?? "1.0")}`, { x: 0.55, y: 3.4, w: 6.7, h: 0.45, fontSize: 16, color: MID_WASH, fontFace: "Aptos" });
@@ -382,14 +388,14 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     s2.addShape(pptx.ShapeType.rect, { x, y: 0.85, w: 4.1, h: 3.8, fill: { color: WASH }, line: { color: MID_WASH, width: 0.75 } });
     // Icon circle
     s2.addShape(pptx.ShapeType.ellipse, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fill: { color: col.color } });
-    s2.addText(col.icon, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fontSize: 22, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
+    s2.addText(col.icon, { x: x + 1.55, y: 0.75, w: 1.0, h: 1.0, fontSize: 18, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
     s2.addText(col.label, { x, y: 1.85, w: 4.1, h: 0.38, fontSize: 10, bold: true, color: col.color, align: "center", fontFace: "Aptos" });
     s2.addText(col.text.slice(0, 250), { x: x + 0.12, y: 2.3, w: 3.86, h: 2.25, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
   });
   // Dark KPI strip
   kpiStrip(pptx, s2, [
-    { label: "Total Budget", value: safeStr(content.budget?.total ?? content.budget ?? "TBD"), dark: true },
-    { label: "End Date", value: safeStr(content.milestones?.[content.milestones?.length - 1]?.targetDate ?? "TBD"), dark: true },
+    { label: "Total Budget", value: kpiVal(safeStr(content.budget?.total ?? content.budget ?? "TBD")), dark: true },
+    { label: "End Date", value: kpiVal(safeStr(content.milestones?.[content.milestones?.length - 1]?.targetDate ?? "TBD")), dark: true },
     { label: "Stakeholders", value: String(content.stakeholders?.length ?? "—"), dark: true },
     { label: "Objectives", value: String(content.objectives?.length ?? "—"), dark: true },
   ], 5.0);
@@ -517,7 +523,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     const lvlColor = level.toLowerCase().includes("critical") ? RED : level.toLowerCase().includes("high") ? "FFC000" : TEAL_L;
     s7.addShape(pptx.ShapeType.roundRect, { x: 0.3, y: 0.88 + i * 1.45, w: 7.5, h: 1.3, fill: { color: WASH }, line: { color: lvlColor, width: 2 }, rectRadius: 0.08 });
     s7.addShape(pptx.ShapeType.rect, { x: 0.3, y: 0.88 + i * 1.45, w: 1.1, h: 1.3, fill: { color: lvlColor } });
-    s7.addText(level.slice(0, 8).toUpperCase(), { x: 0.3, y: 0.88 + i * 1.45, w: 1.1, h: 1.3, fontSize: 7.5, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
+    s7.addText(level.slice(0, 8).toUpperCase(), { x: 0.3, y: 0.88 + i * 1.45, w: 1.1, h: 1.3, fontSize: 9, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
     s7.addText(rText.slice(0, 130), { x: 1.5, y: 0.93 + i * 1.45, w: 5.6, h: 0.9, fontSize: 10, color: SOFT_BLACK, wrap: true, valign: "middle", fontFace: "Aptos" });
     const prob = typeof r === "object" ? safeStr(r.probability ?? "") : "";
     const imp = typeof r === "object" ? safeStr(r.impact ?? "") : "";
@@ -564,9 +570,9 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   const s8 = contentSlide(pptx, "Budget & Resources", projectName, page++);
   const budget = content.budget ?? {};
   kpiStrip(pptx, s8, [
-    { label: "Total Budget", value: safeStr(budget.total ?? "TBD"), sub: safeStr(budget.currency ?? ""), dark: true },
-    { label: "Contingency Reserve", value: safeStr(budget.contingencyReserve ?? "TBD"), dark: true },
-    { label: "Funding Source", value: safeStr(budget.fundingSource ?? "TBD"), dark: true },
+    { label: "Total Budget", value: kpiVal(safeStr(budget.total ?? "TBD")), sub: safeStr(budget.currency ?? ""), dark: true },
+    { label: "Contingency Reserve", value: kpiVal(safeStr(budget.contingencyReserve ?? "TBD")), dark: true },
+    { label: "Funding Source", value: kpiVal(safeStr(budget.fundingSource ?? "TBD")), dark: true },
   ], 0.9);
   const assumptions = content.assumptions ?? [];
   const constraints = content.constraints ?? [];
