@@ -2,8 +2,19 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { AppShell } from "@/components/app-shell";
+import PgmDashboardClient, { type PgmProject, type PgmProgram, type TrendPoint } from "./pgm-dashboard-client";
 
 const CAN_PROGRAM = ["pgm", "admin"];
+
+function computeWeeksInRag(reports: Array<{ healthScore: { ragStatus: string | null } | null; reportDate: Date }>, currentRag: string): number {
+  let count = 0;
+  for (const r of reports) {
+    const rag = r.healthScore?.ragStatus ?? "green";
+    if (rag === currentRag) count++;
+    else break;
+  }
+  return count;
+}
 
 export default async function ProgramDashboardPage() {
   const session = await auth();
@@ -19,7 +30,16 @@ export default async function ProgramDashboardPage() {
           projects: {
             where: { deletedAt: null },
             include: {
-              pmOwner: { select: { fullName: true } },
+              pmOwner: { select: { id: true, fullName: true } },
+              scheduleTasks: {
+                select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true },
+              },
+              costEntries: { select: { amount: true } },
+              statusReports: {
+                orderBy: { reportDate: "desc" },
+                take: 8,
+                include: { healthScore: true },
+              },
               _count: { select: { risks: true, issues: true } },
             },
           },
@@ -28,104 +48,130 @@ export default async function ProgramDashboardPage() {
     },
   });
 
-  const programs = assignments.map((a) => a.program);
-  const allProjects = programs.flatMap((p) => p.projects);
+  const now = Date.now();
 
-  const totalProjects = allProjects.length;
-  const redCount   = allProjects.filter((p) => p.healthStatus === "red").length;
-  const amberCount = allProjects.filter((p) => p.healthStatus === "amber").length;
-  const greenCount = allProjects.filter((p) => p.healthStatus === "green").length;
+  const programs = assignments.map((a) => a.program);
+
+  // Build PgmProject[] — one entry per project across all programs
+  const pgmProjects: PgmProject[] = [];
+
+  for (const prog of programs) {
+    for (const p of prog.projects) {
+      // Live EVM
+      let pv = 0, ev = 0;
+      for (const t of p.scheduleTasks) {
+        if (!t.baselineStart || !t.baselineFinish) continue;
+        const s = new Date(t.baselineStart).getTime();
+        const f = new Date(t.baselineFinish).getTime();
+        const dur = f - s;
+        const plannedPct = now <= s ? 0 : now >= f ? 1 : dur > 0 ? (now - s) / dur : 0;
+        pv += t.baselineDays * plannedPct;
+        ev += t.baselineDays * (t.percentComplete / 100);
+      }
+      const liveSpi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
+      const storedSpi = p.statusReports[0]?.healthScore?.spi ?? null;
+      const storedCpi = p.statusReports[0]?.healthScore?.cpi ?? null;
+      const spi = liveSpi ?? storedSpi;
+
+      const schedPct = p.scheduleTasks.length
+        ? Math.round(p.scheduleTasks.reduce((s, t) => s + t.percentComplete, 0) / p.scheduleTasks.length)
+        : 0;
+      const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
+      const budPct = p.budget && p.budget > 0 ? Math.round((totalSpent / p.budget) * 100) : 0;
+
+      let rag: "red" | "amber" | "green" = (p.healthStatus as any) ?? "green";
+      if (spi !== null) {
+        if (spi < 0.8) rag = "red";
+        else if (spi < 0.9 && rag === "green") rag = "amber";
+      }
+
+      const lastReport = p.statusReports[0] ?? null;
+      const weeksInRag = computeWeeksInRag(
+        p.statusReports as any,
+        rag
+      );
+
+      pgmProjects.push({
+        id:           p.id,
+        name:         p.name,
+        code:         (p as any).code ?? "",
+        programId:    prog.id,
+        programName:  prog.name,
+        clientName:   (prog.client as any)?.name ?? "—",
+        pmName:       p.pmOwner.fullName,
+        pmId:         p.pmOwner.id,
+        phase:        (p as any).currentPhase ?? "initiation",
+        status:       p.status ?? "active",
+        rag,
+        spi,
+        cpi:          storedCpi ?? null,
+        schedPct,
+        budPct,
+        budget:       p.budget ?? null,
+        riskCount:    p._count.risks,
+        issueCount:   p._count.issues,
+        lastReportDate: lastReport ? new Date(lastReport.reportDate).toISOString() : null,
+        weeksInRag,
+      });
+    }
+  }
+
+  // Build PgmProgram[] — rollup per program
+  const pgmPrograms: PgmProgram[] = programs.map((prog) => {
+    const projs = pgmProjects.filter((p) => p.programId === prog.id);
+    const redCount   = projs.filter((p) => p.rag === "red").length;
+    const amberCount = projs.filter((p) => p.rag === "amber").length;
+    const ragRollup: "red" | "amber" | "green" =
+      redCount > 0 ? "red" : amberCount > 0 ? "amber" : "green";
+    const totalBudget = projs.reduce((s, p) => s + (p.budget ?? 0), 0);
+    const totalBudPct = projs.length
+      ? Math.round(projs.reduce((s, p) => s + p.budPct, 0) / projs.length)
+      : 0;
+    return {
+      id:                prog.id,
+      name:              prog.name,
+      clientName:        (prog.client as any)?.name ?? "—",
+      clusterName:       (prog.client as any)?.cluster?.name ?? "—",
+      ragRollup,
+      projectCount:      projs.length,
+      budgetConsumedPct: totalBudPct,
+      prevRagRollup:     null,
+    };
+  });
+
+  // Build 6-month trend from all status reports across scope
+  const allReports = programs.flatMap((prog) =>
+    prog.projects.flatMap((p) => p.statusReports)
+  );
+  const trends: TrendPoint[] = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - (5 - i));
+    const label = d.toLocaleString("en", { month: "short" });
+    const yr = d.getFullYear(), mo = d.getMonth();
+    const periodReports = allReports.filter((r) => {
+      const rd = new Date(r.reportDate);
+      return rd.getFullYear() === yr && rd.getMonth() === mo;
+    });
+    const spiVals = periodReports.map((r) => r.healthScore?.spi ?? null).filter((v): v is number => v !== null);
+    const cpiVals = periodReports.map((r) => r.healthScore?.cpi ?? null).filter((v): v is number => v !== null);
+    const greenCount = periodReports.filter((r) => r.healthScore?.ragStatus === "green").length;
+    return {
+      label,
+      avgSpi:    spiVals.length ? Math.round(spiVals.reduce((a, b) => a + b, 0) / spiVals.length * 100) / 100 : null,
+      avgCpi:    cpiVals.length ? Math.round(cpiVals.reduce((a, b) => a + b, 0) / cpiVals.length * 100) / 100 : null,
+      greenPct:  periodReports.length ? Math.round(greenCount / periodReports.length * 100) : null,
+    };
+  });
 
   return (
     <AppShell role={user.role} userName={user.name ?? ""}>
-      <div style={{ padding: "32px 40px", fontFamily: "'Aptos','Calibri',sans-serif" }}>
-        {/* Header */}
-        <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#003C51", margin: 0 }}>Program Dashboard</h1>
-          <p style={{ color: "#7A7480", fontSize: 13.5, marginTop: 4 }}>
-            {programs.length} program{programs.length !== 1 ? "s" : ""} · {totalProjects} project{totalProjects !== 1 ? "s" : ""}
-          </p>
-        </div>
-
-        {/* KPI strip */}
-        <div style={{ display: "flex", gap: 16, marginBottom: 32 }}>
-          {[
-            { label: "Total Projects", value: totalProjects, color: "#003C51" },
-            { label: "On Track",       value: greenCount,    color: "#01B27C" },
-            { label: "At Risk",        value: amberCount,    color: "#F59E0B" },
-            { label: "Off Track",      value: redCount,      color: "#FC6A59" },
-          ].map((kpi) => (
-            <div key={kpi.label} style={{
-              flex: 1, background: "#fff", border: "1px solid #D7E0E3", borderRadius: 12,
-              padding: "18px 22px",
-            }}>
-              <div style={{ fontSize: 28, fontWeight: 700, color: kpi.color }}>{kpi.value}</div>
-              <div style={{ fontSize: 12.5, color: "#7A7480", marginTop: 3 }}>{kpi.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Programs list */}
-        {programs.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "60px 0", color: "#7A7480", fontSize: 14 }}>
-            No programs assigned yet. Ask your admin to assign programs to your account.
-          </div>
-        ) : (
-          programs.map((program) => (
-            <div key={program.id} style={{ marginBottom: 28 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
-                <h2 style={{ fontSize: 15, fontWeight: 700, color: "#003C51", margin: 0 }}>{program.name}</h2>
-                <span style={{ fontSize: 12, color: "#7A7480" }}>
-                  {program.client.cluster.name} › {program.client.name}
-                </span>
-                <span style={{
-                  fontSize: 11, fontWeight: 600, color: "#006E74",
-                  background: "#E1F5EE", borderRadius: 999, padding: "2px 9px",
-                }}>
-                  {program.projects.length} project{program.projects.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-
-              {program.projects.length === 0 ? (
-                <p style={{ fontSize: 13, color: "#7A7480", margin: 0 }}>No projects in this program yet.</p>
-              ) : (
-                <div style={{ background: "#fff", border: "1px solid #D7E0E3", borderRadius: 12, overflow: "hidden" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ background: "#F2F7F8", borderBottom: "1px solid #D7E0E3" }}>
-                        {["Project", "PM Owner", "Status", "Health", "Risks", "Issues"].map((h) => (
-                          <th key={h} style={{ textAlign: "left", padding: "10px 16px", fontWeight: 600, color: "#003C51", fontSize: 12 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {program.projects.map((proj) => {
-                        const ragColor = proj.healthStatus === "green" ? "#01B27C"
-                          : proj.healthStatus === "amber" ? "#F59E0B" : "#FC6A59";
-                        return (
-                          <tr key={proj.id} style={{ borderBottom: "1px solid #F2F7F8" }}>
-                            <td style={{ padding: "11px 16px", fontWeight: 600, color: "#003C51" }}>{proj.name}</td>
-                            <td style={{ padding: "11px 16px", color: "#7A7480" }}>{proj.pmOwner.fullName}</td>
-                            <td style={{ padding: "11px 16px", color: "#7A7480", textTransform: "capitalize" }}>{proj.status}</td>
-                            <td style={{ padding: "11px 16px" }}>
-                              <span style={{
-                                display: "inline-block", width: 10, height: 10, borderRadius: "50%",
-                                background: ragColor, marginRight: 6,
-                              }} />
-                              <span style={{ color: ragColor, fontWeight: 600, textTransform: "capitalize" }}>{proj.healthStatus}</span>
-                            </td>
-                            <td style={{ padding: "11px 16px", color: "#7A7480" }}>{proj._count.risks}</td>
-                            <td style={{ padding: "11px 16px", color: "#7A7480" }}>{proj._count.issues}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ))
-        )}
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <PgmDashboardClient
+          projects={pgmProjects}
+          programs={pgmPrograms}
+          trends={trends}
+          userName={user.name ?? user.email ?? "PgM"}
+        />
       </div>
     </AppShell>
   );
