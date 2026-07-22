@@ -80,9 +80,9 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   traceability_matrix:   "requirements (array of {id, description, source, wbsRef, milestone, deliverable, acceptanceCriteria, validationMethod, owner, status})",
 };
 
-// 16k is ample for any artifact; streaming bypasses the SDK guard that fires
-// when max_tokens is set very high on a non-streaming messages.create() call.
-const ARTIFACT_MAX_TOKENS = 16000;
+// Streaming bypasses the SDK guard that fires on high max_tokens with messages.create().
+// 32k gives WBS and other verbose artifacts enough room without risk of truncation.
+const ARTIFACT_MAX_TOKENS = 32000;
 
 export async function generateArtifact(
   artifactType: string,
