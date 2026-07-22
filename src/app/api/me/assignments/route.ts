@@ -8,7 +8,7 @@ export async function GET() {
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
   const user = session.user as any;
 
-  if (user.role === "pm" || user.role === "dm") {
+  if (user.role === "pm" || user.role === "pgm") {
     const assignments = await prisma.programAssignment.findMany({
       where: { userId: user.id },
       include: {

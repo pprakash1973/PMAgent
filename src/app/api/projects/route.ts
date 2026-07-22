@@ -44,7 +44,7 @@ export async function GET() {
 
   if (user.role === "pm") {
     where.pmOwnerId = user.id;
-  } else if (user.role === "dm") {
+  } else if (user.role === "pgm") {
     const programAssignments = await prisma.programAssignment.findMany({
       where: { userId: user.id },
       select: { programId: true },
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
 
     // Resolve pmOwnerId: DM/DH can specify a PM; PM and admin default to self
     let pmOwnerId = user.id;
-    if ((user.role === "dm" || user.role === "dh" || user.role === "admin") && data.pmOwnerId) {
+    if ((user.role === "pgm" || user.role === "dh" || user.role === "admin") && data.pmOwnerId) {
       pmOwnerId = data.pmOwnerId;
     }
 

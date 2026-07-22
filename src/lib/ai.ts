@@ -312,7 +312,7 @@ export async function askPortfolio(
 ): Promise<string> {
   const roleGuidance: Record<string, string> = {
     pm: "The user is a Project Manager. Focus answers on their own projects: schedule/budget risk, next actions, drafting artifacts or stakeholder communications on their behalf.",
-    delivery_manager: "The user is a Delivery Manager overseeing a portfolio. Focus on cross-project patterns, resource allocation and utilization, at-risk projects needing intervention, and portfolio-level recommendations.",
+    pgm: "The user is a Program Manager overseeing a set of programs and their projects. Focus on cross-project patterns within their programs, at-risk projects needing intervention, escalations, and PM performance across the portfolio.",
     delivery_head: "The user is a Delivery/Practice Head (executive). Be concise and numbers-first. Lead with the bottom line (cost, risk, delivery health), flag anything needing executive decision, and quantify impact in dollars where possible.",
     admin: "The user is an org administrator with full visibility. Answer with portfolio-wide context, calling out governance or process gaps where relevant.",
   };

@@ -33,7 +33,7 @@ export default function ProgramsPage() {
     const [pr, cl, us] = await Promise.all([
       fetch("/api/admin/programs").then((r) => r.json()),
       fetch("/api/admin/clients").then((r) => r.json()),
-      fetch("/api/admin/users?role=dm").then((r) => r.json()),
+      fetch("/api/admin/users?role=pgm").then((r) => r.json()),
     ]);
     setPrograms(Array.isArray(pr) ? pr : []);
     setClients(Array.isArray(cl) ? cl : []);

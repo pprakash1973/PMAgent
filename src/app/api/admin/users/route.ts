@@ -9,7 +9,7 @@ import crypto from "crypto";
 const createSchema = z.object({
   fullName: z.string().min(1),
   email: z.string().email(),
-  role: z.enum(["pm", "dm", "dh", "admin"]),
+  role: z.enum(["pm", "pgm", "dh", "admin"]),
   // PM: single program; DM: multiple programs
   programIds: z.array(z.string()).optional(),
   // DH: multiple clients
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
     }
 
     // DM: multiple program assignments
-    if (data.role === "dm" && data.programIds?.length) {
+    if (data.role === "pgm" && data.programIds?.length) {
       await prisma.programAssignment.createMany({
         data: data.programIds.map((pid) => ({ programId: pid, userId: newUser.id, assignedBy: admin.id })),
         skipDuplicates: true,

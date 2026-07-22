@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 const ROLE_LABELS: Record<string, string> = {
   pm: "Project Manager",
+  pgm: "Program Manager",
   dm: "Program Manager",
   dh: "Delivery Head",
   admin: "Admin",
@@ -122,7 +123,7 @@ export default function UsersPage() {
     setDuplicateInfo(null);
     try {
       const payload: any = { ...form };
-      if (form.role === "pm" || form.role === "dm") payload.programIds = selPrograms;
+      if (form.role === "pm" || form.role === "pgm") payload.programIds = selPrograms;
       if (form.role === "dh") payload.clientIds = selClients;
 
       const res = await fetch("/api/admin/users", {
@@ -300,7 +301,7 @@ export default function UsersPage() {
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { v: "pm", label: "Project Manager", desc: "Manages individual projects in a program" },
-                        { v: "dm", label: "Program Manager", desc: "Oversees multiple programs for a client" },
+                        { v: "pgm", label: "Program Manager", desc: "Oversees multiple programs for a client" },
                         { v: "dh", label: "Delivery Head", desc: "Accountable for one or more clients" },
                         { v: "admin", label: "Admin", desc: "Full platform access, no hierarchy restriction" },
                       ].map(({ v, label, desc }) => (
@@ -345,8 +346,8 @@ export default function UsersPage() {
                     <span className="font-medium text-[#006E74]">{ROLE_LABELS[form.role]}</span>
                   </div>
 
-                  {/* PM and DM: cluster → client → program(s) */}
-                  {(form.role === "pm" || form.role === "dm") && (
+                  {/* PM and PGM: cluster → client → program(s) */}
+                  {(form.role === "pm" || form.role === "pgm") && (
                     <div className="space-y-4">
                       <div className="space-y-1.5">
                         <Label>Cluster</Label>
@@ -377,7 +378,7 @@ export default function UsersPage() {
                       {selClient && programs.length > 0 && (
                         <div className="space-y-1.5">
                           <Label>
-                            {form.role === "pm" ? "Program (select one)" : "Programs (select all that apply)"}
+                            {form.role === "pm" ? "Program (select one)" : "Programs (select all that apply for this Program Manager)"}
                           </Label>
                           <div className="flex flex-wrap gap-2">
                             {programs.map((p) => (
@@ -495,7 +496,7 @@ export default function UsersPage() {
                   <td className="px-4 py-3 text-slate-600">{u.email}</td>
                   <td className="px-4 py-3 text-slate-600">{ROLE_LABELS[u.role] || u.role}</td>
                   <td className="px-4 py-3">
-                    {(u.role === "pm" || u.role === "dm") && u.programAssignments?.length > 0 && (
+                    {(u.role === "pm" || u.role === "pgm" || u.role === "dm") && u.programAssignments?.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {u.programAssignments.map((a) => (
                           <span key={a.program.id} className="text-xs bg-[#E1F5EE] text-[#0F6E56] px-2 py-0.5 rounded-full">

@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
   const user = session.user as any;
-  if (!["dm", "dh", "admin"].includes(user.role)) {
+  if (!["pgm", "dh", "admin"].includes(user.role)) {
     return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
   }
 

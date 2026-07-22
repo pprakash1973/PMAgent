@@ -38,8 +38,8 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: "dm@pmAgent.dev" },
-    create: { orgId: org.id, email: "dm@pmAgent.dev", fullName: "Bob Delivery", passwordHash: hash, role: "dm" },
-    update: {},
+    create: { orgId: org.id, email: "dm@pmAgent.dev", fullName: "Bob Program", passwordHash: hash, role: "pgm" },
+    update: { role: "pgm" },
   });
 
   await prisma.user.upsert({

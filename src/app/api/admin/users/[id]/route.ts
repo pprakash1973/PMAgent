@@ -6,7 +6,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 
 const patchSchema = z.object({
-  role: z.enum(["pm", "dm", "dh", "admin"]).optional(),
+  role: z.enum(["pm", "pgm", "dh", "admin"]).optional(),
   fullName: z.string().optional(),
   password: z.string().min(8).optional(),
   programIds: z.array(z.string()).optional(),
@@ -34,7 +34,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const role = data.role ?? updated.role;
 
-  if (data.programIds !== undefined && (role === "pm" || role === "dm")) {
+  if (data.programIds !== undefined && (role === "pm" || role === "pgm")) {
     await prisma.programAssignment.deleteMany({ where: { userId: id } });
     if (data.programIds.length) {
       await prisma.programAssignment.createMany({

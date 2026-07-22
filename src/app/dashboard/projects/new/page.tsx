@@ -298,7 +298,7 @@ export default function NewProjectPage() {
                 <CardTitle className="text-base">Hierarchy</CardTitle>
                 <CardDescription>
                   {role === "pm" ? "Your project will be created under your assigned program." :
-                   role === "dm" ? "Select the program and assign a PM." :
+                   role === "pgm" ? "Select the program and assign a PM." :
                    "Select the client, program, and PM for this project."}
                 </CardDescription>
               </CardHeader>
@@ -322,8 +322,8 @@ export default function NewProjectPage() {
                   </div>
                 )}
 
-                {/* DM: select from assigned programs */}
-                {role === "dm" && (
+                {/* PGM: select from assigned programs */}
+                {role === "pgm" && (
                   <>
                     <div className="space-y-1.5">
                       <Label>Program</Label>
@@ -551,16 +551,16 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
             <Input placeholder="ERP Implementation — Retail" value={form.name} onChange={(e) => update("name", e.target.value)} required />
           </div>
 
-          {/* Customer only editable for admin/DM/DH — PM has it locked from hierarchy card */}
-          {(!role || role === "admin" || role === "dm" || role === "dh") && (
+          {/* Customer only editable for admin/PGM/DH — PM has it locked from hierarchy card */}
+          {(!role || role === "admin" || role === "pgm" || role === "dh") && (
             <div className="space-y-2">
               <Label>Customer / Client</Label>
               <Input
                 placeholder="Acme Retail"
                 value={form.customer}
                 onChange={(e) => update("customer", e.target.value)}
-                readOnly={role === "dm" || role === "dh"}
-                className={role === "dm" || role === "dh" ? "bg-slate-50 text-slate-600" : ""}
+                readOnly={role === "pgm" || role === "dh"}
+                className={role === "pgm" || role === "dh" ? "bg-slate-50 text-slate-600" : ""}
               />
             </div>
           )}

@@ -4,8 +4,9 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useState } from "react";
 
-const CAN_PORTFOLIO = ["dm", "dh", "admin"];
+const CAN_PORTFOLIO = ["dh", "admin"];
 const CAN_EXECUTIVE = ["dh", "admin"];
+const CAN_PROGRAM   = ["pgm"];
 
 // UST brand tokens
 const UST_PETROL    = "#003C51";
@@ -29,6 +30,7 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
   const isExec = path.includes("/executive");
   const showPortfolio = CAN_PORTFOLIO.includes(role);
   const showExecutive = CAN_EXECUTIVE.includes(role);
+  const showProgram   = CAN_PROGRAM.includes(role);
 
   function railBtn(active: boolean, href: string, icon: React.ReactNode, label: string) {
     return (
@@ -64,11 +66,15 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
         </svg>
       </div>
 
-      {role !== "dh" && railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
+      {role !== "dh" && role !== "pgm" && railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/></svg>,
         "Projects"
       )}
-      {role !== "dh" && showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
+      {showProgram && railBtn(path.includes("/program"), "/dashboard/program",
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 5h18M3 12h18M3 19h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
+        "Program"
+      )}
+      {role !== "dh" && role !== "pgm" && showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 13h5v8H3zM10 8h5v13h-5zM17 3h4v18h-4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>,
         "Portfolio"
       )}
@@ -126,7 +132,7 @@ function TopBar({ children, role }: { children?: React.ReactNode; role?: string 
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
         <span style={{ fontSize: "12.5px" }}>Search or ask…</span>
       </div>
-      {role !== "dh" && (
+      {role !== "dh" && role !== "pgm" && (
         <button
           onClick={() => router.push("/dashboard/projects/new")}
           style={{
@@ -147,8 +153,8 @@ type AskTurn = { question: string; answer: string; loading: boolean };
 
 const PORTFOLIO_SUGGESTIONS: Record<string, string[]> = {
   pm: ["Summarize the top risks across my projects", "Which of my projects need attention this week?", "Draft a status update email to my sponsor"],
-  delivery_manager: ["Which projects are trending red and why?", "Where are we over budget across the portfolio?", "Summarize open risks needing escalation"],
-  delivery_head: ["Give me the portfolio health summary in 3 bullets", "What decisions need my sign-off this week?", "Which projects are the biggest cost risk?"],
+  pgm: ["Which projects are trending red and why?", "Where are we over budget across my programs?", "Summarize open risks needing escalation"],
+  dh: ["Give me the portfolio health summary in 3 bullets", "What decisions need my sign-off this week?", "Which projects are the biggest cost risk?"],
   admin: ["Give me a portfolio-wide health and budget summary", "Which projects have the most open risks?", "Summarize this week's biggest delivery concerns"],
 };
 

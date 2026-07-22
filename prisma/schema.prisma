@@ -54,17 +54,22 @@ model User {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
-  org                Organization           @relation(fields: [orgId], references: [id])
-  roleRef            Role?                  @relation(fields: [roleId], references: [id])
-  ownedProjects      Project[]              @relation("PMOwner")
-  accounts           Account[]
-  sessions           Session[]
-  artifactVersions   ArtifactVersion[]
-  reqDocs            RequirementsDocument[]
-  artifactSelections ArtifactSelection[]
-  invitations        Invitation[]
-  programAssignments ProgramAssignment[]
-  clientAssignments  ClientAssignment[]
+  org                    Organization              @relation(fields: [orgId], references: [id])
+  roleRef                Role?                     @relation(fields: [roleId], references: [id])
+  ownedProjects          Project[]                 @relation("PMOwner")
+  accounts               Account[]
+  sessions               Session[]
+  artifactVersions       ArtifactVersion[]
+  reqDocs                RequirementsDocument[]
+  artifactSelections     ArtifactSelection[]
+  invitations            Invitation[]
+  programAssignments     ProgramAssignment[]
+  clientAssignments      ClientAssignment[]
+  projectPmAssignments   ProjectPmAssignment[]
+  escalationsRaised      Escalation[]              @relation("EscalationRaisedBy")
+  escalationsOwned       Escalation[]              @relation("EscalationOwner")
+  escalationComments     EscalationComment[]
+  notificationPreference NotificationPreference?
 }
 
 model Account {
@@ -244,6 +249,8 @@ model Project {
   scheduleTasks      ScheduleTask[]
   costEntries        CostEntry[]
   resources          ProjectResource[]
+  pmAssignments      ProjectPmAssignment[]
+  escalations        Escalation[]
 
   @@unique([orgId, code])
 }
@@ -332,7 +339,8 @@ model Risk {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id])
+  project     Project      @relation(fields: [projectId], references: [id])
+  escalations Escalation[]
 }
 
 model Issue {
@@ -520,4 +528,62 @@ model ModelConfig {
   notes     String?
   updatedAt DateTime @updatedAt
   updatedBy String?
+}
+
+model ProjectPmAssignment {
+  id         String   @id @default(cuid())
+  projectId  String
+  userId     String
+  assignedBy String?
+  assignedAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+}
+
+model Escalation {
+  id          String    @id @default(cuid())
+  orgId       String
+  projectId   String?
+  riskId      String?
+  raisedById  String
+  ownerId     String?
+  title       String
+  description String
+  severity    String    @default("medium")
+  status      String    @default("open")
+  resolvedAt  DateTime?
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project  Project?            @relation(fields: [projectId], references: [id])
+  risk     Risk?               @relation(fields: [riskId], references: [id])
+  raisedBy User                @relation("EscalationRaisedBy", fields: [raisedById], references: [id])
+  owner    User?               @relation("EscalationOwner", fields: [ownerId], references: [id])
+  comments EscalationComment[]
+}
+
+model EscalationComment {
+  id           String   @id @default(cuid())
+  escalationId String
+  userId       String
+  body         String
+  createdAt    DateTime @default(now())
+
+  escalation Escalation @relation(fields: [escalationId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+}
+
+model NotificationPreference {
+  id                 String  @id @default(cuid())
+  userId             String  @unique
+  escalationEmail    Boolean @default(true)
+  escalationInApp    Boolean @default(true)
+  statusReportEmail  Boolean @default(false)
+  statusReportInApp  Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id])
 }

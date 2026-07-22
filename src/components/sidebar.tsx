@@ -15,7 +15,10 @@ const navItems = (role: string) => {
   if (role === "pm" || role === "admin") {
     base.push({ href: "/dashboard/projects", label: "My Projects", icon: FolderKanban });
   }
-  if (role === "dm" || role === "admin") {
+  if (role === "pgm") {
+    base.push({ href: "/dashboard/program", label: "Program", icon: BarChart3 });
+  }
+  if (role === "admin") {
     base.push({ href: "/dashboard/portfolio", label: "Portfolio", icon: BarChart3 });
   }
   if (role === "dh" || role === "admin") {
