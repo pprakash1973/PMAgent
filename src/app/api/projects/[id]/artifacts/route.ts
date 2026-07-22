@@ -135,7 +135,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     : undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const content = await generateArtifact(artifactType, projectContext, requirements) as any;
+  let content: any;
+  try {
+    content = await generateArtifact(artifactType, projectContext, requirements);
+  } catch (err: any) {
+    console.error(`[artifact] generation failed for ${artifactType}:`, err);
+    return NextResponse.json(
+      { error: { code: "GENERATION_FAILED", message: err.message ?? "AI generation failed" } },
+      { status: 502 }
+    );
+  }
 
   const existing = await prisma.artifact.findFirst({ where: { projectId: id, artifactType } });
 

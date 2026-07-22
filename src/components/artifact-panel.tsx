@@ -139,9 +139,9 @@ export function ArtifactPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifactType }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = data?.error?.message ?? data?.error ?? "Generation failed";
+        const msg = data?.error?.message ?? data?.error ?? `Generation failed (${res.status})`;
         setGuardrailErrors((prev) => ({ ...prev, [artifactType]: msg }));
         return;
       }
