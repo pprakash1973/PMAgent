@@ -490,87 +490,38 @@ Return JSON with:
 - acceptanceCriteria (string): overall project acceptance criteria
 - approvalRequirements (string)`,
 
-    wbs: `Generate a Work Breakdown Structure following *Secrets to Mastering the WBS* (Buchtik, PMI) and PMBOK 6th Ed Process 5.4.
-
-## NON-NEGOTIABLE RULES
-1. DELIVERABLE-ORIENTED ONLY. Every component must be a noun/noun-phrase outcome (e.g. "Requirements Document", "Test Report", "Trained Users"). NEVER use verbs or activities ("Write requirements", "Design UI"). If a verb creeps in, convert it to the deliverable it produces.
-2. 100% RULE AT EVERY LEVEL. Each parent = exactly the sum of its children — no missing work, no overlap. Verify and record the check at every parent level.
-3. MANDATORY PROJECT MANAGEMENT BRANCH. Include "Project Management" as a Level-2 LoE component. Decompose it into at least: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned — scaled to project size.
-4. COMPONENT TYPING. Mark every component "Discrete" (tangible, measurable deliverable) or "LoE" (Level of Effort — support work without a definitive end product). Project Management is LoE; its decomposed artifacts (charter, plan, register) become Discrete.
-5. STOP DECOMPOSING when a component can be: assigned to one owner, estimated for cost and duration, has activities/milestones derivable from it, and can be monitored and controlled.
-6. NO SCHEDULE CONTENT. No dependencies between phases, no dates, no sequencing logic. The WBS defines SCOPE only.
-7. NOUN-BASED NAMING. No verbs, no gerunds. Consistent convention throughout.
-8. STRUCTURING APPROACH. Choose: By Major Deliverables (default), By Project Phases, By Subprojects, By Geography, By Department, or Hybrid. State your choice and why.
-
-## QUALITY AUDIT (16 CHECKS — score each Pass or Fail with evidence)
-Score every check and include results in the qualityAudit array:
-1. Deliverable oriented — components are nouns/adjectives, not tasks
-2. Defines project scope — WBS + dictionary answers concrete scope questions
-3. Clarifies and communicates the work — understandable to stakeholders
-4. Contains 100% of the work — nothing in scope is missing
-5. Captures ALL deliverables incl. project management — PM branch exists
-6. 100% rule at every level — parent = exactly sum of children; no overlap
-7. Work packages support task identification — concrete enough to derive activities
-8. Graphical/textual/tabular breakdown provided — at least one clear representation
-9. Noun-based naming — nouns and adjectives, consistent convention
-10. Hierarchical structure — clear parent-child; each element has exactly one parent
-11. Coding scheme on every component — unique WBS ID per component
-12. At least two levels of decomposition — ≥3 for meaningful projects
-13. Created by those performing the work — owners involved (flag if not)
-14. Built with stakeholder and expert input — review planned or done
-15. Evolves with progressive elaboration — rolling-wave placeholders for unknown work
-16. Updated via change control after baseline — post-approval changes flagged
+    wbs: `Generate a Work Breakdown Structure per PMBOK 6th Ed Process 5.4 (Create WBS).
+Use deliverable-oriented decomposition: every element is a noun/noun-phrase outcome, never a verb or activity.
+Include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
 
 Return JSON with:
 - projectName (string)
-- wbsCode (string): "1"
-- structuringApproach (string): chosen approach name
-- approachRationale (string): one sentence why
-- phases (array of Level-2 components, including the mandatory "Project Management" LoE branch):
+- phases (array of phases):
   {
     id (string): "1.1", "1.2" …
-    name (string): NOUN-BASED deliverable-oriented name
-    componentType (string): "Discrete" | "LoE"
-    100percentCheck (string): "1.x = [child names joined by +] ✓" — verify parent equals sum of children
-    owner (string): team or role accountable
-    deliverables (array of Level-3 components):
+    name (string): deliverable-oriented phase name
+    owner (string): team or role
+    deliverables (array):
       {
         id (string): "1.1.1" …
-        name (string): NOUN-BASED name
-        componentType (string): "Discrete" | "LoE"
-        100percentCheck (string): verification that this parent = sum of its work packages
+        name (string): deliverable name
         owner (string)
-        workPackages (array of Level-4 work packages — the lowest manageable level):
+        workPackages (array):
           {
             id (string): "1.1.1.1" …
-            name (string): NOUN-BASED specific deliverable name
-            componentType (string): "Discrete"
-            isWorkPackage (boolean): true
-            description (string): what work is done / what this deliverable contains
-            estimatedDays (number): realistic effort estimate
-            owner (string): single responsible team/person
-            acceptanceCriteria (string): measurable, testable criterion — how PM/customer verifies completion
-            outOfScope (string): what this work package explicitly does NOT include
-            dependencies (array of strings): IDs of predecessor work packages
+            name (string): work package name
+            description (string): what this deliverable contains
+            estimatedDays (number)
+            owner (string)
+            acceptanceCriteria (string)
           }
       }
   }
 - scopeBaselineSummary (object):
   {
-    totalComponents (number): total WBS elements including all levels
     totalWorkPackages (number)
     totalEstimatedDays (number)
-    maxDepth (number): deepest level reached
-    controlAccounts (array of strings): Level-2 branches that function as cost accounts
-    structuringApproach (string)
-    note (string): "Scope baseline = Scope Statement + WBS + WBS Dictionary. Changes after approval require formal change control."
-  }
-- qualityAudit (array of 16 objects):
-  {
-    check (number): 1–16
-    description (string): check description
-    result (string): "Pass" | "Fail" | "Partial"
-    evidence (string): specific evidence from this WBS that supports the result
+    note (string)
   }`,
 
     milestone_plan: `Generate a Milestone Plan per PMBOK 6th Ed Processes 6.2 (Define Activities) and 6.5 (Develop Schedule).
