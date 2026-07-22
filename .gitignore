@@ -44,5 +44,7 @@ next-env.d.ts
 uploads/
 prisma/dev.db
 prisma/*.db
+dev.db
+*.db
 
 .vercel
