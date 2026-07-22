@@ -80,9 +80,9 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   traceability_matrix:   "requirements (array of {id, description, source, wbsRef, milestone, deliverable, acceptanceCriteria, validationMethod, owner, status})",
 };
 
-// Artifact generation always uses the model's practical ceiling (64 k) so that
-// no artifact type — regardless of project size or nesting depth — gets truncated.
-const ARTIFACT_MAX_TOKENS = 64000;
+// 16k is ample for any artifact; streaming bypasses the SDK guard that fires
+// when max_tokens is set very high on a non-streaming messages.create() call.
+const ARTIFACT_MAX_TOKENS = 16000;
 
 export async function generateArtifact(
   artifactType: string,
@@ -92,12 +92,13 @@ export async function generateArtifact(
   const prompt = buildArtifactPrompt(artifactType, projectContext, requirements);
   const { model } = await resolveModel("artifact");
 
-  const message = await anthropic.messages.create({
+  const stream = anthropic.messages.stream({
     model,
     max_tokens: ARTIFACT_MAX_TOKENS,
     system: PMI_SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
   });
+  const message = await stream.finalMessage();
 
   return parseAIJson(message, `artifact:${artifactType}`);
 }
