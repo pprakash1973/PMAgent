@@ -80,6 +80,9 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   traceability_matrix:   "requirements (array of {id, description, source, wbsRef, milestone, deliverable, acceptanceCriteria, validationMethod, owner, status})",
 };
 
+// Artifact types that produce large nested JSON and need more output tokens
+const HIGH_TOKEN_ARTIFACTS = new Set(["wbs", "traceability_matrix", "raci_matrix", "resource_plan"]);
+
 export async function generateArtifact(
   artifactType: string,
   projectContext: Record<string, unknown>,
@@ -88,9 +91,15 @@ export async function generateArtifact(
   const prompt = buildArtifactPrompt(artifactType, projectContext, requirements);
   const { model, maxTokens } = await resolveModel("artifact");
 
+  // WBS and other complex artifacts produce deeply nested JSON that easily
+  // exceeds the default 8 k token ceiling — bump to 16 k for those types.
+  const effectiveMaxTokens = HIGH_TOKEN_ARTIFACTS.has(artifactType)
+    ? Math.max(maxTokens, 16000)
+    : maxTokens;
+
   const message = await anthropic.messages.create({
     model,
-    max_tokens: maxTokens,
+    max_tokens: effectiveMaxTokens,
     system: PMI_SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
   });
