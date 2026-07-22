@@ -70,9 +70,13 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/></svg>,
         "Projects"
       )}
-      {showProgram && railBtn(path.includes("/program"), "/dashboard/program",
+      {showProgram && railBtn(path.includes("/program") && !path.includes("/escalations"), "/dashboard/program",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 5h18M3 12h18M3 19h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
         "Program"
+      )}
+      {showProgram && railBtn(path.includes("/escalations"), "/dashboard/program/escalations",
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/><path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
+        "Escalations"
       )}
       {role !== "dh" && role !== "pgm" && showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 13h5v8H3zM10 8h5v13h-5zM17 3h4v18h-4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>,

@@ -30,6 +30,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
+  // PgM is read-only on project data — enforce server-side (B2)
+  const role = (session.user as any).role;
+  if (role === "pgm" || role === "dh") {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "Program Managers and Delivery Heads cannot edit project data" } }, { status: 403 });
+  }
 
   const { id } = await params;
   const body = await req.json();

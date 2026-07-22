@@ -170,12 +170,30 @@ export default async function ExecutivePage() {
       };
     });
 
+    // Fetch open/acknowledged escalations in scope
+    const dhEscalations = await prisma.escalation.findMany({
+      where: {
+        orgId:  user.orgId,
+        status: { in: ["open", "acknowledged", "in_progress"] },
+        projectId: clientIds.length
+          ? { in: rawProjects.map(p => p.id) }
+          : undefined,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: {
+        raisedBy: { select: { fullName: true } },
+        project:  { select: { name: true, program: { select: { name: true } } } },
+      },
+    });
+
     return (
       <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
         <DhDashboardClient
           projects={dhProjects}
           trends={trends}
           userName={user.name ?? user.email ?? "DH"}
+          escalations={JSON.parse(JSON.stringify(dhEscalations))}
         />
       </div>
     );

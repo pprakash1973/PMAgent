@@ -272,14 +272,29 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
 
 // ─── main component ───────────────────────────────────────────────────────────
 
+export interface DhEscalation {
+  id: string;
+  title: string;
+  severity: string;
+  status: string;
+  targetType: string;
+  createdAt: string;
+  slaDueAt: string | null;
+  slaBreachedAt: string | null;
+  project: { name: string; program: { name: string } | null } | null;
+  raisedBy: { fullName: string };
+}
+
 export default function DhDashboardClient({
   projects,
   trends,
   userName,
+  escalations = [],
 }: {
   projects: DhProject[];
   trends: TrendPoint[];
   userName: string;
+  escalations?: DhEscalation[];
 }) {
   const [tab,      setTab]      = useState<"projects" | "clusters">("projects");
   const [filterCluster, setFilterCluster] = useState("");
@@ -908,6 +923,58 @@ export default function DhDashboardClient({
               </div>
             )}
           </>
+        )}
+
+        {/* ── Escalations Panel ── */}
+        {escalations.length > 0 && (
+          <div style={{ background: "#fff", border: "1px solid #D7E0E3", borderRadius: 14, padding: "22px 28px", marginTop: 28 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#003C51", marginBottom: 16 }}>
+              Escalations Requiring Attention ({escalations.filter(e => e.status === "open").length} open)
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#F2F7F8" }}>
+                    {["Title","Project","Program","Raised by","Severity","Status","Age","SLA"].map(h => (
+                      <th key={h} style={{ textAlign: "left", padding: "9px 14px", fontSize: 11.5, fontWeight: 700, color: "#7A7480", whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {escalations.map(e => {
+                    const sevColor = e.severity==="critical"?"#cf3f3a":e.severity==="high"?"#c17d12":"#158a5a";
+                    const statusBg: Record<string,string> = { open:"#fbe4e2",acknowledged:"#fbf0da",in_progress:"#e3f3ea",resolved:"#e3f3ea",withdrawn:"#f7f8fa" };
+                    const statusCol: Record<string,string> = { open:"#cf3f3a",acknowledged:"#c17d12",in_progress:"#158a5a",resolved:"#158a5a",withdrawn:"#8a909c" };
+                    const statusLabel: Record<string,string> = { open:"Open",acknowledged:"Acknowledged",in_progress:"In Progress",resolved:"Resolved",withdrawn:"Withdrawn" };
+                    const days = Math.floor((Date.now()-new Date(e.createdAt).getTime())/86400000);
+                    const slaBreached = e.slaBreachedAt;
+                    return (
+                      <tr key={e.id} style={{ borderTop: "1px solid #D7E0E3", background: slaBreached ? "#fff8f8" : undefined }}>
+                        <td style={{ padding: "10px 14px", fontWeight: 700, color: "#003C51", maxWidth: 220 }}>{e.title}</td>
+                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.name ?? "—"}</td>
+                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.program?.name ?? "—"}</td>
+                        <td style={{ padding: "10px 14px", color: "#231F20" }}>{e.raisedBy.fullName}</td>
+                        <td style={{ padding: "10px 14px", color: sevColor, fontWeight: 700, textTransform: "capitalize" }}>{e.severity}</td>
+                        <td style={{ padding: "10px 14px" }}>
+                          <span style={{ background: statusBg[e.status]??"#f7f8fa", color: statusCol[e.status]??"#8a909c", fontWeight: 700, fontSize: 11.5, padding: "2px 9px", borderRadius: 99 }}>
+                            {statusLabel[e.status] ?? e.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{days}d</td>
+                        <td style={{ padding: "10px 14px" }}>
+                          {slaBreached
+                            ? <span style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 12 }}>⚠ Breached</span>
+                            : e.slaDueAt
+                              ? <span style={{ fontSize: 12, color: "#7A7480" }}>{new Date(e.slaDueAt).toLocaleDateString()}</span>
+                              : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -66,10 +66,12 @@ model User {
   programAssignments     ProgramAssignment[]
   clientAssignments      ClientAssignment[]
   projectPmAssignments   ProjectPmAssignment[]
-  escalationsRaised      Escalation[]              @relation("EscalationRaisedBy")
-  escalationsOwned       Escalation[]              @relation("EscalationOwner")
-  escalationComments     EscalationComment[]
-  notificationPreference NotificationPreference?
+  escalationsRaised        Escalation[]              @relation("EscalationRaisedBy")
+  escalationsOwned         Escalation[]              @relation("EscalationOwner")
+  escalationsAcknowledged  Escalation[]              @relation("EscalationAcknowledgedBy")
+  escalationsResolved      Escalation[]              @relation("EscalationResolvedBy")
+  escalationComments       EscalationComment[]
+  notificationPreference   NotificationPreference?
 }
 
 model Account {
@@ -531,39 +533,56 @@ model ModelConfig {
 }
 
 model ProjectPmAssignment {
-  id         String   @id @default(cuid())
-  projectId  String
-  userId     String
-  assignedBy String?
-  assignedAt DateTime @default(now())
+  id            String    @id @default(cuid())
+  projectId     String
+  userId        String
+  assignedBy    String?
+  reason        String    @default("")
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  assignedAt    DateTime  @default(now())
 
   project Project @relation(fields: [projectId], references: [id])
   user    User    @relation(fields: [userId], references: [id])
-
-  @@unique([projectId, userId])
 }
 
 model Escalation {
-  id          String    @id @default(cuid())
-  orgId       String
-  projectId   String?
-  riskId      String?
-  raisedById  String
-  ownerId     String?
-  title       String
-  description String
-  severity    String    @default("medium")
-  status      String    @default("open")
-  resolvedAt  DateTime?
-  dueDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  orgId                String
+  targetType           String    @default("project")
+  projectId            String?
+  riskId               String?
+  raisedById           String
+  ownerId              String?
+  title                String
+  description          String    @default("")
+  situation            String    @default("")
+  impact               String    @default("")
+  supportRequired      String    @default("")
+  severity             String    @default("high")
+  status               String    @default("open")
+  slaBreachedAt        DateTime?
+  slaDueAt             DateTime?
+  acknowledgedById     String?
+  acknowledgedAt       DateTime?
+  resolvedById         String?
+  resolvedAt           DateTime?
+  resolutionNote       String?
+  withdrawnAt          DateTime?
+  withdrawalReason     String?
+  targetResolutionDate DateTime?
+  contextSnapshot      Json?
+  dueDate              DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
-  project  Project?            @relation(fields: [projectId], references: [id])
-  risk     Risk?               @relation(fields: [riskId], references: [id])
-  raisedBy User                @relation("EscalationRaisedBy", fields: [raisedById], references: [id])
-  owner    User?               @relation("EscalationOwner", fields: [ownerId], references: [id])
-  comments EscalationComment[]
+  project        Project?            @relation(fields: [projectId], references: [id])
+  risk           Risk?               @relation(fields: [riskId], references: [id])
+  raisedBy       User                @relation("EscalationRaisedBy", fields: [raisedById], references: [id])
+  owner          User?               @relation("EscalationOwner", fields: [ownerId], references: [id])
+  acknowledgedBy User?               @relation("EscalationAcknowledgedBy", fields: [acknowledgedById], references: [id])
+  resolvedBy     User?               @relation("EscalationResolvedBy", fields: [resolvedById], references: [id])
+  comments       EscalationComment[]
 }
 
 model EscalationComment {
