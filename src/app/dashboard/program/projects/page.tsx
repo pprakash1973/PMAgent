@@ -240,6 +240,5 @@ export default function PgmProjectsPage() {
 
         </div>
       </div>
-    </div>
   );
 }

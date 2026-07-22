@@ -238,6 +238,5 @@ export default function EscalationsPage() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
