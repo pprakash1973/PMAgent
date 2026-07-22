@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
-import { AppShell } from "@/components/app-shell";
 import PgmProjectDetailClient from "./pgm-project-detail-client";
 
 const CAN_PROGRAM = ["pgm", "admin"];
@@ -96,9 +95,5 @@ export default async function PgmProjectDetailPage({ params }: { params: Promise
     userId: user.id,
   }));
 
-  return (
-    <AppShell role={user.role} userName={user.name ?? ""}>
-      <PgmProjectDetailClient {...serialized} />
-    </AppShell>
-  );
+  return <PgmProjectDetailClient {...serialized} />;
 }

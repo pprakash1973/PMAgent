@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { AppShell } from "@/components/app-shell";
 import PgmDashboardClient, { type PgmProject, type PgmProgram, type TrendPoint } from "./pgm-dashboard-client";
 
 const CAN_PROGRAM = ["pgm", "admin"];
@@ -164,15 +163,13 @@ export default async function ProgramDashboardPage() {
   });
 
   return (
-    <AppShell role={user.role} userName={user.name ?? ""}>
-      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        <PgmDashboardClient
-          projects={pgmProjects}
-          programs={pgmPrograms}
-          trends={trends}
-          userName={user.name ?? user.email ?? "PgM"}
-        />
-      </div>
-    </AppShell>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <PgmDashboardClient
+        projects={pgmProjects}
+        programs={pgmPrograms}
+        trends={trends}
+        userName={user.name ?? user.email ?? "PgM"}
+      />
+    </div>
   );
 }

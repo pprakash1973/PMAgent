@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { AppShell } from "@/components/app-shell";
 import { useSession } from "next-auth/react";
 
 interface PgmProjectRow {
@@ -135,8 +134,7 @@ export default function PgmProjectsPage() {
   if (!session) return null;
 
   return (
-    <AppShell role={user.role} userName={user.name ?? ""}>
-      <div style={{ height: "100%", overflowY: "auto", background: T.bg, fontFamily: "'Aptos','Calibri',sans-serif" }}>
+    <div style={{ height: "100%", overflowY: "auto", background: T.bg, fontFamily: "'Aptos','Calibri',sans-serif" }}>
         <div style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 32px 48px" }}>
 
           {/* Header */}
@@ -242,6 +240,6 @@ export default function PgmProjectsPage() {
 
         </div>
       </div>
-    </AppShell>
+    </div>
   );
 }
