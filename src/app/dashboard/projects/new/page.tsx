@@ -8,11 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, Wand2, ClipboardList, ArrowLeft, Upload, FileText, CheckCircle2, X, Lock } from "lucide-react";
+import { Loader2, Wand2, ArrowLeft, Upload, FileText, CheckCircle2, X, Lock } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Mode = "form" | "nl" | "upload";
+type Mode = "upload" | "nl";
 
 interface ProgramItem { id: string; name: string; clientId: string; client: { name: string; cluster: { name: string } } }
 interface ClientItem { id: string; name: string; cluster: { name: string } }
@@ -31,32 +31,27 @@ const emptyForm = {
   programId: "",
   pmOwnerId: "",
   projectType: "fixed_price",
-  methodology: "waterfall",
+  methodology: "milestone_based",
   engagementMode: "detailed",
   industry: "",
-  projectSize: "medium",
   budget: "",
-  currency: "USD",
-  teamSize: "",
+  currency: "AUD",
   startDate: "",
   endDate: "",
   description: "",
-  externalExecutionTool: "",
 };
 
 export default function NewProjectPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("form");
+  const [mode, setMode] = useState<Mode>("upload");
   const [loading, setLoading] = useState(false);
   const [nlText, setNlText] = useState("");
   const [form, setForm] = useState(emptyForm);
 
-  // Hierarchy state
   const [myAssignments, setMyAssignments] = useState<MyAssignments | null>(null);
   const [availablePrograms, setAvailablePrograms] = useState<ProgramItem[]>([]);
   const [availablePMs, setAvailablePMs] = useState<PMUser[]>([]);
 
-  // Upload state
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
@@ -68,28 +63,19 @@ export default function NewProjectPage() {
   } | null>(null);
   const [parseSummary, setParseSummary] = useState<string[]>([]);
 
-  // Load user's hierarchy assignments
   useEffect(() => {
     fetch("/api/me/assignments")
       .then((r) => r.json())
       .then((data: MyAssignments) => {
         setMyAssignments(data);
-
         if (data.role === "pm" && data.programs.length === 1) {
-          // Lock everything for a PM with a single program
           const prog = data.programs[0];
-          setForm((f) => ({
-            ...f,
-            programId: prog.id,
-            clientId: prog.clientId,
-            customer: prog.client.name,
-          }));
+          setForm((f) => ({ ...f, programId: prog.id, clientId: prog.clientId, customer: prog.client.name }));
         }
       })
       .catch(() => {});
   }, []);
 
-  // Load PMs when program selected (for DM/DH/admin)
   useEffect(() => {
     if (!form.programId || !myAssignments) return;
     if (myAssignments.role === "pm") return;
@@ -99,7 +85,6 @@ export default function NewProjectPage() {
       .catch(() => {});
   }, [form.programId, myAssignments]);
 
-  // For DH: load programs under selected client
   useEffect(() => {
     if (!form.clientId || !myAssignments || myAssignments.role !== "dh") return;
     fetch(`/api/admin/programs?clientId=${form.clientId}`)
@@ -121,7 +106,6 @@ export default function NewProjectPage() {
     setParsed(null);
     setParseSummary([]);
     setParsing(true);
-
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -130,7 +114,6 @@ export default function NewProjectPage() {
       if (!res.ok) throw new Error(data.error?.message || "Failed to parse file");
 
       const pf = data.projectFields as Record<string, unknown>;
-
       setForm((f) => ({
         ...f,
         name: (pf.name as string) || f.name,
@@ -138,9 +121,7 @@ export default function NewProjectPage() {
         projectType: (pf.projectType as string) || f.projectType,
         methodology: (pf.methodology as string) || f.methodology,
         industry: (pf.industry as string) || f.industry,
-        projectSize: (pf.projectSize as string) || f.projectSize,
         budget: pf.budget ? String(pf.budget) : f.budget,
-        teamSize: pf.teamSize ? String(pf.teamSize) : f.teamSize,
         startDate: pf.startDate ? String(pf.startDate).slice(0, 10) : f.startDate,
         endDate: pf.endDate ? String(pf.endDate).slice(0, 10) : f.endDate,
         description: (pf.description as string) || f.description,
@@ -185,7 +166,7 @@ export default function NewProjectPage() {
     if (mode === "nl") {
       payload = {
         naturalLanguage: nlText,
-        engagementMode: form.engagementMode,
+        engagementMode: "detailed",
         ...(form.clientId ? { clientId: form.clientId } : {}),
         ...(form.programId ? { programId: form.programId } : {}),
         ...(form.pmOwnerId ? { pmOwnerId: form.pmOwnerId } : {}),
@@ -194,13 +175,13 @@ export default function NewProjectPage() {
       const { clientId, programId, pmOwnerId, ...rest } = form;
       payload = {
         ...rest,
+        engagementMode: "detailed",
         budget: form.budget ? parseFloat(form.budget) : undefined,
-        teamSize: form.teamSize ? parseInt(form.teamSize) : undefined,
         ...(clientId ? { clientId } : {}),
         ...(programId ? { programId } : {}),
         ...(pmOwnerId ? { pmOwnerId } : {}),
       };
-      if (mode === "upload" && parsed) {
+      if (parsed) {
         payload.requirementsText = parsed.requirementsText;
         payload.requirementsFileName = parsed.requirementsFileName;
         payload.requirementsFileFormat = parsed.requirementsFileFormat;
@@ -214,10 +195,8 @@ export default function NewProjectPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message);
-
       toast({ title: "Project created!", description: data.name });
       router.push(`/dashboard/projects/${data.id}`);
     } catch (err: any) {
@@ -240,19 +219,20 @@ export default function NewProjectPage() {
         </div>
       </div>
 
-      {/* Mode toggle */}
-      <div className="flex gap-2 flex-wrap">
+      {/* Mode toggle — Upload first, then AI */}
+      <div className="flex gap-2">
         {([
-          { id: "form", icon: ClipboardList, label: "Structured Form" },
-          { id: "nl", icon: Wand2, label: "AI Natural Language" },
-          { id: "upload", icon: Upload, label: "Upload Requirements Doc" },
-        ] as const).map(({ id, icon: Icon, label }) => (
+          { id: "upload" as const, icon: Upload, label: "Upload Documents" },
+          { id: "nl" as const, icon: Wand2, label: "Use AI" },
+        ]).map(({ id, icon: Icon, label }) => (
           <button
             key={id}
             onClick={() => setMode(id)}
             className={cn(
               "flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all",
-              mode === id ? "bg-[#4f5bd5] text-white border-[#4f5bd5]" : "bg-white text-slate-600 border-slate-200 hover:border-[#cfd4f5]"
+              mode === id
+                ? "bg-[#4f5bd5] text-white border-[#4f5bd5]"
+                : "bg-white text-slate-600 border-slate-200 hover:border-[#cfd4f5]"
             )}
           >
             <Icon className="w-4 h-4" />
@@ -264,46 +244,20 @@ export default function NewProjectPage() {
       <form onSubmit={handleSubmit}>
         <div className="space-y-4">
 
-          {/* Engagement Mode — always visible */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Engagement Mode</CardTitle>
-              <CardDescription>How will this project be managed day-to-day?</CardDescription>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
-              {[
-                { value: "detailed", label: "Detailed Mode", desc: "PM Agent is the system of record — full artifact set, task tracking, reporting" },
-                { value: "high_level", label: "Governance Mode", desc: "Project runs in a client tool — PM Agent acts as lightweight governance & reporting layer" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => update("engagementMode", opt.value)}
-                  className={cn(
-                    "text-left p-4 rounded-lg border-2 transition-all",
-                    form.engagementMode === opt.value ? "border-[#4f5bd5] bg-[#eef0fc]" : "border-slate-200 hover:border-[#cfd4f5]"
-                  )}
-                >
-                  <p className="font-medium text-sm text-slate-900">{opt.label}</p>
-                  <p className="text-xs text-slate-500 mt-1">{opt.desc}</p>
-                </button>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Hierarchy context card — PM: locked; DM: program picker; DH: client→program→PM */}
+          {/* Hierarchy context card */}
           {role && role !== "admin" && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Hierarchy</CardTitle>
                 <CardDescription>
-                  {role === "pm" ? "Your project will be created under your assigned program." :
-                   role === "pgm" ? "Select the program and assign a PM." :
-                   "Select the client, program, and PM for this project."}
+                  {role === "pm"
+                    ? "Your project will be created under your assigned program."
+                    : role === "pgm"
+                    ? "Select the program and assign a PM."
+                    : "Select the client, program, and PM for this project."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* PM: locked display */}
                 {role === "pm" && myAssignments?.programs[0] && (
                   <div className="flex flex-col gap-2">
                     {[
@@ -322,7 +276,6 @@ export default function NewProjectPage() {
                   </div>
                 )}
 
-                {/* PGM: select from assigned programs */}
                 {role === "pgm" && (
                   <>
                     <div className="space-y-1.5">
@@ -361,7 +314,6 @@ export default function NewProjectPage() {
                   </>
                 )}
 
-                {/* DH: client → program → PM */}
                 {role === "dh" && (
                   <>
                     <div className="space-y-1.5">
@@ -418,7 +370,77 @@ export default function NewProjectPage() {
             </Card>
           )}
 
-          {mode === "nl" ? (
+          {/* Upload mode */}
+          {mode === "upload" && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Upload Requirements Document</CardTitle>
+                <CardDescription>
+                  Drop a PDF, Word (.docx), or text file — AI will extract project fields and requirements automatically.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!uploadedFile ? (
+                  <div
+                    onDrop={handleDrop}
+                    onDragOver={(e) => e.preventDefault()}
+                    onClick={() => fileRef.current?.click()}
+                    className="border-2 border-dashed border-slate-300 rounded-xl p-10 text-center cursor-pointer hover:border-[#4f5bd5] hover:bg-[#eef0fc] transition-all"
+                  >
+                    <Upload className="w-8 h-8 text-slate-400 mx-auto mb-3" />
+                    <p className="text-sm font-medium text-slate-700">Drop your file here or click to browse</p>
+                    <p className="text-xs text-slate-400 mt-1">Supports PDF, DOCX, DOC, TXT</p>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept=".pdf,.doc,.docx,.txt,.md"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilePick(f); }}
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
+                      <FileText className="w-5 h-5 text-[#4f5bd5] shrink-0" />
+                      <span className="text-sm font-medium text-slate-800 flex-1 truncate">{uploadedFile.name}</span>
+                      {parsing ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                      ) : parsed ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => { setUploadedFile(null); setParsed(null); setParseSummary([]); }}
+                        className="text-slate-400 hover:text-slate-700"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {parsing && (
+                      <div className="flex items-center gap-2 text-sm text-[#4f5bd5] animate-pulse">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Extracting text and analysing requirements with AI…
+                      </div>
+                    )}
+                    {parseSummary.length > 0 && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
+                        <p className="text-xs font-semibold text-green-800 uppercase tracking-wide">Extracted from document</p>
+                        {parseSummary.map((b, i) => (
+                          <p key={i} className="text-sm text-green-700 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> {b}
+                          </p>
+                        ))}
+                        <p className="text-xs text-green-600 mt-1">Review and edit the pre-filled fields below before creating.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* AI / natural language mode */}
+          {mode === "nl" && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Describe your project</CardTitle>
@@ -428,7 +450,7 @@ export default function NewProjectPage() {
               </CardHeader>
               <CardContent>
                 <Textarea
-                  placeholder='e.g. "Build an ERP implementation for a retail company lasting 12 months with a team of 20, budget $2M. Waterfall delivery, financial services industry."'
+                  placeholder='e.g. "Build an ERP implementation for a retail company lasting 12 months, budget $2M. Milestone-based delivery, financial services industry."'
                   value={nlText}
                   onChange={(e) => setNlText(e.target.value)}
                   rows={5}
@@ -436,90 +458,10 @@ export default function NewProjectPage() {
                 />
               </CardContent>
             </Card>
-          ) : mode === "upload" ? (
-            <>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Upload Requirements Document</CardTitle>
-                  <CardDescription>
-                    Drop a PDF, Word (.docx), or text file — AI will extract project fields and requirements automatically.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {!uploadedFile ? (
-                    <div
-                      onDrop={handleDrop}
-                      onDragOver={(e) => e.preventDefault()}
-                      onClick={() => fileRef.current?.click()}
-                      className="border-2 border-dashed border-slate-300 rounded-xl p-10 text-center cursor-pointer hover:border-[#4f5bd5] hover:bg-[#eef0fc] transition-all"
-                    >
-                      <Upload className="w-8 h-8 text-slate-400 mx-auto mb-3" />
-                      <p className="text-sm font-medium text-slate-700">Drop your file here or click to browse</p>
-                      <p className="text-xs text-slate-400 mt-1">Supports PDF, DOCX, DOC, TXT</p>
-                      <input
-                        ref={fileRef}
-                        type="file"
-                        accept=".pdf,.doc,.docx,.txt,.md"
-                        className="hidden"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilePick(f); }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
-                        <FileText className="w-5 h-5 text-[#4f5bd5] shrink-0" />
-                        <span className="text-sm font-medium text-slate-800 flex-1 truncate">{uploadedFile.name}</span>
-                        {parsing ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                        ) : parsed ? (
-                          <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => { setUploadedFile(null); setParsed(null); setParseSummary([]); }}
-                          className="text-slate-400 hover:text-slate-700"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                      {parsing && (
-                        <div className="flex items-center gap-2 text-sm text-[#4f5bd5] animate-pulse">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Extracting text and analysing requirements with AI…
-                        </div>
-                      )}
-                      {parseSummary.length > 0 && (
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
-                          <p className="text-xs font-semibold text-green-800 uppercase tracking-wide">Extracted from document</p>
-                          {parseSummary.map((b, i) => (
-                            <p key={i} className="text-sm text-green-700 flex items-center gap-1.5">
-                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> {b}
-                            </p>
-                          ))}
-                          <p className="text-xs text-green-600 mt-1">Review and edit the pre-filled fields below before creating.</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              <ProjectFormFields form={form} update={update} role={role} />
-            </>
-          ) : (
-            <ProjectFormFields form={form} update={update} role={role} />
           )}
 
-          {form.engagementMode === "high_level" && mode !== "nl" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">External Execution Tool</CardTitle>
-                <CardDescription>What tool does the client use to manage day-to-day execution?</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Input placeholder="e.g. Client Jira, MS Project, ServiceNow..." value={form.externalExecutionTool} onChange={(e) => update("externalExecutionTool", e.target.value)} />
-              </CardContent>
-            </Card>
-          )}
+          {/* Project Details — shown in both modes */}
+          <ProjectFormFields form={form} update={update} role={role} />
 
           <Button
             type="submit"
@@ -528,10 +470,11 @@ export default function NewProjectPage() {
             size="lg"
           >
             {loading ? (
-              <><Loader2 className="w-4 h-4 animate-spin mr-2" />{mode === "nl" ? "AI is analysing your brief…" : mode === "upload" ? "Creating project & generating artifacts…" : "Creating project…"}</>
+              <><Loader2 className="w-4 h-4 animate-spin mr-2" />
+              {mode === "nl" ? "AI is analysing your brief…" : "Creating project & generating artifacts…"}</>
             ) : (
-              <>{mode === "nl" ? <Wand2 className="w-4 h-4 mr-2" /> : mode === "upload" ? <Upload className="w-4 h-4 mr-2" /> : <ClipboardList className="w-4 h-4 mr-2" />}
-              {mode === "nl" ? "Generate Project with AI" : mode === "upload" ? "Create Project from Requirements" : "Create Project"}</>
+              <>{mode === "nl" ? <Wand2 className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
+              {mode === "nl" ? "Generate Project with AI" : "Create Project from Requirements"}</>
             )}
           </Button>
         </div>
@@ -540,18 +483,31 @@ export default function NewProjectPage() {
   );
 }
 
-function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; update: (f: string, v: string) => void; role?: string }) {
+function ProjectFormFields({
+  form,
+  update,
+  role,
+}: {
+  form: typeof emptyForm;
+  update: (f: string, v: string) => void;
+  role?: string;
+}) {
   return (
     <>
+      {/* Project Details */}
       <Card>
         <CardHeader><CardTitle className="text-base">Project Details</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
           <div className="col-span-2 space-y-2">
             <Label>Project Name *</Label>
-            <Input placeholder="ERP Implementation — Retail" value={form.name} onChange={(e) => update("name", e.target.value)} required />
+            <Input
+              placeholder="ERP Implementation — Retail"
+              value={form.name}
+              onChange={(e) => update("name", e.target.value)}
+              required
+            />
           </div>
 
-          {/* Customer only editable for admin/PGM/DH — PM has it locked from hierarchy card */}
           {(!role || role === "admin" || role === "pgm" || role === "dh") && (
             <div className="space-y-2">
               <Label>Customer / Client</Label>
@@ -567,52 +523,40 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
 
           <div className="space-y-2">
             <Label>Industry</Label>
-            <Input placeholder="Retail, Financial Services, Healthcare..." value={form.industry} onChange={(e) => update("industry", e.target.value)} />
+            <Input
+              placeholder="Retail, Financial Services, Healthcare..."
+              value={form.industry}
+              onChange={(e) => update("industry", e.target.value)}
+            />
           </div>
+
           <div className="space-y-2">
             <Label>Methodology</Label>
             <Select value={form.methodology} onValueChange={(v) => update("methodology", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {[["waterfall","Waterfall"],["agile","Agile Scrum"],["kanban","Kanban"],["safe","SAFe"],["hybrid","Hybrid"]].map(([v,l]) => (
-                  <SelectItem key={v} value={v}>{l}</SelectItem>
-                ))}
+                <SelectItem value="milestone_based">Milestone Based</SelectItem>
+                <SelectItem value="time_and_material">Time and Material</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
           <div className="space-y-2">
-            <Label>Project Type</Label>
+            <Label>Billing Type</Label>
             <Select value={form.projectType} onValueChange={(v) => update("projectType", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="fixed_price">Fixed Price</SelectItem>
-                <SelectItem value="time_and_material">Time & Material</SelectItem>
-                <SelectItem value="managed_services">Managed Services</SelectItem>
-                <SelectItem value="staff_aug">Staff Augmentation</SelectItem>
+                <SelectItem value="time_and_material">Time &amp; Material</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Project Size</Label>
-            <Select value={form.projectSize} onValueChange={(v) => update("projectSize", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="small">Small (&lt; 10 people)</SelectItem>
-                <SelectItem value="medium">Medium (10–50)</SelectItem>
-                <SelectItem value="large">Large (50–200)</SelectItem>
-                <SelectItem value="enterprise">Enterprise (200+)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Team Size</Label>
-            <Input type="number" placeholder="20" value={form.teamSize} onChange={(e) => update("teamSize", e.target.value)} />
           </div>
         </CardContent>
       </Card>
 
+      {/* Timeline & Budget */}
       <Card>
-        <CardHeader><CardTitle className="text-base">Timeline & Budget</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Timeline &amp; Budget</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Start Date</Label>
@@ -631,6 +575,7 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
             <Select value={form.currency} onValueChange={(v) => update("currency", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="AUD">AUD</SelectItem>
                 <SelectItem value="USD">USD</SelectItem>
                 <SelectItem value="EUR">EUR</SelectItem>
                 <SelectItem value="GBP">GBP</SelectItem>
@@ -640,7 +585,12 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
           </div>
           <div className="col-span-2 space-y-2">
             <Label>Description</Label>
-            <Textarea placeholder="Brief project description..." value={form.description} onChange={(e) => update("description", e.target.value)} rows={3} />
+            <Textarea
+              placeholder="Brief project description..."
+              value={form.description}
+              onChange={(e) => update("description", e.target.value)}
+              rows={3}
+            />
           </div>
         </CardContent>
       </Card>
