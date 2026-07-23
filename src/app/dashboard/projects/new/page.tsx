@@ -8,11 +8,33 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, Wand2, ArrowLeft, Upload, FileText, CheckCircle2, X, Lock } from "lucide-react";
+import { Loader2, Wand2, ArrowLeft, Upload, FileText, CheckCircle2, X, Lock, File, Sheet } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 type Mode = "upload" | "nl";
+
+interface UploadedDoc {
+  file: File;
+  status: "parsing" | "done" | "error";
+  summary: string[];
+  parsed?: {
+    requirementsText: string;
+    requirementsFileName: string;
+    requirementsFileFormat: string;
+    requirementsExtracted: Record<string, unknown>;
+  };
+}
+
+function fileIcon(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (["pdf"].includes(ext)) return <span className="text-red-500 font-bold text-xs bg-red-50 border border-red-200 rounded px-1.5 py-0.5">PDF</span>;
+  if (["doc", "docx"].includes(ext)) return <span className="text-blue-600 font-bold text-xs bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">DOC</span>;
+  if (["xls", "xlsx"].includes(ext)) return <span className="text-green-600 font-bold text-xs bg-green-50 border border-green-200 rounded px-1.5 py-0.5">XLS</span>;
+  if (["ppt", "pptx"].includes(ext)) return <span className="text-orange-500 font-bold text-xs bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5">PPT</span>;
+  if (["txt", "md"].includes(ext)) return <span className="text-slate-500 font-bold text-xs bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">TXT</span>;
+  return <span className="text-slate-500 font-bold text-xs bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">FILE</span>;
+}
 
 interface ProgramItem { id: string; name: string; clientId: string; client: { name: string; cluster: { name: string } } }
 interface ClientItem { id: string; name: string; cluster: { name: string } }
@@ -53,15 +75,7 @@ export default function NewProjectPage() {
   const [availablePMs, setAvailablePMs] = useState<PMUser[]>([]);
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [parsing, setParsing] = useState(false);
-  const [parsed, setParsed] = useState<{
-    requirementsText: string;
-    requirementsFileName: string;
-    requirementsFileFormat: string;
-    requirementsExtracted: Record<string, unknown>;
-  } | null>(null);
-  const [parseSummary, setParseSummary] = useState<string[]>([]);
+  const [docs, setDocs] = useState<UploadedDoc[]>([]);
 
   useEffect(() => {
     fetch("/api/me/assignments")
@@ -102,10 +116,15 @@ export default function NewProjectPage() {
   }
 
   async function handleFilePick(file: File) {
-    setUploadedFile(file);
-    setParsed(null);
-    setParseSummary([]);
-    setParsing(true);
+    // Prevent duplicates
+    if (docs.some((d) => d.file.name === file.name && d.file.size === file.size)) {
+      toast({ title: "Already added", description: file.name });
+      return;
+    }
+
+    const idx = docs.length;
+    setDocs((prev) => [...prev, { file, status: "parsing", summary: [] }]);
+
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -114,47 +133,59 @@ export default function NewProjectPage() {
       if (!res.ok) throw new Error(data.error?.message || "Failed to parse file");
 
       const pf = data.projectFields as Record<string, unknown>;
+      // Merge extracted fields into form — first doc wins on name/customer; later docs fill blanks
       setForm((f) => ({
         ...f,
-        name: (pf.name as string) || f.name,
-        customer: myAssignments?.role === "pm" ? f.customer : (pf.customer as string) || f.customer,
-        projectType: (pf.projectType as string) || f.projectType,
-        methodology: (pf.methodology as string) || f.methodology,
-        industry: (pf.industry as string) || f.industry,
-        budget: pf.budget ? String(pf.budget) : f.budget,
-        startDate: pf.startDate ? String(pf.startDate).slice(0, 10) : f.startDate,
-        endDate: pf.endDate ? String(pf.endDate).slice(0, 10) : f.endDate,
-        description: (pf.description as string) || f.description,
+        name: f.name || (pf.name as string) || "",
+        customer: myAssignments?.role === "pm" ? f.customer : f.customer || (pf.customer as string) || "",
+        projectType: f.projectType || (pf.projectType as string) || "fixed_price",
+        methodology: f.methodology || (pf.methodology as string) || "milestone_based",
+        industry: f.industry || (pf.industry as string) || "",
+        budget: f.budget || (pf.budget ? String(pf.budget) : ""),
+        startDate: f.startDate || (pf.startDate ? String(pf.startDate).slice(0, 10) : ""),
+        endDate: f.endDate || (pf.endDate ? String(pf.endDate).slice(0, 10) : ""),
+        description: f.description || (pf.description as string) || "",
       }));
 
       const req = data.requirements as Record<string, unknown>;
-      const bullets: string[] = [];
+      const bullets: string[] = [`From: ${file.name}`];
       if (Array.isArray(req.goals) && req.goals.length) bullets.push(`${req.goals.length} goal(s) identified`);
       if (Array.isArray(req.stakeholders) && req.stakeholders.length) bullets.push(`${req.stakeholders.length} stakeholder(s) found`);
       if (Array.isArray(req.constraints) && req.constraints.length) bullets.push(`${req.constraints.length} constraint(s) detected`);
       if (Array.isArray(req.scopeItems) && req.scopeItems.length) bullets.push(`${req.scopeItems.length} scope item(s) extracted`);
       if (req.timeline) bullets.push(`Timeline: ${req.timeline}`);
-      if (bullets.length === 0) bullets.push("Requirements extracted — review and confirm fields below");
-      setParseSummary(bullets);
+      if (bullets.length === 1) bullets.push("Requirements extracted successfully");
 
-      setParsed({
-        requirementsText: data.extractedText,
-        requirementsFileName: data.fileName,
-        requirementsFileFormat: data.fileFormat,
-        requirementsExtracted: req,
-      });
+      setDocs((prev) =>
+        prev.map((d, i) =>
+          i === idx
+            ? {
+                ...d,
+                status: "done",
+                summary: bullets,
+                parsed: {
+                  requirementsText: data.extractedText,
+                  requirementsFileName: data.fileName,
+                  requirementsFileFormat: data.fileFormat,
+                  requirementsExtracted: req,
+                },
+              }
+            : d
+        )
+      );
     } catch (err: any) {
       toast({ title: "Parse failed", description: err.message, variant: "destructive" });
-      setUploadedFile(null);
-    } finally {
-      setParsing(false);
+      setDocs((prev) => prev.map((d, i) => (i === idx ? { ...d, status: "error" } : d)));
     }
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFilePick(file);
+    Array.from(e.dataTransfer.files).forEach((f) => handleFilePick(f));
+  }
+
+  function removeDoc(idx: number) {
+    setDocs((prev) => prev.filter((_, i) => i !== idx));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -181,11 +212,13 @@ export default function NewProjectPage() {
         ...(programId ? { programId } : {}),
         ...(pmOwnerId ? { pmOwnerId } : {}),
       };
-      if (parsed) {
-        payload.requirementsText = parsed.requirementsText;
-        payload.requirementsFileName = parsed.requirementsFileName;
-        payload.requirementsFileFormat = parsed.requirementsFileFormat;
-        payload.requirementsExtracted = parsed.requirementsExtracted;
+      const doneDocs = docs.filter((d) => d.status === "done" && d.parsed);
+      if (doneDocs.length > 0) {
+        // Concatenate all extracted texts; use first doc's metadata for format reference
+        payload.requirementsText = doneDocs.map((d) => d.parsed!.requirementsText).join("\n\n---\n\n");
+        payload.requirementsFileName = doneDocs.map((d) => d.parsed!.requirementsFileName).join(", ");
+        payload.requirementsFileFormat = doneDocs[0].parsed!.requirementsFileFormat;
+        payload.requirementsExtracted = doneDocs.reduce((acc, d) => ({ ...acc, ...d.parsed!.requirementsExtracted }), {});
       }
     }
 
@@ -374,66 +407,89 @@ export default function NewProjectPage() {
           {mode === "upload" && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Upload Requirements Document</CardTitle>
+                <CardTitle className="text-base">Upload Requirements Documents</CardTitle>
                 <CardDescription>
-                  Drop a PDF, Word (.docx), or text file — AI will extract project fields and requirements automatically.
+                  Add one or more files — AI will extract project fields and requirements from each.
+                  Supports PDF, Word, Excel, PowerPoint, and text files.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                {!uploadedFile ? (
-                  <div
-                    onDrop={handleDrop}
-                    onDragOver={(e) => e.preventDefault()}
-                    onClick={() => fileRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 rounded-xl p-10 text-center cursor-pointer hover:border-[#4f5bd5] hover:bg-[#eef0fc] transition-all"
-                  >
-                    <Upload className="w-8 h-8 text-slate-400 mx-auto mb-3" />
-                    <p className="text-sm font-medium text-slate-700">Drop your file here or click to browse</p>
-                    <p className="text-xs text-slate-400 mt-1">Supports PDF, DOCX, DOC, TXT</p>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      accept=".pdf,.doc,.docx,.txt,.md"
-                      className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilePick(f); }}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
-                      <FileText className="w-5 h-5 text-[#4f5bd5] shrink-0" />
-                      <span className="text-sm font-medium text-slate-800 flex-1 truncate">{uploadedFile.name}</span>
-                      {parsing ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                      ) : parsed ? (
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => { setUploadedFile(null); setParsed(null); setParseSummary([]); }}
-                        className="text-slate-400 hover:text-slate-700"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {parsing && (
-                      <div className="flex items-center gap-2 text-sm text-[#4f5bd5] animate-pulse">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Extracting text and analysing requirements with AI…
+              <CardContent className="space-y-4">
+
+                {/* Drop zone — always visible */}
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  onClick={() => fileRef.current?.click()}
+                  className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-[#4f5bd5] hover:bg-[#eef0fc] transition-all"
+                >
+                  <Upload className="w-7 h-7 text-slate-400 mx-auto mb-2" />
+                  <p className="text-sm font-medium text-slate-700">Drop files here or click to browse</p>
+                  <p className="text-xs text-slate-400 mt-1">PDF · DOCX · XLSX · PPTX · TXT</p>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => { Array.from(e.target.files ?? []).forEach(handleFilePick); e.target.value = ""; }}
+                  />
+                </div>
+
+                {/* Uploaded files list + extraction summaries */}
+                {docs.length > 0 && (
+                  <div className="space-y-2">
+                    {docs.map((doc, i) => (
+                      <div key={i} className="rounded-lg border border-slate-200 overflow-hidden">
+                        {/* File row */}
+                        <div className="flex items-center gap-3 px-3 py-2.5 bg-slate-50">
+                          {fileIcon(doc.file.name)}
+                          <span className="text-sm font-medium text-slate-800 flex-1 truncate">{doc.file.name}</span>
+                          {doc.status === "parsing" && <Loader2 className="w-4 h-4 animate-spin text-[#4f5bd5] shrink-0" />}
+                          {doc.status === "done" && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
+                          {doc.status === "error" && <span className="text-xs text-red-500 shrink-0">Failed</span>}
+                          <button
+                            type="button"
+                            onClick={() => removeDoc(i)}
+                            className="text-slate-400 hover:text-slate-700 shrink-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Extraction summary */}
+                        {doc.status === "parsing" && (
+                          <div className="px-3 py-2 flex items-center gap-2 text-xs text-[#4f5bd5] animate-pulse bg-white">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Analysing with AI…
+                          </div>
+                        )}
+                        {doc.status === "done" && doc.summary.length > 0 && (
+                          <div className="px-3 py-2 bg-green-50 space-y-0.5">
+                            {doc.summary.map((b, j) => (
+                              <p key={j} className={cn(
+                                "text-xs flex items-start gap-1.5",
+                                j === 0 ? "font-semibold text-green-800" : "text-green-700"
+                              )}>
+                                {j > 0 && <CheckCircle2 className="w-3 h-3 shrink-0 mt-0.5" />}
+                                {b}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {doc.status === "error" && (
+                          <div className="px-3 py-2 bg-red-50 text-xs text-red-600">
+                            Could not extract content from this file.
+                          </div>
+                        )}
                       </div>
-                    )}
-                    {parseSummary.length > 0 && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 space-y-1">
-                        <p className="text-xs font-semibold text-green-800 uppercase tracking-wide">Extracted from document</p>
-                        {parseSummary.map((b, i) => (
-                          <p key={i} className="text-sm text-green-700 flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> {b}
-                          </p>
-                        ))}
-                        <p className="text-xs text-green-600 mt-1">Review and edit the pre-filled fields below before creating.</p>
-                      </div>
-                    )}
+                    ))}
                   </div>
+                )}
+
+                {docs.some((d) => d.status === "done") && (
+                  <p className="text-xs text-slate-400">
+                    Review and edit the pre-filled fields below before creating the project.
+                  </p>
                 )}
               </CardContent>
             </Card>
@@ -466,7 +522,7 @@ export default function NewProjectPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={loading || (mode === "upload" && (!uploadedFile || parsing || !parsed))}
+            disabled={loading || (mode === "upload" && (docs.length === 0 || docs.some((d) => d.status === "parsing") || docs.every((d) => d.status !== "done")))}
             size="lg"
           >
             {loading ? (
