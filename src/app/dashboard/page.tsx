@@ -65,13 +65,8 @@ export default async function DashboardPage() {
           <Card>
             <CardContent className="py-14 text-center">
               <FolderKanban className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-500 mb-4">No active projects yet</p>
-              <Link href="/dashboard/projects/new">
-                <Button>
-                  <Plus className="w-4 h-4" />
-                  Create your first project
-                </Button>
-              </Link>
+              <p className="text-slate-500">No active projects yet</p>
+              <p className="text-sm text-slate-400 mt-1">Use the <strong>New Project</strong> button above to get started.</p>
             </CardContent>
           </Card>
         ) : (
