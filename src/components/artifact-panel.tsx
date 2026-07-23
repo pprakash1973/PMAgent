@@ -426,7 +426,7 @@ function ArtifactCard({
         minHeight: 120, background: "#f2f3f5", opacity: 0.78,
       }}>
         <Icon style={{ width: 24, height: 24, color: "#b8bcc8" }} />
-        <div style={{ fontSize: 12, fontWeight: 500, color: "#9ca3b0", marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: "#9ca3b0", marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#b8bcc8", marginTop: 8 }}>
           <Lock style={{ width: 11, height: 11 }} /> Governance locked
         </div>
@@ -449,7 +449,7 @@ function ArtifactCard({
       <div style={{ ...baseCard, border: `1.5px dashed ${C.primaryBorder}`, background: C.primaryLight }}>
         {selectable && <SelectBox selected={!!selected} onSelect={onSelect!} />}
         <Loader2 className="animate-spin" style={{ width: 24, height: 24, color: C.primary, marginTop: 4 }} />
-        <div style={{ fontSize: 12, fontWeight: 500, color: C.primary, marginTop: 7 }}>{entry.label}</div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: C.primary, marginTop: 7 }}>{entry.label}</div>
         <div style={{ fontSize: 11, color: C.primary, opacity: 0.7, marginTop: 2 }}>Generating…</div>
       </div>
     );
@@ -460,7 +460,7 @@ function ArtifactCard({
       <div style={{ ...baseCard, border: `1.5px dashed ${phaseMeta.border}` }}>
         {selectable && <SelectBox selected={!!selected} onSelect={onSelect!} />}
         <Icon style={{ width: 24, height: 24, color: C.textMuted, marginTop: selectable ? 10 : 4 }} />
-        <div style={{ fontSize: 12, fontWeight: 500, color: C.text2, marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
+        <div style={{ fontSize: 14, fontWeight: 500, color: C.text2, marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
         <div style={{ fontSize: 11, color: C.textMuted, margin: "3px 0 8px" }}>Not generated</div>
         {promoted && <div style={{ fontSize: 10, color: "#0f766e", marginBottom: 4, fontWeight: 500 }}>★ Added to phase</div>}
         <div style={{ display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" as const }}>
@@ -493,7 +493,7 @@ function ArtifactCard({
       {promoted && <span style={{ position: "absolute", top: 7, left: 7, fontSize: 9, fontWeight: 600, color: "#0f766e", background: "#f0fdf4", borderRadius: 4, padding: "1px 4px" }}>★</span>}
 
       <Icon style={{ width: 24, height: 24, color: isGen ? C.textMuted : C.primary, marginTop: selectable ? 10 : 4 }} />
-      <div style={{ fontSize: 12, fontWeight: 500, color: C.text, marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
+      <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
       <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, marginBottom: 8 }}>{isGen ? "Regenerating…" : "Generated"}</div>
 
       <div style={{ marginTop: "auto", display: "flex", justifyContent: "center", gap: 3 }}>
