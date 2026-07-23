@@ -237,8 +237,8 @@ export function ArtifactPanel({
             );
             return (
               <div key={col.id}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: col.color, background: col.bg, border: `1px solid ${col.border}`, borderRadius: 6, padding: "3px 9px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "#fff", background: col.color, borderRadius: 7, padding: "5px 12px", letterSpacing: "0.02em", display: "block", width: "100%", textAlign: "center" }}>
                     {col.label}
                   </span>
                 </div>
