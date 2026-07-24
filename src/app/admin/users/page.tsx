@@ -165,7 +165,11 @@ export default function UsersPage() {
   async function resendInvite(userId: string) {
     const res = await fetch(`/api/admin/users/${userId}/resend-invite`, { method: "POST" });
     const data = await res.json();
-    if (res.ok) { setInviteUrl(data.inviteUrl); toast({ title: "Invitation re-sent" }); }
+    if (res.ok) {
+      setInviteUrl(data.inviteUrl);
+      setShowForm(true);
+      toast({ title: "New invite link ready", description: "Copy the link below and share it with the user." });
+    }
   }
 
   async function deactivate(userId: string) {

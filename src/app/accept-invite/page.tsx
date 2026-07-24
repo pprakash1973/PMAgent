@@ -1,6 +1,7 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,7 +39,18 @@ function AcceptInviteForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || "Failed");
       setDone(true);
-      setTimeout(() => router.push("/login"), 2500);
+      // Auto sign-in with the newly set password so user lands on dashboard directly
+      const result = await signIn("credentials", {
+        email: data.email,
+        password,
+        redirect: false,
+      });
+      if (result?.ok) {
+        router.push("/dashboard");
+      } else {
+        // Fallback: send to login if auto-sign-in fails for any reason
+        setTimeout(() => router.push("/login"), 2000);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -67,7 +79,7 @@ function AcceptInviteForm() {
           <CardContent className="pt-8 text-center">
             <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-4" />
             <p className="text-slate-700 font-semibold text-lg">Account activated!</p>
-            <p className="text-slate-500 text-sm mt-1">Redirecting you to sign in…</p>
+            <p className="text-slate-500 text-sm mt-1">Signing you in…</p>
           </CardContent>
         </Card>
       </div>
