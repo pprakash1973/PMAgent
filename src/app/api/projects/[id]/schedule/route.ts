@@ -54,3 +54,55 @@ export async function GET(
 
   return NextResponse.json({ tasks, kpi });
 }
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const { id } = await params;
+
+  const project = await prisma.project.findUnique({ where: { id } });
+  if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
+  const body = await req.json();
+  const name = String(body.name ?? "New task").trim();
+  const phase = String(body.phase ?? "General");
+  const baselineStart = body.baselineStart ? new Date(body.baselineStart) : (project.startDate ?? new Date());
+  const baselineDays = Math.max(1, Number(body.baselineDays ?? 5));
+
+  function addWorkingDays(start: Date, days: number): Date {
+    const d = new Date(start);
+    let added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+    }
+    return d;
+  }
+
+  const baselineFinish = addWorkingDays(new Date(baselineStart), baselineDays);
+
+  const maxSort = await prisma.scheduleTask.aggregate({ where: { projectId: id }, _max: { sortOrder: true } });
+  const sortOrder = (maxSort._max.sortOrder ?? 0) + 1;
+
+  const task = await prisma.scheduleTask.create({
+    data: {
+      projectId: id,
+      name,
+      phase,
+      wbsCode: `T-${sortOrder}`,
+      baselineStart: new Date(baselineStart),
+      baselineFinish,
+      baselineDays,
+      dependencies: [],
+      sortOrder,
+      percentComplete: 0,
+      status: "not_started",
+    },
+    include: { resource: { select: { id: true, name: true, role: true, email: true } } },
+  });
+
+  return NextResponse.json(task, { status: 201 });
+}

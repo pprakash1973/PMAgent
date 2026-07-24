@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
@@ -585,21 +585,83 @@ function spiColor(spi: number | null) {
   return C.red;
 }
 
+function addWorkingDays(start: Date, days: number): Date {
+  const d = new Date(start);
+  let added = 0;
+  while (added < days) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+  }
+  return d;
+}
+
+// Build month+week tick headers for the Gantt
+function buildGanttHeaders(startMs: number, endMs: number) {
+  const weeks: Date[] = [];
+  const start = new Date(startMs);
+  // snap to Monday
+  while (start.getDay() !== 1) start.setDate(start.getDate() - 1);
+  const cur = new Date(start);
+  const end = new Date(endMs);
+  while (cur <= end) {
+    weeks.push(new Date(cur));
+    cur.setDate(cur.getDate() + 7);
+  }
+  // Group by month
+  const monthGroups: { label: string; count: number }[] = [];
+  for (const w of weeks) {
+    const label = w.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+    if (monthGroups.length && monthGroups[monthGroups.length - 1].label === label) {
+      monthGroups[monthGroups.length - 1].count++;
+    } else {
+      monthGroups.push({ label, count: 1 });
+    }
+  }
+  return { weeks, monthGroups };
+}
+
+// Simple critical-path heuristic: tasks whose baselineFinish is within 2 days of project end
+function computeCriticalIds(tasks: any[]): Set<string> {
+  if (!tasks.length) return new Set();
+  const maxMs = Math.max(...tasks.map(t => new Date(t.baselineFinish).getTime()));
+  const threshold = 2 * 24 * 60 * 60 * 1000;
+  return new Set(tasks.filter(t => maxMs - new Date(t.baselineFinish).getTime() <= threshold).map(t => t.id));
+}
+
 function ScheduleTab({ project }: { project: any }) {
-  const isGovernance = project.engagementMode === "high_level";
   const [tasks, setTasks] = useState<any[]>([]);
   const [resources, setResources] = useState<any[]>([]);
   const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editPct, setEditPct] = useState(0);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [dateEditId, setDateEditId] = useState<string | null>(null);
-  const [dateEditField, setDateEditField] = useState<"actualStart" | "actualFinish" | null>(null);
-  const [dateEditVal, setDateEditVal] = useState("");
-  const [assignEditId, setAssignEditId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Cell editing
+  const [editCell, setEditCell] = useState<{ taskId: string; field: string } | null>(null);
+  const [editVal, setEditVal] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [hoverRowId, setHoverRowId] = useState<string | null>(null);
+  const [assignEditId, setAssignEditId] = useState<string | null>(null);
+
+  // Gantt drag-resize
+  const dragRef = useRef<{ taskId: string; startX: number; startDays: number } | null>(null);
+
+  // Critical path
+  const [showCritical, setShowCritical] = useState(false);
+  const criticalIds = useMemo(() => computeCriticalIds(tasks), [tasks]);
+
+  // AI Command Bar
+  const [aiCmd, setAiCmd] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDiff, setAiDiff] = useState<{ summary: string; patches: any[] } | null>(null);
+  const [applyingDiff, setApplyingDiff] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Scroll sync refs
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  const ganttScrollRef = useRef<HTMLDivElement>(null);
+  const syncingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadSchedule = useCallback(async () => {
@@ -617,15 +679,53 @@ function ScheduleTab({ project }: { project: any }) {
   }, [project.id]);
 
   useEffect(() => { loadSchedule(); }, [loadSchedule]);
-  useEffect(() => { if (editId && inputRef.current) inputRef.current.focus(); }, [editId]);
+
+  // Scroll sync
   useEffect(() => {
-    if (!assignEditId) return;
-    const handler = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest("select")) setAssignEditId(null);
+    const grid = gridScrollRef.current;
+    const gantt = ganttScrollRef.current;
+    if (!grid || !gantt) return;
+    const onGrid = () => { if (syncingRef.current) return; syncingRef.current = true; gantt.scrollTop = grid.scrollTop; syncingRef.current = false; };
+    const onGantt = () => { if (syncingRef.current) return; syncingRef.current = true; grid.scrollTop = gantt.scrollTop; syncingRef.current = false; };
+    grid.addEventListener("scroll", onGrid);
+    gantt.addEventListener("scroll", onGantt);
+    return () => { grid.removeEventListener("scroll", onGrid); gantt.removeEventListener("scroll", onGantt); };
+  }, [loading]);
+
+  // Drag-to-resize cleanup
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const { taskId, startX, startDays } = dragRef.current;
+      const gantt = ganttScrollRef.current;
+      if (!gantt) return;
+      const pxPerDay = gantt.clientWidth / Math.max(totalDays, 1);
+      const deltaDays = Math.round((e.clientX - startX) / pxPerDay);
+      const newDays = Math.max(1, startDays + deltaDays);
+      setTasks(ts => ts.map(t => {
+        if (t.id !== taskId) return t;
+        const newFinish = addWorkingDays(new Date(t.baselineStart), newDays);
+        return { ...t, baselineDays: newDays, baselineFinish: newFinish.toISOString() };
+      }));
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [assignEditId]);
+    const onUp = async () => {
+      if (!dragRef.current) return;
+      const { taskId } = dragRef.current;
+      dragRef.current = null;
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      setSavingId(taskId);
+      const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baselineDays: task.baselineDays, baselineFinish: task.baselineFinish }),
+      });
+      if (res.ok) { const u = await res.json(); setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...u } : t)); }
+      setSavingId(null);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+  }, [tasks, project.id]);
 
   async function generate() {
     setGenerating(true);
@@ -637,82 +737,154 @@ function ScheduleTab({ project }: { project: any }) {
     setGenerating(false);
   }
 
-  async function saveProgress(taskId: string, pct: number) {
+  async function patchTask(taskId: string, body: Record<string, unknown>) {
     setSavingId(taskId);
     const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ percentComplete: pct }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated } : t));
-      await loadSchedule();
-    }
-    setSavingId(null);
-    setEditId(null);
-  }
-
-  async function saveActualDate(taskId: string, field: "actualStart" | "actualFinish", val: string) {
-    setDateEditId(null);
-    setDateEditField(null);
-    if (!val) return;
-    const body: Record<string, string> = { [field]: new Date(val).toISOString() };
-    const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (res.ok) {
       const updated = await res.json();
       setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated } : t));
+      if (body.percentComplete !== undefined) {
+        const d = await (await fetch(`/api/projects/${project.id}/schedule`)).json();
+        setKpi(d.kpi ?? null);
+      }
+    }
+    setSavingId(null);
+  }
+
+  async function commitEdit() {
+    if (!editCell) return;
+    const { taskId, field } = editCell;
+    setEditCell(null);
+    if (field === "name") {
+      if (!editVal.trim()) return;
+      await patchTask(taskId, { name: editVal.trim() });
+    } else if (field === "baselineDays") {
+      const days = Math.max(1, parseInt(editVal) || 1);
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      const newFinish = addWorkingDays(new Date(task.baselineStart), days);
+      await patchTask(taskId, { baselineDays: days, baselineFinish: newFinish.toISOString() });
+    } else if (field === "percentComplete") {
+      const pct = Math.max(0, Math.min(100, parseInt(editVal) || 0));
+      await patchTask(taskId, { percentComplete: pct });
+    } else if (field === "baselineStart") {
+      if (!editVal) return;
+      const newStart = new Date(editVal);
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+      const newFinish = addWorkingDays(newStart, task.baselineDays);
+      await patchTask(taskId, { baselineStart: newStart.toISOString(), baselineFinish: newFinish.toISOString() });
+    } else if (field === "actualStart" || field === "actualFinish") {
+      if (!editVal) return;
+      await patchTask(taskId, { [field]: new Date(editVal).toISOString() });
+    } else if (field === "status") {
+      await patchTask(taskId, { status: editVal });
+    }
+  }
+
+  async function deleteTask(taskId: string) {
+    setDeletingId(taskId);
+    const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, { method: "DELETE" });
+    if (res.ok) setTasks(ts => ts.filter(t => t.id !== taskId));
+    setDeletingId(null);
+  }
+
+  async function addTask(phase: string) {
+    const existing = tasks.filter(t => t.phase === phase);
+    const lastFinish = existing.length
+      ? new Date(Math.max(...existing.map(t => new Date(t.baselineFinish).getTime())))
+      : (project.startDate ? new Date(project.startDate) : new Date());
+    const baselineStart = addWorkingDays(lastFinish, 1);
+    const res = await fetch(`/api/projects/${project.id}/schedule`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "New task", phase, baselineStart: baselineStart.toISOString(), baselineDays: 5 }),
+    });
+    if (res.ok) {
+      const newTask = await res.json();
+      setTasks(ts => [...ts, newTask]);
+      setEditCell({ taskId: newTask.id, field: "name" });
+      setEditVal("New task");
     }
   }
 
   async function saveAssignee(taskId: string, resourceId: string | null) {
     setAssignEditId(null);
     const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resourceId }),
     });
     if (res.ok) {
       const updated = await res.json();
-      // merge resource object from local resources list
       const resource = resourceId ? resources.find(r => r.id === resourceId) ?? null : null;
       setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated, resource } : t));
     }
   }
 
-  // Gantt timeline bounds
-  const minStart = tasks.length
-    ? new Date(Math.min(...tasks.map(t => new Date(t.baselineStart).getTime())))
-    : new Date();
-  const maxFinish = tasks.length
-    ? new Date(Math.max(...tasks.map(t => new Date(t.baselineFinish).getTime())))
-    : new Date();
+  async function runAiCommand() {
+    if (!aiCmd.trim() || aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiDiff(null);
+    const res = await fetch(`/api/projects/${project.id}/schedule/ai-command`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: aiCmd, tasks }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setAiError(data.error ?? "AI command failed"); setAiLoading(false); return; }
+    setAiDiff(data);
+    setAiLoading(false);
+  }
+
+  async function applyAiDiff() {
+    if (!aiDiff) return;
+    setApplyingDiff(true);
+    for (const patch of aiDiff.patches) {
+      const body: Record<string, unknown> = {};
+      if (patch.field === "baselineStart") {
+        body.baselineStart = new Date(patch.newValue).toISOString();
+        const task = tasks.find(t => t.id === patch.taskId);
+        if (task) body.baselineFinish = addWorkingDays(new Date(patch.newValue), task.baselineDays).toISOString();
+      } else if (patch.field === "baselineFinish") {
+        body.baselineFinish = new Date(patch.newValue).toISOString();
+      } else if (patch.field === "baselineDays") {
+        const days = parseInt(patch.newValue) || 1;
+        body.baselineDays = days;
+        const task = tasks.find(t => t.id === patch.taskId);
+        if (task) body.baselineFinish = addWorkingDays(new Date(task.baselineStart), days).toISOString();
+      } else if (patch.field === "percentComplete") {
+        body.percentComplete = parseInt(patch.newValue) || 0;
+      } else if (patch.field === "status") {
+        body.status = patch.newValue;
+      }
+      if (Object.keys(body).length) await patchTask(patch.taskId, body);
+    }
+    setApplyingDiff(false);
+    setAiDiff(null);
+    setAiCmd("");
+  }
+
+  // Gantt geometry
+  const minStart = tasks.length ? new Date(Math.min(...tasks.map(t => new Date(t.baselineStart).getTime()))) : new Date();
+  const maxFinish = tasks.length ? new Date(Math.max(...tasks.map(t => new Date(t.baselineFinish).getTime()))) : new Date();
   const totalMs = Math.max(maxFinish.getTime() - minStart.getTime(), 1);
+  const totalDays = totalMs / (24 * 60 * 60 * 1000);
   const today = new Date();
   const todayPct = Math.max(0, Math.min(100, ((today.getTime() - minStart.getTime()) / totalMs) * 100));
+  const { weeks, monthGroups } = buildGanttHeaders(minStart.getTime(), maxFinish.getTime());
 
-  // Group tasks by phase
   const phases = Array.from(new Set(tasks.map(t => t.phase)));
+  const ROW_H = 52;
+  const GRID_W = 440;
 
-  function barStyle(t: any) {
-    const left = ((new Date(t.baselineStart).getTime() - minStart.getTime()) / totalMs) * 100;
-    const width = ((new Date(t.baselineFinish).getTime() - new Date(t.baselineStart).getTime()) / totalMs) * 100;
-    return { left: `${left}%`, width: `${Math.max(width, 0.5)}%` };
-  }
+  function barLeft(t: any) { return ((new Date(t.baselineStart).getTime() - minStart.getTime()) / totalMs) * 100; }
+  function barWidth(t: any) { return Math.max(0.5, ((new Date(t.baselineFinish).getTime() - new Date(t.baselineStart).getTime()) / totalMs) * 100); }
 
-  function statusColor(t: any) {
-    if (t.percentComplete === 100) return C.green;
-    if (t.percentComplete > 0) return C.primary;
-    return "#c5cadb";
-  }
+  if (loading) return <div style={{ padding: "40px 0", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>Loading schedule…</div>;
 
-  if (loading) {
-    return <div style={{ padding: "40px 0", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>Loading schedule…</div>;
-  }
+  const isMilestone = (t: any) => t.baselineDays === 0 || t.phase === "Milestones";
 
   return (
     <div>
@@ -721,90 +893,58 @@ function ScheduleTab({ project }: { project: any }) {
         <div style={{ fontSize: 14, fontWeight: 600 }}>Project Schedule</div>
         {tasks.length > 0 && (
           <span style={{ fontSize: "11.5px", color: C.text3 }}>
-            {isGovernance
-              ? `${tasks.filter(t => t.phase !== "Milestones").length} deliverables · ${tasks.filter(t => t.phase === "Milestones").length} milestones`
-              : `${tasks.length} tasks · ${phases.length} phases`}
+            {tasks.length} tasks · {phases.length} phases
           </span>
         )}
         <div style={{ flex: 1 }} />
         {tasks.length > 0 && (
-          <a
-            href={`/api/projects/${project.id}/schedule/export`}
-            download
-            style={{
-              height: 32, padding: "0 14px",
-              background: C.surface, color: C.text2,
-              border: `1px solid ${C.border}`, borderRadius: 8,
-              font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6, textDecoration: "none",
-            }}
-          >
-            ↓ Export XLSX
-          </a>
+          <>
+            <button
+              onClick={() => setShowCritical(v => !v)}
+              style={{
+                height: 32, padding: "0 12px",
+                background: showCritical ? C.redLight : C.surface,
+                color: showCritical ? C.red : C.text2,
+                border: `1px solid ${showCritical ? C.red : C.border}`,
+                borderRadius: 8, font: `600 12px 'IBM Plex Sans'`, cursor: "pointer",
+              }}
+            >
+              {showCritical ? "✕ Critical Path" : "⚑ Critical Path"}
+            </button>
+            <a href={`/api/projects/${project.id}/schedule/export`} download
+              style={{ height: 32, padding: "0 14px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
+              ↓ Export XLSX
+            </a>
+          </>
         )}
-        <button
-          onClick={generate}
-          disabled={generating}
-          style={{
-            height: 32, padding: "0 14px",
-            background: generating ? C.surface2 : C.primary,
-            color: generating ? C.text3 : "#fff",
-            border: "none", borderRadius: 8,
-            font: `600 12.5px 'IBM Plex Sans'`, cursor: generating ? "not-allowed" : "pointer",
-            display: "flex", alignItems: "center", gap: 7,
-          }}
-        >
+        <button onClick={generate} disabled={generating}
+          style={{ height: 32, padding: "0 14px", background: generating ? C.surface2 : C.primary, color: generating ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: generating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 7 }}>
           {generating
             ? <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
-            : tasks.length > 0
-              ? (isGovernance ? "↺ Regenerate Timeline" : "↺ Regenerate from WBS")
-              : (isGovernance ? "✦ Generate High-Level Timeline" : "✦ Generate from WBS")
-          }
+            : tasks.length > 0 ? "↺ Regenerate from WBS" : "✦ Generate from WBS"}
         </button>
       </div>
 
-      {error && (
-        <div style={{ padding: "10px 14px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 9, fontSize: 13, color: C.red, marginBottom: 14 }}>
-          {error}
-        </div>
-      )}
+      {error && <div style={{ padding: "10px 14px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 9, fontSize: 13, color: C.red, marginBottom: 14 }}>{error}</div>}
 
       {tasks.length === 0 && !error && (
         <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "32px 24px", textAlign: "center" as const }}>
           <div style={{ fontSize: 36, marginBottom: 14 }}>📅</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.primary, marginBottom: 8 }}>
-            {isGovernance ? "No high-level timeline yet" : "No schedule yet"}
-          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.primary, marginBottom: 8 }}>No schedule yet</div>
           <div style={{ fontSize: 13, color: C.text2, maxWidth: 480, margin: "0 auto 18px" }}>
-            {isGovernance
-              ? "Generate a week-level deliverable timeline from your WBS. Each deliverable becomes a weekly band — milestones from your Milestone Plan are shown as diamond markers. Day-to-day task tracking stays in your client tool."
-              : "Generate a schedule from your WBS artifact. The AI will sequence all work packages using critical-path scheduling, respecting dependencies and a 5-day working week."}
+            Generate a schedule from your WBS artifact. The AI will sequence all work packages using critical-path scheduling, respecting dependencies and a 5-day working week.
           </div>
-          <div style={{ fontSize: 12, color: C.text3 }}>
-            {isGovernance
-              ? "You need a WBS artifact (and optionally a Milestone Plan) in the Artifacts tab first."
-              : "You can also upload a new WBS (via the Artifacts tab) and then regenerate."}
-          </div>
+          <div style={{ fontSize: 12, color: C.text3 }}>You can also upload a new WBS (via the Artifacts tab) and then regenerate.</div>
         </div>
       )}
 
-      {tasks.length > 0 && isGovernance && (
-        <GovernanceTimeline tasks={tasks} project={project} onProgress={async (taskId, pct) => {
-          const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
-            method: "PATCH", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ percentComplete: pct }),
-          });
-          if (res.ok) { const u = await res.json(); setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...u } : t)); }
-        }} />
-      )}
-
-      {tasks.length > 0 && !isGovernance && (
+      {tasks.length > 0 && (
         <>
           {/* ── EVM KPI strip ── */}
           <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
             {[
               { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: "Schedule Performance Index", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.85 ? C.amberLight : C.redLight },
-              { label: "SV", value: kpi?.sv != null ? `${kpi.sv > 0 ? "+" : ""}${kpi.sv.toFixed(1)}d` : "—", sub: "Schedule Variance (task-days)", color: (kpi?.sv ?? 0) >= 0 ? C.green : C.red, bg: (kpi?.sv ?? 0) >= 0 ? C.greenLight : C.redLight },
+              { label: "SV", value: kpi?.sv != null ? `${kpi.sv > 0 ? "+" : ""}${kpi.sv.toFixed(1)}d` : "—", sub: "Schedule Variance", color: (kpi?.sv ?? 0) >= 0 ? C.green : C.red, bg: (kpi?.sv ?? 0) >= 0 ? C.greenLight : C.redLight },
               { label: "EV", value: kpi?.ev != null ? `${kpi.ev.toFixed(1)}d` : "—", sub: "Earned Value (days)", color: C.primary, bg: C.primaryLight },
               { label: "PV", value: kpi?.pv != null ? `${kpi.pv.toFixed(1)}d` : "—", sub: "Planned Value (days)", color: C.text2, bg: C.surface2 },
             ].map(k => (
@@ -816,417 +956,336 @@ function ScheduleTab({ project }: { project: any }) {
             ))}
           </div>
 
-          {/* ── Recovery alert ── */}
-          {kpi?.spi != null && kpi.spi < 0.8 && (
-            <RecoveryPanel projectId={project.id} spi={kpi.spi} />
-          )}
+          {kpi?.spi != null && kpi.spi < 0.8 && <RecoveryPanel projectId={project.id} spi={kpi.spi} />}
 
-          {/* ── Gantt ── */}
+          {/* ── Split-pane Gantt ── */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-            {/* Timeline header */}
-            <div style={{ display: "flex", background: C.surface2, borderBottom: `1px solid ${C.borderLight}` }}>
-              <div style={{ width: 320, flexShrink: 0, padding: "8px 16px", font: `600 10px 'IBM Plex Sans'`, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const }}>Task</div>
-              <div style={{ width: 44, flexShrink: 0, padding: "8px 4px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, textAlign: "center" as const, textTransform: "uppercase" as const }}>%</div>
-              <div style={{ flex: 1, position: "relative", padding: "8px 12px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", font: `500 10px 'IBM Plex Mono'`, color: C.text3 }}>
-                  <span>{fmt(minStart)}</span>
-                  <span>{fmt(maxFinish)}</span>
+
+            {/* Column headers */}
+            <div style={{ display: "flex", background: C.surface2, borderBottom: `1px solid ${C.border}` }}>
+              {/* Grid header */}
+              <div style={{ width: GRID_W, flexShrink: 0, display: "flex", alignItems: "center" }}>
+                <div style={{ width: 28 }} />
+                <div style={{ flex: 1, padding: "7px 8px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>Task</div>
+                <div style={{ width: 60, textAlign: "center" as const, font: `600 10px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>Days</div>
+                <div style={{ width: 52, textAlign: "center" as const, font: `600 10px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
+                <div style={{ width: 90, font: `600 10px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const, padding: "7px 6px" }}>Start</div>
+              </div>
+              {/* Gantt header — 2 rows: month groups + week ticks */}
+              <div style={{ flex: 1, borderLeft: `1px solid ${C.border}`, overflow: "hidden" }}>
+                {/* Month row */}
+                <div style={{ display: "flex", borderBottom: `1px solid ${C.borderLight}` }}>
+                  {monthGroups.map((mg, i) => (
+                    <div key={i} style={{ flex: mg.count, borderLeft: i > 0 ? `1px solid ${C.borderLight}` : "none", padding: "3px 6px", font: `600 9.5px 'IBM Plex Sans'`, color: C.text2, whiteSpace: "nowrap" as const, overflow: "hidden" }}>
+                      {mg.label}
+                    </div>
+                  ))}
+                </div>
+                {/* Week row */}
+                <div style={{ display: "flex" }}>
+                  {weeks.map((w, i) => (
+                    <div key={i} style={{ flex: 1, borderLeft: `1px solid ${C.borderLight}`, padding: "2px 0", font: `400 8.5px 'IBM Plex Mono'`, color: C.text3, textAlign: "center" as const, overflow: "hidden", whiteSpace: "nowrap" as const }}>
+                      {weeks.length <= 26 ? w.getDate() : i % 2 === 0 ? w.getDate() : ""}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {phases.map(phase => (
-              <div key={phase}>
-                {/* Phase group header */}
-                <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "6px 16px" }}>
-                  <div style={{ width: 320, font: `700 10.5px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".03em", textTransform: "uppercase" as const }}>{phase}</div>
-                  <div style={{ flex: 1 }} />
-                </div>
-
-                {tasks.filter(t => t.phase === phase).map(t => {
-                  const bar = barStyle(t);
-                  const isEditing = editId === t.id;
-                  const isSaving = savingId === t.id;
-                  const pctColor = t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.text3;
-
-                  return (
-                    <div key={t.id} style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, minHeight: 38 }}>
-                      {/* Task name + meta + actual dates */}
-                      <div style={{ width: 320, flexShrink: 0, padding: "9px 16px 9px 20px" }}>
-                        <div style={{ fontSize: 14, fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
-                        <div style={{ fontSize: 12, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
-                          {t.wbsCode} · {t.baselineDays}d
-                        </div>
-                        {/* Assignee selector */}
-                        {assignEditId === t.id ? (
-                          <select
-                            autoFocus
-                            defaultValue={t.resource?.id ?? ""}
-                            onBlur={e => saveAssignee(t.id, e.target.value || null)}
-                            onChange={e => saveAssignee(t.id, e.target.value || null)}
-                            style={{ fontSize: 11, height: 22, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "0 4px", marginTop: 4, fontFamily: "'IBM Plex Sans',sans-serif", background: C.surface, maxWidth: 240 }}
-                          >
-                            <option value="">— Unassigned —</option>
-                            {resources.map(r => <option key={r.id} value={r.id}>{r.name} ({r.role})</option>)}
-                          </select>
-                        ) : (
-                          <div
-                            onClick={() => resources.length > 0 && setAssignEditId(t.id)}
-                            title={resources.length === 0 ? "Add team members in the Resources tab first" : "Click to assign"}
-                            style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: t.resource ? C.primary : C.text3, background: t.resource ? C.primaryLight : "transparent", border: t.resource ? `1px solid ${C.primaryBorder}` : "1px dashed " + C.borderLight, borderRadius: 5, padding: "1px 7px", cursor: resources.length > 0 ? "pointer" : "default", maxWidth: 200 }}
-                          >
-                            {t.resource ? `👤 ${t.resource.name}` : resources.length > 0 ? "+ Assign" : "No resources"}
-                          </div>
-                        )}
-                        {/* Actual start / finish — click to edit */}
-                        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                          {(["actualStart", "actualFinish"] as const).map(field => {
-                            const label = field === "actualStart" ? "Started" : "Finished";
-                            const val = t[field];
-                            const isDateEditing = dateEditId === t.id && dateEditField === field;
-                            const chip = val ? fmt(val) : `+ ${label}`;
-                            const chipColor = val ? C.text2 : C.text3;
-                            const chipBg = val ? C.surface2 : "transparent";
-                            const chipBorder = val ? C.border : "dashed 1px " + C.borderLight;
-                            if (isDateEditing) {
-                              return (
-                                <input
-                                  key={field}
-                                  type="date"
-                                  autoFocus
-                                  defaultValue={val ? new Date(val).toISOString().slice(0, 10) : ""}
-                                  onBlur={e => saveActualDate(t.id, field, e.target.value)}
-                                  onKeyDown={e => {
-                                    if (e.key === "Enter") saveActualDate(t.id, field, (e.target as HTMLInputElement).value);
-                                    if (e.key === "Escape") { setDateEditId(null); setDateEditField(null); }
-                                  }}
-                                  style={{ fontSize: 10, height: 20, border: `1px solid ${C.primary}`, borderRadius: 4, padding: "0 3px", fontFamily: "'IBM Plex Mono',monospace" }}
-                                />
-                              );
-                            }
-                            return (
-                              <span
-                                key={field}
-                                onClick={() => { setDateEditId(t.id); setDateEditField(field); setDateEditVal(val ? new Date(val).toISOString().slice(0, 10) : ""); }}
-                                title={`Click to set actual ${label.toLowerCase()} date`}
-                                style={{ fontSize: 10, color: chipColor, background: chipBg, border: chipBorder, borderRadius: 4, padding: "1px 5px", cursor: "pointer", whiteSpace: "nowrap" as const }}
-                              >
-                                {chip}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* % complete cell — click to edit */}
-                      <div
-                        style={{ width: 44, flexShrink: 0, textAlign: "center" as const, cursor: "pointer", padding: "0 2px" }}
-                        onClick={() => { if (!isEditing) { setEditId(t.id); setEditPct(t.percentComplete); } }}
-                      >
-                        {isEditing ? (
-                          <input
-                            ref={inputRef}
-                            type="number" min={0} max={100}
-                            value={editPct}
-                            onChange={e => setEditPct(Number(e.target.value))}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") saveProgress(t.id, editPct);
-                              if (e.key === "Escape") setEditId(null);
-                            }}
-                            onBlur={() => saveProgress(t.id, editPct)}
-                            style={{ width: 36, height: 24, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5, fontFamily: "'IBM Plex Mono',monospace", padding: 0 }}
-                          />
-                        ) : (
-                          <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, fontWeight: 600, color: pctColor }}>
-                            {isSaving ? "…" : `${t.percentComplete}%`}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Gantt bar area */}
-                      <div style={{ flex: 1, position: "relative", height: 38 }}>
-                        {/* Today line */}
-                        {todayPct >= 0 && todayPct <= 100 && (
-                          <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 1.5, background: C.red, opacity: 0.5, zIndex: 2 }} />
-                        )}
-                        {/* Baseline bar */}
-                        <div style={{
-                          position: "absolute", top: "50%", transform: "translateY(-50%)",
-                          ...bar,
-                          height: 16, borderRadius: 4,
-                          background: "#e2e5ea",
-                          overflow: "hidden",
-                        }}>
-                          {/* Progress fill */}
-                          <div style={{
-                            position: "absolute", top: 0, left: 0, bottom: 0,
-                            width: `${t.percentComplete}%`,
-                            background: statusColor(t),
-                            borderRadius: 4,
-                            transition: "width .3s",
-                          }} />
-                        </div>
-                        {/* Start / finish labels on hover area */}
-                        <div style={{
-                          position: "absolute", ...bar,
-                          top: "50%", transform: "translateY(-50%)",
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                          padding: "0 4px", pointerEvents: "none",
-                        }}>
-                        </div>
-                      </div>
+            {/* Body — scrollable rows */}
+            <div style={{ display: "flex", maxHeight: 560, overflow: "hidden" }}>
+              {/* Task grid — left pane */}
+              <div ref={gridScrollRef} style={{ width: GRID_W, flexShrink: 0, overflowY: "auto", overflowX: "hidden" }}>
+                {phases.map(phase => (
+                  <div key={phase}>
+                    {/* Phase header */}
+                    <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "5px 8px 5px 28px" }}>
+                      <div style={{ font: `700 10px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".04em", textTransform: "uppercase" as const, flex: 1 }}>{phase}</div>
                     </div>
-                  );
-                })}
+                    {tasks.filter(t => t.phase === phase).map(t => {
+                      const isEditName = editCell?.taskId === t.id && editCell?.field === "name";
+                      const isEditDays = editCell?.taskId === t.id && editCell?.field === "baselineDays";
+                      const isEditPct = editCell?.taskId === t.id && editCell?.field === "percentComplete";
+                      const isEditStart = editCell?.taskId === t.id && editCell?.field === "baselineStart";
+                      const pctColor = t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.text3;
+                      const isCrit = showCritical && criticalIds.has(t.id);
+
+                      return (
+                        <div
+                          key={t.id}
+                          onMouseEnter={() => setHoverRowId(t.id)}
+                          onMouseLeave={() => setHoverRowId(null)}
+                          style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, height: ROW_H, background: isCrit ? "#fff8f8" : "transparent" }}
+                        >
+                          {/* Delete button */}
+                          <div style={{ width: 28, display: "flex", justifyContent: "center", flexShrink: 0 }}>
+                            {hoverRowId === t.id && (
+                              <button onClick={() => deleteTask(t.id)} disabled={deletingId === t.id}
+                                style={{ width: 18, height: 18, background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 4, cursor: "pointer", color: C.red, fontSize: 10, lineHeight: 1, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                ×
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Name */}
+                          <div style={{ flex: 1, padding: "0 4px", overflow: "hidden" }}>
+                            {isEditName ? (
+                              <input
+                                ref={inputRef}
+                                autoFocus
+                                value={editVal}
+                                onChange={e => setEditVal(e.target.value)}
+                                onBlur={commitEdit}
+                                onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                style={{ width: "100%", fontSize: 12.5, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "'IBM Plex Sans',sans-serif" }}
+                              />
+                            ) : (
+                              <div onClick={() => { setEditCell({ taskId: t.id, field: "name" }); setEditVal(t.name); }}
+                                style={{ fontSize: 12.5, fontWeight: 500, color: isCrit ? C.red : C.text, cursor: "text", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}
+                                title={t.name}>
+                                {isCrit && <span style={{ marginRight: 4, fontSize: 10 }}>🔴</span>}
+                                {t.name}
+                              </div>
+                            )}
+                            {/* Assignee chip */}
+                            {assignEditId === t.id ? (
+                              <select autoFocus defaultValue={t.resource?.id ?? ""}
+                                onBlur={e => saveAssignee(t.id, e.target.value || null)}
+                                onChange={e => saveAssignee(t.id, e.target.value || null)}
+                                style={{ fontSize: 10, height: 19, border: `1px solid ${C.primary}`, borderRadius: 4, marginTop: 2, width: "100%", background: C.surface }}>
+                                <option value="">— Unassigned —</option>
+                                {resources.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                              </select>
+                            ) : (
+                              <div onClick={() => resources.length > 0 && setAssignEditId(t.id)} title="Click to assign resource"
+                                style={{ marginTop: 2, fontSize: 10, color: t.resource ? C.primary : C.text3, cursor: resources.length > 0 ? "pointer" : "default", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {t.resource ? `👤 ${t.resource.name}` : resources.length > 0 ? "+ Assign" : ""}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Days */}
+                          <div style={{ width: 60, textAlign: "center" as const, cursor: "text" }}
+                            onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.baselineDays)); }}>
+                            {isEditDays ? (
+                              <input autoFocus type="number" min={1} value={editVal}
+                                onChange={e => setEditVal(e.target.value)}
+                                onBlur={commitEdit}
+                                onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                style={{ width: 44, height: 22, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                            ) : (
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, color: C.text2 }}>{t.baselineDays}d</span>
+                            )}
+                          </div>
+
+                          {/* % */}
+                          <div style={{ width: 52, textAlign: "center" as const, cursor: "text" }}
+                            onClick={() => { setEditCell({ taskId: t.id, field: "percentComplete" }); setEditVal(String(t.percentComplete)); }}>
+                            {isEditPct ? (
+                              <input autoFocus type="number" min={0} max={100} value={editVal}
+                                onChange={e => setEditVal(e.target.value)}
+                                onBlur={commitEdit}
+                                onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                style={{ width: 42, height: 22, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                            ) : (
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, fontWeight: 600, color: pctColor }}>
+                                {savingId === t.id ? "…" : `${t.percentComplete}%`}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Start date */}
+                          <div style={{ width: 90, padding: "0 6px", cursor: "text" }}
+                            onClick={() => { setEditCell({ taskId: t.id, field: "baselineStart" }); setEditVal(new Date(t.baselineStart).toISOString().slice(0, 10)); }}>
+                            {isEditStart ? (
+                              <input autoFocus type="date" value={editVal}
+                                onChange={e => setEditVal(e.target.value)}
+                                onBlur={commitEdit}
+                                onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                style={{ width: 82, fontSize: 10, border: `1px solid ${C.primary}`, borderRadius: 4, padding: "1px 3px" }} />
+                            ) : (
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, color: C.text3 }}>{fmt(t.baselineStart)}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* + Add task row */}
+                    <div
+                      onClick={() => addTask(phase)}
+                      style={{ display: "flex", alignItems: "center", height: 32, borderTop: `1px solid ${C.borderLight}`, padding: "0 8px 0 28px", cursor: "pointer", color: C.text3, fontSize: 11.5 }}
+                      onMouseEnter={e => (e.currentTarget.style.background = C.surface2)}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      + Add task
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+
+              {/* Gantt pane — right */}
+              <div ref={ganttScrollRef} style={{ flex: 1, borderLeft: `1px solid ${C.border}`, overflowY: "auto", overflowX: "hidden", position: "relative" }}>
+                {/* Today vertical line */}
+                {todayPct >= 0 && todayPct <= 100 && (
+                  <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 1.5, background: C.red, opacity: 0.45, zIndex: 5, pointerEvents: "none" }} />
+                )}
+
+                {phases.map(phase => (
+                  <div key={phase}>
+                    {/* Phase header spacer */}
+                    <div style={{ height: 29, background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}` }} />
+                    {tasks.filter(t => t.phase === phase).map(t => {
+                      const left = barLeft(t);
+                      const width = barWidth(t);
+                      const isCrit = showCritical && criticalIds.has(t.id);
+                      const barColor = isCrit ? C.red : t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : "#c5cadb";
+                      const milestone = isMilestone(t);
+
+                      return (
+                        <div key={t.id} style={{ position: "relative", height: ROW_H, borderTop: `1px solid ${C.borderLight}`, background: isCrit ? "#fff8f8" : "transparent" }}>
+                          {/* Week grid lines */}
+                          {weeks.map((_, i) => (
+                            <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${(i / weeks.length) * 100}%`, width: 1, background: C.borderLight, opacity: 0.6 }} />
+                          ))}
+
+                          {milestone ? (
+                            /* Milestone diamond */
+                            <div title={t.name} style={{
+                              position: "absolute", top: "50%", left: `${left}%`,
+                              transform: "translate(-50%, -50%) rotate(45deg)",
+                              width: 14, height: 14,
+                              background: "#f59e0b", border: "2px solid #b45309", zIndex: 4,
+                            }} />
+                          ) : (
+                            /* Gantt bar */
+                            <div style={{
+                              position: "absolute", top: "50%", transform: "translateY(-50%)",
+                              left: `${left}%`, width: `${width}%`,
+                              height: 22, borderRadius: 5, background: "#e2e5ea", overflow: "visible", zIndex: 2,
+                            }}>
+                              {/* Progress fill */}
+                              <div style={{
+                                position: "absolute", top: 0, left: 0, bottom: 0,
+                                width: `${t.percentComplete}%`,
+                                background: barColor, borderRadius: 5, transition: "width .3s",
+                              }} />
+                              {/* Task label inside bar */}
+                              {width > 5 && (
+                                <div style={{
+                                  position: "absolute", top: 0, left: 4, right: 10, bottom: 0,
+                                  display: "flex", alignItems: "center",
+                                  font: `500 9.5px 'IBM Plex Sans'`,
+                                  color: t.percentComplete > 40 ? "#fff" : C.text3,
+                                  whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis",
+                                  pointerEvents: "none",
+                                }}>
+                                  {t.name}
+                                </div>
+                              )}
+                              {/* Drag-resize handle */}
+                              <div
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  dragRef.current = { taskId: t.id, startX: e.clientX, startDays: t.baselineDays };
+                                }}
+                                style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 8, cursor: "ew-resize", zIndex: 3 }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {/* Add task spacer row */}
+                    <div style={{ height: 32, borderTop: `1px solid ${C.borderLight}` }} />
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* Legend */}
-            <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 18px", borderTop: `1px solid ${C.borderLight}`, background: C.surface2 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 20, height: 8, borderRadius: 3, background: C.green }} />
-                <span style={{ fontSize: 10.5, color: C.text3 }}>Complete</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "9px 16px", borderTop: `1px solid ${C.borderLight}`, background: C.surface2 }}>
+              {[
+                { color: C.green, label: "Complete" },
+                { color: C.primary, label: "In Progress" },
+                { color: "#c5cadb", label: "Not Started" },
+              ].map(l => (
+                <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <div style={{ width: 18, height: 8, borderRadius: 3, background: l.color }} />
+                  <span style={{ fontSize: 10.5, color: C.text3 }}>{l.label}</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 10, height: 10, background: "#f59e0b", border: "2px solid #b45309", transform: "rotate(45deg)" }} />
+                <span style={{ fontSize: 10.5, color: C.text3, marginLeft: 2 }}>Milestone</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 20, height: 8, borderRadius: 3, background: C.primary }} />
-                <span style={{ fontSize: 10.5, color: C.text3 }}>In Progress</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 20, height: 8, borderRadius: 3, background: "#e2e5ea" }} />
-                <span style={{ fontSize: 10.5, color: C.text3 }}>Not Started</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{ width: 1.5, height: 14, background: C.red, opacity: 0.5 }} />
                 <span style={{ fontSize: 10.5, color: C.text3 }}>Today</span>
               </div>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 10.5, color: C.text3 }}>Click % to update progress · click date chips to set actuals</span>
+              <span style={{ fontSize: 10.5, color: C.text3 }}>Click cells to edit · drag right edge of bar to resize</span>
             </div>
+          </div>
+
+          {/* ── AI Command Bar ── */}
+          <div style={{ marginTop: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.primary }}>✦ AI Schedule Command</div>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: C.text3 }}>Describe a change in plain language</span>
+            </div>
+            <div style={{ padding: "10px 14px", display: "flex", gap: 8 }}>
+              <input
+                value={aiCmd}
+                onChange={e => setAiCmd(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") runAiCommand(); }}
+                placeholder='e.g. "Shift Phase 2 by 2 weeks" or "Mark all design tasks complete"'
+                style={{ flex: 1, height: 36, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0 12px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif", outline: "none" }}
+              />
+              <button onClick={runAiCommand} disabled={aiLoading || !aiCmd.trim()}
+                style={{ height: 36, padding: "0 18px", background: aiLoading ? C.surface2 : C.primary, color: aiLoading ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `600 13px 'IBM Plex Sans'`, cursor: aiLoading || !aiCmd.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                {aiLoading ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Running…</> : "Run AI"}
+              </button>
+            </div>
+
+            {aiError && <div style={{ margin: "0 14px 10px", padding: "8px 12px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 8, fontSize: 12, color: C.red }}>{aiError}</div>}
+
+            {/* Diff card */}
+            {aiDiff && (
+              <div style={{ margin: "0 14px 14px", background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text, flex: 1 }}>{aiDiff.summary}</div>
+                  <button onClick={applyAiDiff} disabled={applyingDiff}
+                    style={{ height: 30, padding: "0 14px", background: C.green, color: "#fff", border: "none", borderRadius: 7, font: `600 12px 'IBM Plex Sans'`, cursor: applyingDiff ? "not-allowed" : "pointer" }}>
+                    {applyingDiff ? "Applying…" : "✓ Apply"}
+                  </button>
+                  <button onClick={() => setAiDiff(null)}
+                    style={{ height: 30, padding: "0 14px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, font: `600 12px 'IBM Plex Sans'`, cursor: "pointer" }}>
+                    Discard
+                  </button>
+                </div>
+                {aiDiff.patches.length === 0 ? (
+                  <div style={{ padding: "10px 14px", fontSize: 12, color: C.text3 }}>No changes to apply.</div>
+                ) : (
+                  <div style={{ padding: "6px 0" }}>
+                    {aiDiff.patches.map((p, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 14px", borderTop: i > 0 ? `1px solid ${C.borderLight}` : "none" }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 500, color: C.text, minWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.taskName}</span>
+                        <span style={{ fontSize: 11, color: C.text3, minWidth: 80 }}>{p.field}</span>
+                        <span style={{ fontSize: 11, fontFamily: "'IBM Plex Mono',monospace", color: C.red, textDecoration: "line-through" }}>{p.oldValue}</span>
+                        <span style={{ fontSize: 11, color: C.text3 }}>→</span>
+                        <span style={{ fontSize: 11, fontFamily: "'IBM Plex Mono',monospace", color: C.green }}>{p.newValue}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}
-      {/* end !isGovernance */}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
-
-// ── Governance week-level timeline ─────────────────────────────────────────────
-
-function GovernanceTimeline({ tasks, project, onProgress }: {
-  tasks: any[];
-  project: any;
-  onProgress: (taskId: string, pct: number) => Promise<void>;
-}) {
-  const [editId, setEditId] = useState<string | null>(null);
-  const [editPct, setEditPct] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (editId && inputRef.current) inputRef.current.focus(); }, [editId]);
-
-  const deliverables = tasks.filter(t => t.phase !== "Milestones");
-  const milestones = tasks.filter(t => t.phase === "Milestones");
-
-  // Build week headers spanning the full project
-  const allDates = tasks.flatMap(t => [new Date(t.baselineStart), new Date(t.baselineFinish)]);
-  const minMs = Math.min(...allDates.map(d => d.getTime()));
-  const maxMs = Math.max(...allDates.map(d => d.getTime()));
-  // Snap to Monday for start
-  const timelineStart = new Date(minMs);
-  while (timelineStart.getDay() !== 1) timelineStart.setDate(timelineStart.getDate() - 1);
-  // Snap to Sunday for end
-  const timelineEnd = new Date(maxMs);
-  while (timelineEnd.getDay() !== 0) timelineEnd.setDate(timelineEnd.getDate() + 1);
-  const totalMs = Math.max(timelineEnd.getTime() - timelineStart.getTime(), 1);
-
-  // Generate week buckets
-  const weeks: Date[] = [];
-  const cur = new Date(timelineStart);
-  while (cur <= timelineEnd) {
-    weeks.push(new Date(cur));
-    cur.setDate(cur.getDate() + 7);
-  }
-
-  const today = new Date();
-  const todayPct = Math.max(0, Math.min(100, ((today.getTime() - timelineStart.getTime()) / totalMs) * 100));
-
-  function leftPct(d: Date) {
-    return ((d.getTime() - timelineStart.getTime()) / totalMs) * 100;
-  }
-  function widthPct(s: Date, e: Date) {
-    return Math.max(0.8, ((e.getTime() - s.getTime()) / totalMs) * 100);
-  }
-
-  const fmtWeek = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-  const phases = Array.from(new Set(deliverables.map(t => t.phase)));
-
-  return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-      {/* Week header */}
-      <div style={{ display: "flex", background: C.surface2, borderBottom: `1px solid ${C.borderLight}` }}>
-        <div style={{ width: 260, flexShrink: 0, padding: "8px 16px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>
-          Deliverable
-        </div>
-        <div style={{ width: 40, flexShrink: 0, padding: "8px 4px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, textAlign: "center" as const }}>%</div>
-        <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-          <div style={{ display: "flex", height: "100%" }}>
-            {weeks.map((w, i) => (
-              <div key={i} style={{
-                flex: 1, borderLeft: `1px solid ${C.borderLight}`, padding: "6px 2px 4px",
-                font: `500 9px 'IBM Plex Mono'`, color: C.text3, textAlign: "center" as const, whiteSpace: "nowrap" as const,
-                overflow: "hidden",
-              }}>
-                {weeks.length <= 20 ? fmtWeek(w) : i % 2 === 0 ? fmtWeek(w) : ""}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Phase groups + deliverable rows */}
-      {phases.map(phase => (
-        <div key={phase}>
-          <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "6px 16px" }}>
-            <div style={{ width: 260, font: `700 10.5px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".03em", textTransform: "uppercase" as const }}>{phase}</div>
-            <div style={{ flex: 1 }} />
-          </div>
-          {deliverables.filter(t => t.phase === phase).map(t => {
-            const s = new Date(t.baselineStart);
-            const e = new Date(t.baselineFinish);
-            const left = leftPct(s);
-            const width = widthPct(s, e);
-            const weeks = Math.round(t.baselineDays / 5);
-            const pctColor = t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.text3;
-            const isEditing = editId === t.id;
-
-            return (
-              <div key={t.id} style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, minHeight: 44 }}>
-                <div style={{ width: 260, flexShrink: 0, padding: "8px 16px 8px 20px" }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: C.text, lineHeight: 1.3 }}>{t.name}</div>
-                  <div style={{ fontSize: 11, color: C.text3, marginTop: 2, fontFamily: "'IBM Plex Mono',monospace" }}>
-                    {fmtWeek(s)} → {fmtWeek(e)} · {weeks}w
-                  </div>
-                </div>
-                {/* % complete */}
-                <div style={{ width: 40, flexShrink: 0, textAlign: "center" as const, cursor: "pointer" }}
-                  onClick={() => { if (!isEditing) { setEditId(t.id); setEditPct(t.percentComplete); } }}>
-                  {isEditing ? (
-                    <input ref={inputRef} type="number" min={0} max={100} value={editPct}
-                      onChange={ev => setEditPct(Number(ev.target.value))}
-                      onKeyDown={ev => {
-                        if (ev.key === "Enter") { onProgress(t.id, editPct); setEditId(null); }
-                        if (ev.key === "Escape") setEditId(null);
-                      }}
-                      onBlur={() => { onProgress(t.id, editPct); setEditId(null); }}
-                      style={{ width: 34, height: 22, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5, padding: 0 }}
-                    />
-                  ) : (
-                    <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, color: pctColor }}>
-                      {t.percentComplete}%
-                    </span>
-                  )}
-                </div>
-                {/* Week bar */}
-                <div style={{ flex: 1, position: "relative", height: 44 }}>
-                  {todayPct >= 0 && todayPct <= 100 && (
-                    <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 1.5, background: C.red, opacity: 0.45, zIndex: 2 }} />
-                  )}
-                  <div style={{
-                    position: "absolute", top: "50%", transform: "translateY(-50%)",
-                    left: `${left}%`, width: `${width}%`,
-                    height: 20, borderRadius: 5, background: "#e2e5ea", overflow: "hidden",
-                  }}>
-                    <div style={{
-                      position: "absolute", top: 0, left: 0, bottom: 0,
-                      width: `${t.percentComplete}%`,
-                      background: t.percentComplete === 100 ? C.green : C.primary,
-                      borderRadius: 5, transition: "width .3s",
-                    }} />
-                  </div>
-                  {/* Week count label inside bar */}
-                  {width > 4 && (
-                    <div style={{
-                      position: "absolute", top: "50%", transform: "translateY(-50%)",
-                      left: `${left + 0.4}%`,
-                      font: `600 10px 'IBM Plex Mono'`, color: t.percentComplete > 50 ? "#fff" : C.text3,
-                      pointerEvents: "none", zIndex: 3,
-                    }}>
-                      {weeks}w
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ))}
-
-      {/* Milestone row */}
-      {milestones.length > 0 && (
-        <div>
-          <div style={{ display: "flex", alignItems: "center", background: "#fef8ec", borderTop: `1px solid ${C.borderLight}`, padding: "6px 16px" }}>
-            <div style={{ width: 260, font: `700 10.5px 'IBM Plex Sans'`, color: "#b45309", letterSpacing: ".03em", textTransform: "uppercase" as const }}>Milestones</div>
-          </div>
-          <div style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, minHeight: 44, alignItems: "center" }}>
-            <div style={{ width: 300, flexShrink: 0 }} />
-            <div style={{ flex: 1, position: "relative", height: 44 }}>
-              {todayPct >= 0 && todayPct <= 100 && (
-                <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 1.5, background: C.red, opacity: 0.45, zIndex: 2 }} />
-              )}
-              {milestones.map(m => {
-                const d = new Date(m.baselineStart);
-                const left = leftPct(d);
-                return (
-                  <div key={m.id} title={`${m.name} — ${fmtWeek(d)}`} style={{
-                    position: "absolute", top: "50%", left: `${left}%`,
-                    transform: "translate(-50%, -50%) rotate(45deg)",
-                    width: 12, height: 12,
-                    background: "#f59e0b", border: "2px solid #b45309",
-                    zIndex: 4, cursor: "default",
-                  }} />
-                );
-              })}
-            </div>
-          </div>
-          {/* Milestone labels below */}
-          {milestones.map(m => {
-            const d = new Date(m.baselineStart);
-            const left = leftPct(d);
-            return (
-              <div key={m.id + "-lbl"} style={{ display: "flex", borderTop: `1px solid ${C.borderLight}`, minHeight: 28, alignItems: "center" }}>
-                <div style={{ width: 300, flexShrink: 0, padding: "4px 16px 4px 20px", fontSize: 12, color: "#b45309", fontWeight: 500 }}>{m.name}</div>
-                <div style={{ flex: 1, position: "relative", height: 28 }}>
-                  <div style={{ position: "absolute", top: "50%", left: `${left}%`, transform: "translateY(-50%)", font: `500 10px 'IBM Plex Mono'`, color: C.text3, whiteSpace: "nowrap" as const }}>
-                    {fmtWeek(d)}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Legend */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 18px", borderTop: `1px solid ${C.borderLight}`, background: C.surface2 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 20, height: 8, borderRadius: 3, background: C.green }} />
-          <span style={{ fontSize: 10.5, color: C.text3 }}>Complete</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 20, height: 8, borderRadius: 3, background: C.primary }} />
-          <span style={{ fontSize: 10.5, color: C.text3 }}>In Progress</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 14, height: 14, background: "#f59e0b", border: "2px solid #b45309", transform: "rotate(45deg)" }} />
-          <span style={{ fontSize: 10.5, color: C.text3, marginLeft: 4 }}>Milestone</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ width: 1.5, height: 14, background: C.red, opacity: 0.5 }} />
-          <span style={{ fontSize: 10.5, color: C.text3 }}>Today</span>
-        </div>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 10.5, color: C.text3 }}>Click % to update delivery progress · day-to-day tasks tracked in client tool</span>
-      </div>
     </div>
   );
 }

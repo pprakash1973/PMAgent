@@ -77,14 +77,38 @@ export async function PATCH(
   if (pct === 100 && !task.actualFinish && !body.actualFinish) data.actualFinish = new Date();
   if ("resourceId" in body) data.resourceId = body.resourceId || null;
   if ("estimatedHours" in body) data.estimatedHours = body.estimatedHours ? Number(body.estimatedHours) : null;
+  if ("name" in body && typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if ("baselineDays" in body) data.baselineDays = Math.max(0, Number(body.baselineDays) || 0);
+  if ("baselineStart" in body) data.baselineStart = new Date(body.baselineStart);
+  if ("baselineFinish" in body) data.baselineFinish = new Date(body.baselineFinish);
+  if ("status" in body && !("percentComplete" in body)) {
+    data.status = body.status;
+    delete data.percentComplete;
+    delete data.status;
+    data.status = body.status;
+  }
 
   const updated = await prisma.scheduleTask.update({
     where: { id: taskId },
     data,
+    include: { resource: { select: { id: true, name: true, role: true, email: true } } },
   });
 
-  // Fire-and-forget: recompute health from live SPI after every task update
   syncProjectHealth(id).catch(() => {});
-
   return NextResponse.json(updated);
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string; taskId: string }> }
+) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const { id, taskId } = await params;
+
+  const task = await prisma.scheduleTask.findFirst({ where: { id: taskId, projectId: id } });
+  if (!task) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
+  await prisma.scheduleTask.delete({ where: { id: taskId } });
+  return NextResponse.json({ deleted: true });
 }
