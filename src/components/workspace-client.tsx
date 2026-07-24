@@ -1182,6 +1182,17 @@ function ScheduleTab({ project }: { project: any }) {
                                   {t.name}
                                 </div>
                               )}
+                              {/* End date label — always visible to the right of the bar */}
+                              <div style={{
+                                position: "absolute", top: "50%", transform: "translateY(-50%)",
+                                left: "calc(100% + 4px)",
+                                font: `500 10.5px 'IBM Plex Mono'`,
+                                color: t.percentComplete === 100 ? C.green : C.text3,
+                                whiteSpace: "nowrap" as const,
+                                pointerEvents: "none",
+                              }}>
+                                {fmt(t.baselineFinish)}
+                              </div>
                               {/* Drag-resize handle */}
                               <div
                                 onMouseDown={e => {
