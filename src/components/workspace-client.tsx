@@ -1400,12 +1400,55 @@ function ResourcesTab({ project }: { project: any }) {
 
 // ── Requirements tab ───────────────────────────────────────────────────────────
 
+const DOC_CLASS_OPTIONS = [
+  { value: "sow",        label: "Statement of Work (SOW)",   pts: 30 },
+  { value: "brd",        label: "Business Requirements (BRD)", pts: 25 },
+  { value: "srs",        label: "Software Requirements (SRS)", pts: 20 },
+  { value: "estimation", label: "Estimation Sheet",           pts: 15 },
+  { value: "proposal",   label: "Proposal",                   pts: 10 },
+  { value: "contract",   label: "Contract",                   pts: 10 },
+  { value: "cr",         label: "Change Request",              pts: 5  },
+  { value: "other",      label: "Other",                      pts: 5  },
+];
+
+const EXT_COLORS: Record<string, string> = { PDF: "#b83b3b", DOCX: "#2b5cb8", DOC: "#2b5cb8", XLSX: "#1b7a46", XLS: "#1b7a46", TXT: "#5b616e", CSV: "#5b616e" };
+const CLASS_LABELS: Record<string, string> = { sow: "SOW", brd: "BRD", srs: "SRS", estimation: "Est.", proposal: "Proposal", contract: "Contract", cr: "CR", other: "Other" };
+
+function ReadinessBadge({ band, score }: { band: string; score: number }) {
+  const cfg: Record<string, { bg: string; color: string; label: string }> = {
+    strong:       { bg: "#e3f3ea", color: "#158a5a", label: "Strong" },
+    adequate:     { bg: "#eef0fc", color: "#4f5bd5", label: "Adequate" },
+    marginal:     { bg: "#fbf0da", color: "#c17d12", label: "Marginal" },
+    insufficient: { bg: "#fbe4e2", color: "#cf3f3a", label: "Insufficient" },
+  };
+  const s = cfg[band] ?? cfg.insufficient;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, background: s.bg, borderRadius: 10, padding: "8px 14px" }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color: s.color, lineHeight: 1 }}>{Math.round(score)}</div>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.label} evidence</div>
+        <div style={{ fontSize: 10, color: s.color, opacity: 0.7 }}>readiness score / 100</div>
+      </div>
+    </div>
+  );
+}
+
 function RequirementsTab({ project }: { project: any }) {
   const router = useRouter();
   const [docs, setDocs] = React.useState<any[]>(project.requirementsDocs || []);
   const [uploading, setUploading] = React.useState(false);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [extracted, setExtracted] = React.useState<any | null>(null);
+  const [docClass, setDocClass] = React.useState("sow");
+  const [readiness, setReadiness] = React.useState<{ score: number; band: string; missingMandatory: string[] } | null>(null);
+  const [showUploadForm, setShowUploadForm] = React.useState(false);
+
+  React.useEffect(() => {
+    fetch(`/api/projects/${project.id}/evidence-readiness`)
+      .then(r => r.json())
+      .then(d => setReadiness(d))
+      .catch(() => null);
+  }, [project.id, docs.length]);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1416,11 +1459,13 @@ function RequirementsTab({ project }: { project: any }) {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("docClass", docClass);
       const res = await fetch(`/api/projects/${project.id}/requirements`, { method: "POST", body: fd });
       const data = await res.json().catch(() => ({ error: res.statusText || "Upload failed" }));
       if (!res.ok) throw new Error(data?.error || "Upload failed");
       setDocs((prev) => [data.doc, ...prev]);
       setExtracted(data.extractedContent);
+      setShowUploadForm(false);
       router.refresh();
     } catch (err: any) {
       setUploadError(err.message || "Upload failed");
@@ -1430,78 +1475,127 @@ function RequirementsTab({ project }: { project: any }) {
     }
   }
 
-  const colors: Record<string, string> = { PDF: "#b83b3b", DOCX: "#2b5cb8", DOC: "#2b5cb8", XLSX: "#1b7a46", XLS: "#1b7a46" };
-
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
-        {docs.map((doc: any) => {
-          const ext = doc.fileName?.split(".").pop()?.toUpperCase() || "DOC";
-          return (
-            <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 10, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 11, padding: "10px 14px" }}>
-              <div style={{ width: 30, height: 30, borderRadius: 7, background: colors[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", font: "700 9px 'IBM Plex Sans'" }}>{ext}</div>
-              <div>
-                <div style={{ fontSize: "12.5px", fontWeight: 600 }}>{doc.fileName}</div>
-                <div className="mono" style={{ fontSize: "10.5px", color: C.text3 }}>uploaded · {formatDate(doc.createdAt)}</div>
-              </div>
-            </div>
-          );
-        })}
-        <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: `1.5px dashed ${C.primaryBorder}`, borderRadius: 11, padding: "10px 18px", color: uploading ? C.text3 : C.primary, fontSize: "12.5px", fontWeight: 600, background: "#faf9ff", cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? 0.7 : 1 }}>
-          {uploading ? (
-            <>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="#4f5bd5" strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>
-              Extracting…
-            </>
-          ) : (
-            <>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M5 20h14" stroke="#4f5bd5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              Upload requirements
-            </>
-          )}
-          <input type="file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv" style={{ display: "none" }} disabled={uploading} onChange={handleFileChange} />
-        </label>
+      {/* Evidence readiness strip */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18, flexWrap: "wrap" as const }}>
+        {readiness && <ReadinessBadge band={readiness.band} score={readiness.score} />}
+        {readiness?.missingMandatory?.length ? (
+          <div style={{ fontSize: 12, color: "#c17d12", background: "#fbf0da", borderRadius: 8, padding: "6px 12px" }}>
+            Missing for adequate coverage: <strong>{readiness.missingMandatory.join(", ")}</strong>
+          </div>
+        ) : readiness ? (
+          <div style={{ fontSize: 12, color: "#158a5a" }}>All mandatory document classes present</div>
+        ) : null}
+        <div style={{ marginLeft: "auto" }}>
+          <button
+            onClick={() => setShowUploadForm(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 7, background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M5 20h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            Upload document
+          </button>
+        </div>
       </div>
 
-      {uploadError && (
-        <div style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 12, marginBottom: 12 }}>{uploadError}</div>
+      {/* Upload form */}
+      {showUploadForm && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 18px", marginBottom: 18 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Upload source document</div>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" as const }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: C.text2, marginBottom: 4 }}>Document class</div>
+              <select
+                value={docClass}
+                onChange={e => setDocClass(e.target.value)}
+                style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", fontSize: 13, background: C.surface, color: C.text }}
+              >
+                {DOC_CLASS_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label} (+{o.pts} pts)</option>
+                ))}
+              </select>
+            </div>
+            <label style={{
+              display: "flex", alignItems: "center", gap: 8,
+              background: uploading ? C.surface2 : C.primary,
+              color: uploading ? C.text3 : "#fff",
+              border: "none", borderRadius: 8, padding: "8px 16px",
+              fontSize: 13, fontWeight: 600, cursor: uploading ? "not-allowed" : "pointer",
+              opacity: uploading ? 0.7 : 1,
+            }}>
+              {uploading ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke={C.text3} strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>
+                  Processing…
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M5 20h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  Choose file
+                </>
+              )}
+              <input type="file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv" style={{ display: "none" }} disabled={uploading} onChange={handleFileChange} />
+            </label>
+          </div>
+          {uploadError && <div style={{ color: "#cf3f3a", fontSize: 12, marginTop: 8 }}>{uploadError}</div>}
+        </div>
       )}
 
+      {/* Extracted content panel */}
       {extracted && (
         <div style={{ background: "#f0faf5", border: "1px solid #01B27C", borderRadius: 12, padding: "16px 18px", marginBottom: 18 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#007a55", marginBottom: 10 }}>AI Extracted Content</div>
-          {extracted.objectives?.length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>Objectives</div>
-              {extracted.objectives.map((o: string, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {o}</div>)}
-            </div>
-          )}
-          {extracted.inScope?.length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>In Scope</div>
-              {extracted.inScope.map((s: string, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {s}</div>)}
-            </div>
-          )}
+          {(["objectives","inScope","constraints","assumptions"] as const).map(key => {
+            const items = extracted[key];
+            if (!items?.length) return null;
+            const labels: Record<string, string> = { objectives: "Objectives", inScope: "In Scope", constraints: "Constraints", assumptions: "Assumptions" };
+            return (
+              <div key={key} style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>{labels[key]}</div>
+                {items.map((o: string, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {o}</div>)}
+              </div>
+            );
+          })}
           {extracted.stakeholders?.length > 0 && (
-            <div style={{ marginBottom: 10 }}>
+            <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>Stakeholders</div>
               {extracted.stakeholders.map((s: any, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {s.name} — {s.role}</div>)}
-            </div>
-          )}
-          {extracted.constraints?.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase" as const, letterSpacing: 0.5, marginBottom: 4 }}>Constraints</div>
-              {extracted.constraints.map((c: string, i: number) => <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 2 }}>• {c}</div>)}
             </div>
           )}
         </div>
       )}
 
-      {docs.length === 0 && !extracted && (
-        <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "24px 20px", textAlign: "center" as const }}>
+      {/* Document list */}
+      {docs.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+          {docs.map((doc: any) => {
+            const ext = doc.fileName?.split(".").pop()?.toUpperCase() || "DOC";
+            const cls = CLASS_LABELS[doc.docClass] ?? "Other";
+            return (
+              <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                <div style={{ width: 32, height: 32, borderRadius: 7, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.fileName}</div>
+                  <div style={{ fontSize: 11, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: C.primary, background: "#eef0fc", borderRadius: 5, padding: "2px 8px" }}>{cls}</span>
+                  {doc.chunkCount > 0 && (
+                    <span style={{ fontSize: 11, color: C.text3 }}>{doc.chunkCount} chunks</span>
+                  )}
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "#158a5a", background: "#e3f3ea", borderRadius: 5, padding: "2px 8px" }}>
+                    {doc.ingestionState === "ready" ? "Ready" : doc.ingestionState}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "28px 20px", textAlign: "center" as const }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>✦</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.primary, marginBottom: 6 }}>No requirements documents uploaded</div>
-          <div style={{ fontSize: 13, color: C.text2 }}>Upload a BRD, SOW, or requirements document to let the AI extract scope, stakeholders, and constraints automatically.</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.primary, marginBottom: 6 }}>No source documents uploaded</div>
+          <div style={{ fontSize: 13, color: C.text2 }}>Upload a SOW, BRD, or estimation sheet to ground artifact generation in your project's actual content.</div>
         </div>
       )}
     </div>

@@ -234,6 +234,10 @@ model Project {
   updatedAt             DateTime  @updatedAt
   deletedAt             DateTime?
 
+  // Grounding Phase 1
+  evidenceReadinessScore Float?
+  evidenceReadinessBand  String?
+
   bu                 BusinessUnit?          @relation(fields: [buId], references: [id])
   client             Client?                @relation(fields: [clientId], references: [id])
   program            Program?               @relation(fields: [programId], references: [id])
@@ -273,11 +277,39 @@ model RequirementsDocument {
   createdAt            DateTime  @default(now())
   deletedAt            DateTime?
 
+  // Grounding Phase 1 additions
+  docClass            String    @default("other")
+  effectiveDate       DateTime?
+  confidentialityTier String    @default("standard")
+  ingestionState      String    @default("ready")
+  chunkCount          Int       @default(0)
+
   project      Project                @relation(fields: [projectId], references: [id])
   uploadedBy   User                   @relation(fields: [uploadedById], references: [id])
   supersedes   RequirementsDocument?  @relation("Versions", fields: [supersedesId], references: [id])
   supersededBy RequirementsDocument[] @relation("Versions")
   artifacts    Artifact[]
+  chunks       DocumentChunk[]
+}
+
+model DocumentChunk {
+  id           String   @id @default(cuid())
+  documentId   String
+  projectId    String
+  chunkIndex   Int
+  pageNumber   Int?
+  charStart    Int?
+  charEnd      Int?
+  sectionTitle String?
+  text         String
+  tokenCount   Int?
+  createdAt    DateTime @default(now())
+
+  document RequirementsDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([projectId])
+  @@index([documentId])
 }
 
 model ArtifactSelection {
