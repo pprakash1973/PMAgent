@@ -257,6 +257,8 @@ model Project {
   resources          ProjectResource[]
   pmAssignments      ProjectPmAssignment[]
   escalations        Escalation[]
+  requirements       Requirement[]
+  gaps               Gap[]
 
   @@unique([orgId, code])
 }
@@ -305,11 +307,60 @@ model DocumentChunk {
   tokenCount   Int?
   createdAt    DateTime @default(now())
 
-  document RequirementsDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document     RequirementsDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  requirements Requirement[]
 
   @@unique([documentId, chunkIndex])
   @@index([projectId])
   @@index([documentId])
+}
+
+model Requirement {
+  id                String    @id @default(cuid())
+  projectId         String
+  requirementKey    String
+  statement         String
+  type              String    @default("functional")
+  category          String?
+  source            String    @default("extracted")
+  status            String    @default("proposed")
+  confidence        Float?
+  sourceChunkId     String?
+  sourceQuote       String?
+  confirmedById     String?
+  confirmedAt       DateTime?
+  amendedStatement  String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sourceChunk DocumentChunk? @relation(fields: [sourceChunkId], references: [id])
+
+  @@unique([projectId, requirementKey])
+  @@index([projectId])
+  @@index([status])
+}
+
+model Gap {
+  id           String    @id @default(cuid())
+  projectId    String
+  artifactId   String?
+  artifactType String?
+  fieldId      String
+  question     String
+  material     Boolean   @default(true)
+  status       String    @default("open")
+  answer       String?
+  answeredBy   String?
+  answeredAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  artifact Artifact? @relation(fields: [artifactId], references: [id])
+
+  @@index([projectId])
+  @@index([artifactId])
+  @@index([status])
 }
 
 model ArtifactSelection {
@@ -340,9 +391,14 @@ model Artifact {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // Grounding Phase 2
+  gapCount       Int      @default(0)
+  groundingScore Float?
+
   project   Project               @relation(fields: [projectId], references: [id])
   sourceReq RequirementsDocument? @relation(fields: [sourceReqId], references: [id])
   versions  ArtifactVersion[]
+  gaps      Gap[]
 }
 
 model ArtifactVersion {

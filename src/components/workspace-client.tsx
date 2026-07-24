@@ -1433,6 +1433,12 @@ function ReadinessBadge({ band, score }: { band: string; score: number }) {
   );
 }
 
+const REQ_STATUS_CFG: Record<string, { color: string; bg: string; label: string }> = {
+  proposed:  { color: "#c17d12", bg: "#fbf0da", label: "Proposed" },
+  confirmed: { color: "#158a5a", bg: "#e3f3ea", label: "Confirmed" },
+  rejected:  { color: "#cf3f3a", bg: "#fbe4e2", label: "Rejected" },
+};
+
 function RequirementsTab({ project }: { project: any }) {
   const router = useRouter();
   const [docs, setDocs] = React.useState<any[]>(project.requirementsDocs || []);
@@ -1443,12 +1449,60 @@ function RequirementsTab({ project }: { project: any }) {
   const [readiness, setReadiness] = React.useState<{ score: number; band: string; missingMandatory: string[] } | null>(null);
   const [showUploadForm, setShowUploadForm] = React.useState(false);
 
+  // Requirements state
+  const [reqs, setReqs] = React.useState<any[]>([]);
+  const [extracting, setExtracting] = React.useState(false);
+  const [extractError, setExtractError] = React.useState<string | null>(null);
+  const [activeView, setActiveView] = React.useState<"docs" | "reqs">("docs");
+  const [amendingId, setAmendingId] = React.useState<string | null>(null);
+  const [amendText, setAmendText] = React.useState("");
+
   React.useEffect(() => {
     fetch(`/api/projects/${project.id}/evidence-readiness`)
       .then(r => r.json())
       .then(d => setReadiness(d))
       .catch(() => null);
+    // Load existing requirements
+    fetch(`/api/projects/${project.id}/requirements/list`)
+      .then(r => r.json())
+      .then(d => Array.isArray(d) && setReqs(d))
+      .catch(() => null);
   }, [project.id, docs.length]);
+
+  async function handleExtract() {
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Extraction failed");
+      // Reload requirements
+      const listRes = await fetch(`/api/projects/${project.id}/requirements/list`);
+      const list = await listRes.json();
+      if (Array.isArray(list)) setReqs(list);
+      setActiveView("reqs");
+    } catch (err: any) {
+      setExtractError(err.message);
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function handleReqAction(reqId: string, action: "confirm" | "reject" | "amend") {
+    const body: Record<string, string> = { requirementId: reqId, action };
+    if (action === "amend") body.amendedStatement = amendText;
+    const res = await fetch(`/api/projects/${project.id}/requirements/list`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setReqs(prev => prev.map(r => r.id === reqId ? { ...r, ...updated } : r));
+      setAmendingId(null);
+      setAmendText("");
+    }
+  }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1475,6 +1529,9 @@ function RequirementsTab({ project }: { project: any }) {
     }
   }
 
+  const confirmedCount = reqs.filter(r => r.status === "confirmed").length;
+  const proposedCount  = reqs.filter(r => r.status === "proposed").length;
+
   return (
     <div>
       {/* Evidence readiness strip */}
@@ -1484,10 +1541,23 @@ function RequirementsTab({ project }: { project: any }) {
           <div style={{ fontSize: 12, color: "#c17d12", background: "#fbf0da", borderRadius: 8, padding: "6px 12px" }}>
             Missing for adequate coverage: <strong>{readiness.missingMandatory.join(", ")}</strong>
           </div>
-        ) : readiness ? (
+        ) : readiness?.score ? (
           <div style={{ fontSize: 12, color: "#158a5a" }}>All mandatory document classes present</div>
         ) : null}
-        <div style={{ marginLeft: "auto" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          {docs.length > 0 && (
+            <button
+              onClick={handleExtract}
+              disabled={extracting}
+              style={{ display: "flex", alignItems: "center", gap: 7, background: extracting ? C.surface2 : "#0f766e", color: extracting ? C.text3 : "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: extracting ? "not-allowed" : "pointer", opacity: extracting ? 0.7 : 1 }}
+            >
+              {extracting ? (
+                <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke={C.text3} strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>Extracting…</>
+              ) : (
+                <><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"/></svg>Extract Requirements</>
+              )}
+            </button>
+          )}
           <button
             onClick={() => setShowUploadForm(v => !v)}
             style={{ display: "flex", alignItems: "center", gap: 7, background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
@@ -1497,6 +1567,7 @@ function RequirementsTab({ project }: { project: any }) {
           </button>
         </div>
       </div>
+      {extractError && <div style={{ color: "#cf3f3a", fontSize: 12, marginBottom: 10 }}>{extractError}</div>}
 
       {/* Upload form */}
       {showUploadForm && (
@@ -1541,8 +1612,29 @@ function RequirementsTab({ project }: { project: any }) {
         </div>
       )}
 
-      {/* Extracted content panel */}
-      {extracted && (
+      {/* View toggle */}
+      {docs.length > 0 && (
+        <div style={{ display: "flex", gap: 4, background: C.surface2, borderRadius: 10, padding: 4, marginBottom: 16, alignSelf: "flex-start" as const, width: "fit-content" }}>
+          {(["docs", "reqs"] as const).map(v => (
+            <button
+              key={v}
+              onClick={() => setActiveView(v)}
+              style={{
+                background: activeView === v ? C.surface : "transparent",
+                color: activeView === v ? C.text : C.text3,
+                border: "none", borderRadius: 7, padding: "6px 14px",
+                fontSize: 13, fontWeight: activeView === v ? 600 : 400, cursor: "pointer",
+                boxShadow: activeView === v ? `0 1px 3px ${C.border}` : "none",
+              }}
+            >
+              {v === "docs" ? `Documents (${docs.length})` : `Requirements (${reqs.length})`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Extracted content panel — legacy, shown only in docs view */}
+      {activeView === "docs" && extracted && (
         <div style={{ background: "#f0faf5", border: "1px solid #01B27C", borderRadius: 12, padding: "16px 18px", marginBottom: 18 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#007a55", marginBottom: 10 }}>AI Extracted Content</div>
           {(["objectives","inScope","constraints","assumptions"] as const).map(key => {
@@ -1565,38 +1657,130 @@ function RequirementsTab({ project }: { project: any }) {
         </div>
       )}
 
-      {/* Document list */}
-      {docs.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
-          {docs.map((doc: any) => {
-            const ext = doc.fileName?.split(".").pop()?.toUpperCase() || "DOC";
-            const cls = CLASS_LABELS[doc.docClass] ?? "Other";
-            return (
-              <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
-                <div style={{ width: 32, height: 32, borderRadius: 7, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.fileName}</div>
-                  <div style={{ fontSize: 11, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
+      {/* ── DOCS VIEW ── */}
+      {activeView === "docs" && (
+        docs.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+            {docs.map((doc: any) => {
+              const ext = doc.fileName?.split(".").pop()?.toUpperCase() || "DOC";
+              const cls = CLASS_LABELS[doc.docClass] ?? "Other";
+              return (
+                <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 7, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.fileName}</div>
+                    <div style={{ fontSize: 11, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: C.primary, background: "#eef0fc", borderRadius: 5, padding: "2px 8px" }}>{cls}</span>
+                    {doc.chunkCount > 0 && (
+                      <span style={{ fontSize: 11, color: C.text3 }}>{doc.chunkCount} chunks</span>
+                    )}
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "#158a5a", background: "#e3f3ea", borderRadius: 5, padding: "2px 8px" }}>
+                      {doc.ingestionState === "ready" ? "Ready" : doc.ingestionState}
+                    </span>
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: C.primary, background: "#eef0fc", borderRadius: 5, padding: "2px 8px" }}>{cls}</span>
-                  {doc.chunkCount > 0 && (
-                    <span style={{ fontSize: 11, color: C.text3 }}>{doc.chunkCount} chunks</span>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "28px 20px", textAlign: "center" as const }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>✦</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.primary, marginBottom: 6 }}>No source documents uploaded</div>
+            <div style={{ fontSize: 13, color: C.text2 }}>Upload a SOW, BRD, or estimation sheet to ground artifact generation in your project&apos;s actual content.</div>
+          </div>
+        )
+      )}
+
+      {/* ── REQUIREMENTS VIEW ── */}
+      {activeView === "reqs" && (
+        reqs.length === 0 ? (
+          <div style={{ background: "linear-gradient(160deg,#f0faf5,#e3f3ea)", border: "1px solid #01B27C", borderRadius: 14, padding: "28px 20px", textAlign: "center" as const }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>⬡</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#007a55", marginBottom: 6 }}>No requirements extracted yet</div>
+            <div style={{ fontSize: 13, color: C.text2 }}>Click &ldquo;Extract Requirements&rdquo; above to have AI identify and structure requirements from your uploaded documents.</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
+            {/* Summary strip */}
+            <div style={{ display: "flex", gap: 16, fontSize: 12, color: C.text3, marginBottom: 4 }}>
+              <span><strong style={{ color: C.text }}>{reqs.length}</strong> total</span>
+              <span><strong style={{ color: "#158a5a" }}>{confirmedCount}</strong> confirmed</span>
+              <span><strong style={{ color: "#c17d12" }}>{proposedCount}</strong> proposed</span>
+              <span><strong style={{ color: "#cf3f3a" }}>{reqs.filter(r => r.status === "rejected").length}</strong> rejected</span>
+            </div>
+
+            {reqs.map((req: any) => {
+              const cfg = REQ_STATUS_CFG[req.status as keyof typeof REQ_STATUS_CFG] ?? REQ_STATUS_CFG.proposed;
+              const isAmending = amendingId === req.id;
+              return (
+                <div key={req.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px" }}>
+                  {/* Header row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" as const }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: C.text3, fontFamily: "monospace", background: C.surface2, borderRadius: 5, padding: "2px 6px" }}>{req.requirementKey}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: C.primary, background: "#eef0fc", borderRadius: 5, padding: "2px 7px" }}>{req.type}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: cfg.color, background: cfg.bg, borderRadius: 5, padding: "2px 7px" }}>{cfg.label}</span>
+                    {req.category && <span style={{ fontSize: 11, color: C.text3 }}>{req.category}</span>}
+                    {req.confidence && <span style={{ fontSize: 11, color: C.text3 }}>{Math.round(req.confidence * 100)}% conf.</span>}
+                  </div>
+
+                  {/* Statement */}
+                  <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5, marginBottom: req.amendedStatement ? 6 : 0 }}>
+                    {req.amendedStatement ? (
+                      <>
+                        <span style={{ textDecoration: "line-through", color: C.text3 }}>{req.statement}</span>
+                        <span style={{ marginLeft: 8, color: "#158a5a" }}>{req.amendedStatement}</span>
+                      </>
+                    ) : req.statement}
+                  </div>
+
+                  {/* Source quote (collapsible) */}
+                  {req.sourceQuote && (
+                    <details style={{ marginTop: 6 }}>
+                      <summary style={{ fontSize: 11, color: C.text3, cursor: "pointer" }}>Source quote</summary>
+                      <div style={{ fontSize: 11, color: C.text2, background: C.surface2, borderRadius: 6, padding: "6px 10px", marginTop: 4, fontStyle: "italic" }}>
+                        &ldquo;{req.sourceQuote}&rdquo;
+                        {req.sourceChunk?.sectionTitle && <span style={{ marginLeft: 6, color: C.text3 }}>— {req.sourceChunk.sectionTitle}</span>}
+                      </div>
+                    </details>
                   )}
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#158a5a", background: "#e3f3ea", borderRadius: 5, padding: "2px 8px" }}>
-                    {doc.ingestionState === "ready" ? "Ready" : doc.ingestionState}
-                  </span>
+
+                  {/* Amend form */}
+                  {isAmending && (
+                    <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <textarea
+                        value={amendText}
+                        onChange={e => setAmendText(e.target.value)}
+                        placeholder="Enter amended statement…"
+                        rows={2}
+                        style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 10px", fontSize: 12, resize: "vertical" as const, background: C.surface }}
+                      />
+                      <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                        <button onClick={() => handleReqAction(req.id, "amend")} style={{ fontSize: 12, fontWeight: 600, background: "#158a5a", color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>Save</button>
+                        <button onClick={() => { setAmendingId(null); setAmendText(""); }} style={{ fontSize: 12, background: C.surface2, color: C.text3, border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer" }}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  {!isAmending && req.status !== "confirmed" && req.status !== "rejected" && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                      <button onClick={() => handleReqAction(req.id, "confirm")} style={{ fontSize: 11, fontWeight: 600, background: "#e3f3ea", color: "#158a5a", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Confirm</button>
+                      <button onClick={() => { setAmendingId(req.id); setAmendText(req.statement); }} style={{ fontSize: 11, fontWeight: 600, background: "#eef0fc", color: C.primary, border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Amend</button>
+                      <button onClick={() => handleReqAction(req.id, "reject")} style={{ fontSize: 11, fontWeight: 600, background: "#fde8e8", color: "#cf3f3a", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Reject</button>
+                    </div>
+                  )}
+                  {!isAmending && (req.status === "confirmed" || req.status === "rejected") && (
+                    <div style={{ marginTop: 8 }}>
+                      <button onClick={() => handleReqAction(req.id, "confirm")} style={{ fontSize: 11, color: C.text3, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 9px", cursor: "pointer" }}>Reset to Proposed</button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "28px 20px", textAlign: "center" as const }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>✦</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.primary, marginBottom: 6 }}>No source documents uploaded</div>
-          <div style={{ fontSize: 13, color: C.text2 }}>Upload a SOW, BRD, or estimation sheet to ground artifact generation in your project's actual content.</div>
-        </div>
+              );
+            })}
+          </div>
+        )
       )}
     </div>
   );

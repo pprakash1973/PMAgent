@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GUARDRAIL_SYSTEM_ADDENDUM } from "@/lib/guardrails";
 import { resolveModel } from "@/lib/model-router";
+import { formatEvidenceForPrompt, type EvidenceContext } from "@/lib/evidence-assembler";
 
 export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -87,9 +88,10 @@ const ARTIFACT_MAX_TOKENS = 32000;
 export async function generateArtifact(
   artifactType: string,
   projectContext: Record<string, unknown>,
-  requirements?: string
+  requirements?: string,
+  evidenceContext?: EvidenceContext
 ): Promise<Record<string, unknown>> {
-  const prompt = buildArtifactPrompt(artifactType, projectContext, requirements);
+  const prompt = buildArtifactPrompt(artifactType, projectContext, requirements, evidenceContext);
   const { model } = await resolveModel("artifact");
 
   const stream = anthropic.messages.stream({
@@ -349,7 +351,8 @@ Use markdown formatting (bold, bullet lists) sparingly for readability in a chat
 function buildArtifactPrompt(
   artifactType: string,
   projectContext: Record<string, unknown>,
-  requirements?: string
+  requirements?: string,
+  evidenceContext?: EvidenceContext
 ): string {
   const templates: Record<string, string> = {
 
@@ -1073,11 +1076,15 @@ Return JSON with:
   const schema = templates[artifactType]
     ?? `Generate a ${artifactType.replace(/_/g, " ")} artifact aligned to PMBOK best practices. Return structured JSON.`;
 
+  const evidenceBlock = evidenceContext?.hasEvidence
+    ? formatEvidenceForPrompt(evidenceContext)
+    : "";
+
   return `Project Context:
 ${JSON.stringify(projectContext, null, 2)}
 
-${requirements ? `Requirements / Source Document Content:\n${requirements}\n\n` : ""}
-
+${evidenceBlock}
+${requirements && !evidenceContext?.hasEvidence ? `Requirements / Source Document Content:\n${requirements}\n\n` : ""}
 Task: ${schema}
 
 Return the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`;
