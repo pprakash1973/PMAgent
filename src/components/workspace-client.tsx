@@ -2133,7 +2133,7 @@ function CostTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const TABS = ["Artifacts", "RAID", "Schedule", "Resources", "Cost", "Requirements", "Weekly Status"];
+const TABS = ["Artifacts", "RAID", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting"];
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const [tab, setTab] = useState("Artifacts");
@@ -2187,11 +2187,11 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       {/* Tab content */}
       {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} />}
       {tab === "RAID" && <RAIDTab project={project} />}
-      {tab === "Schedule" && <ScheduleTab project={project} />}
       {tab === "Resources" && <ResourcesTab project={project} />}
+      {tab === "Schedule" && <ScheduleTab project={project} />}
       {tab === "Cost" && <CostTab project={project} />}
-      {tab === "Requirements" && <RequirementsTab project={project} />}
-      {tab === "Weekly Status" && <StatusTab project={project} />}
+      {tab === "Scope Control" && <RequirementsTab project={project} />}
+      {tab === "Status Reporting" && <StatusTab project={project} />}
     </div>
   );
 }
