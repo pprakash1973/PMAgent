@@ -949,9 +949,9 @@ function ScheduleTab({ project }: { project: any }) {
               { label: "PV", value: kpi?.pv != null ? `${kpi.pv.toFixed(1)}d` : "—", sub: "Planned Value (days)", color: C.text2, bg: C.surface2 },
             ].map(k => (
               <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 12, padding: "13px 15px" }}>
-                <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 22, fontWeight: 700, color: k.color }}>{k.value}</div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: k.color, marginTop: 2 }}>{k.label}</div>
-                <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{k.sub}</div>
+                <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 24, fontWeight: 700, color: k.color }}>{k.value}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: k.color, marginTop: 2 }}>{k.label}</div>
+                <div style={{ fontSize: 13, color: C.text3, marginTop: 2 }}>{k.sub}</div>
               </div>
             ))}
           </div>
@@ -966,17 +966,17 @@ function ScheduleTab({ project }: { project: any }) {
               {/* Grid header */}
               <div style={{ width: GRID_W, flexShrink: 0, display: "flex", alignItems: "center" }}>
                 <div style={{ width: 28 }} />
-                <div style={{ flex: 1, padding: "7px 8px", font: `600 10px 'IBM Plex Sans'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>Task</div>
-                <div style={{ width: 60, textAlign: "center" as const, font: `600 10px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>Days</div>
-                <div style={{ width: 52, textAlign: "center" as const, font: `600 10px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
-                <div style={{ width: 90, font: `600 10px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const, padding: "7px 6px" }}>Start</div>
+                <div style={{ flex: 1, padding: "7px 8px", font: `600 12px 'IBM Plex Sans'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>Task</div>
+                <div style={{ width: 60, textAlign: "center" as const, font: `600 12px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>Days</div>
+                <div style={{ width: 52, textAlign: "center" as const, font: `600 12px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
+                <div style={{ width: 90, font: `600 12px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const, padding: "7px 6px" }}>Start</div>
               </div>
               {/* Gantt header — 2 rows: month groups + week ticks */}
               <div style={{ flex: 1, borderLeft: `1px solid ${C.border}`, overflow: "hidden" }}>
                 {/* Month row */}
                 <div style={{ display: "flex", borderBottom: `1px solid ${C.borderLight}` }}>
                   {monthGroups.map((mg, i) => (
-                    <div key={i} style={{ flex: mg.count, borderLeft: i > 0 ? `1px solid ${C.borderLight}` : "none", padding: "3px 6px", font: `600 9.5px 'IBM Plex Sans'`, color: C.text2, whiteSpace: "nowrap" as const, overflow: "hidden" }}>
+                    <div key={i} style={{ flex: mg.count, borderLeft: i > 0 ? `1px solid ${C.borderLight}` : "none", padding: "3px 6px", font: `600 11.5px 'IBM Plex Sans'`, color: C.text2, whiteSpace: "nowrap" as const, overflow: "hidden" }}>
                       {mg.label}
                     </div>
                   ))}
@@ -984,7 +984,7 @@ function ScheduleTab({ project }: { project: any }) {
                 {/* Week row */}
                 <div style={{ display: "flex" }}>
                   {weeks.map((w, i) => (
-                    <div key={i} style={{ flex: 1, borderLeft: `1px solid ${C.borderLight}`, padding: "2px 0", font: `400 8.5px 'IBM Plex Mono'`, color: C.text3, textAlign: "center" as const, overflow: "hidden", whiteSpace: "nowrap" as const }}>
+                    <div key={i} style={{ flex: 1, borderLeft: `1px solid ${C.borderLight}`, padding: "2px 0", font: `400 10.5px 'IBM Plex Mono'`, color: C.text3, textAlign: "center" as const, overflow: "hidden", whiteSpace: "nowrap" as const }}>
                       {weeks.length <= 26 ? w.getDate() : i % 2 === 0 ? w.getDate() : ""}
                     </div>
                   ))}
@@ -1000,7 +1000,7 @@ function ScheduleTab({ project }: { project: any }) {
                   <div key={phase}>
                     {/* Phase header */}
                     <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "5px 8px 5px 28px" }}>
-                      <div style={{ font: `700 10px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".04em", textTransform: "uppercase" as const, flex: 1 }}>{phase}</div>
+                      <div style={{ font: `700 12px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".04em", textTransform: "uppercase" as const, flex: 1 }}>{phase}</div>
                     </div>
                     {tasks.filter(t => t.phase === phase).map(t => {
                       const isEditName = editCell?.taskId === t.id && editCell?.field === "name";
@@ -1037,11 +1037,11 @@ function ScheduleTab({ project }: { project: any }) {
                                 onChange={e => setEditVal(e.target.value)}
                                 onBlur={commitEdit}
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-                                style={{ width: "100%", fontSize: 12.5, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "'IBM Plex Sans',sans-serif" }}
+                                style={{ width: "100%", fontSize: 14.5, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "'IBM Plex Sans',sans-serif" }}
                               />
                             ) : (
                               <div onClick={() => { setEditCell({ taskId: t.id, field: "name" }); setEditVal(t.name); }}
-                                style={{ fontSize: 12.5, fontWeight: 500, color: isCrit ? C.red : C.text, cursor: "text", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}
+                                style={{ fontSize: 14.5, fontWeight: 500, color: isCrit ? C.red : C.text, cursor: "text", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}
                                 title={t.name}>
                                 {isCrit && <span style={{ marginRight: 4, fontSize: 10 }}>🔴</span>}
                                 {t.name}
@@ -1052,13 +1052,13 @@ function ScheduleTab({ project }: { project: any }) {
                               <select autoFocus defaultValue={t.resource?.id ?? ""}
                                 onBlur={e => saveAssignee(t.id, e.target.value || null)}
                                 onChange={e => saveAssignee(t.id, e.target.value || null)}
-                                style={{ fontSize: 10, height: 19, border: `1px solid ${C.primary}`, borderRadius: 4, marginTop: 2, width: "100%", background: C.surface }}>
+                                style={{ fontSize: 12, height: 21, border: `1px solid ${C.primary}`, borderRadius: 4, marginTop: 2, width: "100%", background: C.surface }}>
                                 <option value="">— Unassigned —</option>
                                 {resources.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                               </select>
                             ) : (
                               <div onClick={() => resources.length > 0 && setAssignEditId(t.id)} title="Click to assign resource"
-                                style={{ marginTop: 2, fontSize: 10, color: t.resource ? C.primary : C.text3, cursor: resources.length > 0 ? "pointer" : "default", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                style={{ marginTop: 2, fontSize: 12, color: t.resource ? C.primary : C.text3, cursor: resources.length > 0 ? "pointer" : "default", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {t.resource ? `👤 ${t.resource.name}` : resources.length > 0 ? "+ Assign" : ""}
                               </div>
                             )}
@@ -1072,9 +1072,9 @@ function ScheduleTab({ project }: { project: any }) {
                                 onChange={e => setEditVal(e.target.value)}
                                 onBlur={commitEdit}
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-                                style={{ width: 44, height: 22, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                                style={{ width: 44, height: 22, textAlign: "center", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                             ) : (
-                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, color: C.text2 }}>{t.baselineDays}d</span>
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13.5, color: C.text2 }}>{t.baselineDays}d</span>
                             )}
                           </div>
 
@@ -1086,9 +1086,9 @@ function ScheduleTab({ project }: { project: any }) {
                                 onChange={e => setEditVal(e.target.value)}
                                 onBlur={commitEdit}
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-                                style={{ width: 42, height: 22, textAlign: "center", fontSize: 11, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                                style={{ width: 42, height: 22, textAlign: "center", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                             ) : (
-                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, fontWeight: 600, color: pctColor }}>
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13.5, fontWeight: 600, color: pctColor }}>
                                 {savingId === t.id ? "…" : `${t.percentComplete}%`}
                               </span>
                             )}
@@ -1102,9 +1102,9 @@ function ScheduleTab({ project }: { project: any }) {
                                 onChange={e => setEditVal(e.target.value)}
                                 onBlur={commitEdit}
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-                                style={{ width: 82, fontSize: 10, border: `1px solid ${C.primary}`, borderRadius: 4, padding: "1px 3px" }} />
+                                style={{ width: 82, fontSize: 12, border: `1px solid ${C.primary}`, borderRadius: 4, padding: "1px 3px" }} />
                             ) : (
-                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, color: C.text3 }}>{fmt(t.baselineStart)}</span>
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12.5, color: C.text3 }}>{fmt(t.baselineStart)}</span>
                             )}
                           </div>
                         </div>
@@ -1113,7 +1113,7 @@ function ScheduleTab({ project }: { project: any }) {
                     {/* + Add task row */}
                     <div
                       onClick={() => addTask(phase)}
-                      style={{ display: "flex", alignItems: "center", height: 32, borderTop: `1px solid ${C.borderLight}`, padding: "0 8px 0 28px", cursor: "pointer", color: C.text3, fontSize: 11.5 }}
+                      style={{ display: "flex", alignItems: "center", height: 32, borderTop: `1px solid ${C.borderLight}`, padding: "0 8px 0 28px", cursor: "pointer", color: C.text3, fontSize: 13.5 }}
                       onMouseEnter={e => (e.currentTarget.style.background = C.surface2)}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                     >
@@ -1174,7 +1174,7 @@ function ScheduleTab({ project }: { project: any }) {
                                 <div style={{
                                   position: "absolute", top: 0, left: 4, right: 10, bottom: 0,
                                   display: "flex", alignItems: "center",
-                                  font: `500 9.5px 'IBM Plex Sans'`,
+                                  font: `500 11.5px 'IBM Plex Sans'`,
                                   color: t.percentComplete > 40 ? "#fff" : C.text3,
                                   whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis",
                                   pointerEvents: "none",
@@ -1211,28 +1211,28 @@ function ScheduleTab({ project }: { project: any }) {
               ].map(l => (
                 <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                   <div style={{ width: 18, height: 8, borderRadius: 3, background: l.color }} />
-                  <span style={{ fontSize: 10.5, color: C.text3 }}>{l.label}</span>
+                  <span style={{ fontSize: 12.5, color: C.text3 }}>{l.label}</span>
                 </div>
               ))}
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{ width: 10, height: 10, background: "#f59e0b", border: "2px solid #b45309", transform: "rotate(45deg)" }} />
-                <span style={{ fontSize: 10.5, color: C.text3, marginLeft: 2 }}>Milestone</span>
+                <span style={{ fontSize: 12.5, color: C.text3, marginLeft: 2 }}>Milestone</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{ width: 1.5, height: 14, background: C.red, opacity: 0.5 }} />
-                <span style={{ fontSize: 10.5, color: C.text3 }}>Today</span>
+                <span style={{ fontSize: 12.5, color: C.text3 }}>Today</span>
               </div>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 10.5, color: C.text3 }}>Click cells to edit · drag right edge of bar to resize</span>
+              <span style={{ fontSize: 12.5, color: C.text3 }}>Click cells to edit · drag right edge of bar to resize</span>
             </div>
           </div>
 
           {/* ── AI Command Bar ── */}
           <div style={{ marginTop: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
             <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: C.primary }}>✦ AI Schedule Command</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.primary }}>✦ AI Schedule Command</div>
               <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 11, color: C.text3 }}>Describe a change in plain language</span>
+              <span style={{ fontSize: 13, color: C.text3 }}>Describe a change in plain language</span>
             </div>
             <div style={{ padding: "10px 14px", display: "flex", gap: 8 }}>
               <input
@@ -1240,41 +1240,41 @@ function ScheduleTab({ project }: { project: any }) {
                 onChange={e => setAiCmd(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") runAiCommand(); }}
                 placeholder='e.g. "Shift Phase 2 by 2 weeks" or "Mark all design tasks complete"'
-                style={{ flex: 1, height: 36, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0 12px", fontSize: 13, fontFamily: "'IBM Plex Sans',sans-serif", outline: "none" }}
+                style={{ flex: 1, height: 36, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0 12px", fontSize: 15, fontFamily: "'IBM Plex Sans',sans-serif", outline: "none" }}
               />
               <button onClick={runAiCommand} disabled={aiLoading || !aiCmd.trim()}
-                style={{ height: 36, padding: "0 18px", background: aiLoading ? C.surface2 : C.primary, color: aiLoading ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `600 13px 'IBM Plex Sans'`, cursor: aiLoading || !aiCmd.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                style={{ height: 36, padding: "0 18px", background: aiLoading ? C.surface2 : C.primary, color: aiLoading ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `600 15px 'IBM Plex Sans'`, cursor: aiLoading || !aiCmd.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                 {aiLoading ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Running…</> : "Run AI"}
               </button>
             </div>
 
-            {aiError && <div style={{ margin: "0 14px 10px", padding: "8px 12px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 8, fontSize: 12, color: C.red }}>{aiError}</div>}
+            {aiError && <div style={{ margin: "0 14px 10px", padding: "8px 12px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 8, fontSize: 14, color: C.red }}>{aiError}</div>}
 
             {/* Diff card */}
             {aiDiff && (
               <div style={{ margin: "0 14px 14px", background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
                 <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text, flex: 1 }}>{aiDiff.summary}</div>
+                  <div style={{ fontSize: 14.5, fontWeight: 600, color: C.text, flex: 1 }}>{aiDiff.summary}</div>
                   <button onClick={applyAiDiff} disabled={applyingDiff}
-                    style={{ height: 30, padding: "0 14px", background: C.green, color: "#fff", border: "none", borderRadius: 7, font: `600 12px 'IBM Plex Sans'`, cursor: applyingDiff ? "not-allowed" : "pointer" }}>
+                    style={{ height: 30, padding: "0 14px", background: C.green, color: "#fff", border: "none", borderRadius: 7, font: `600 14px 'IBM Plex Sans'`, cursor: applyingDiff ? "not-allowed" : "pointer" }}>
                     {applyingDiff ? "Applying…" : "✓ Apply"}
                   </button>
                   <button onClick={() => setAiDiff(null)}
-                    style={{ height: 30, padding: "0 14px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, font: `600 12px 'IBM Plex Sans'`, cursor: "pointer" }}>
+                    style={{ height: 30, padding: "0 14px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, font: `600 14px 'IBM Plex Sans'`, cursor: "pointer" }}>
                     Discard
                   </button>
                 </div>
                 {aiDiff.patches.length === 0 ? (
-                  <div style={{ padding: "10px 14px", fontSize: 12, color: C.text3 }}>No changes to apply.</div>
+                  <div style={{ padding: "10px 14px", fontSize: 14, color: C.text3 }}>No changes to apply.</div>
                 ) : (
                   <div style={{ padding: "6px 0" }}>
                     {aiDiff.patches.map((p, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 14px", borderTop: i > 0 ? `1px solid ${C.borderLight}` : "none" }}>
-                        <span style={{ fontSize: 11.5, fontWeight: 500, color: C.text, minWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.taskName}</span>
-                        <span style={{ fontSize: 11, color: C.text3, minWidth: 80 }}>{p.field}</span>
-                        <span style={{ fontSize: 11, fontFamily: "'IBM Plex Mono',monospace", color: C.red, textDecoration: "line-through" }}>{p.oldValue}</span>
-                        <span style={{ fontSize: 11, color: C.text3 }}>→</span>
-                        <span style={{ fontSize: 11, fontFamily: "'IBM Plex Mono',monospace", color: C.green }}>{p.newValue}</span>
+                        <span style={{ fontSize: 13.5, fontWeight: 500, color: C.text, minWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.taskName}</span>
+                        <span style={{ fontSize: 13, color: C.text3, minWidth: 80 }}>{p.field}</span>
+                        <span style={{ fontSize: 13, fontFamily: "'IBM Plex Mono',monospace", color: C.red, textDecoration: "line-through" }}>{p.oldValue}</span>
+                        <span style={{ fontSize: 13, color: C.text3 }}>→</span>
+                        <span style={{ fontSize: 13, fontFamily: "'IBM Plex Mono',monospace", color: C.green }}>{p.newValue}</span>
                       </div>
                     ))}
                   </div>
