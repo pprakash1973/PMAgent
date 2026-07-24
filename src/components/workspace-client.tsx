@@ -1182,7 +1182,7 @@ function ScheduleTab({ project }: { project: any }) {
                                   {t.name}
                                 </div>
                               )}
-                              {/* End date label — always visible to the right of the bar */}
+                              {/* End date label — actual finish when complete, planned otherwise */}
                               <div style={{
                                 position: "absolute", top: "50%", transform: "translateY(-50%)",
                                 left: "calc(100% + 4px)",
@@ -1191,7 +1191,7 @@ function ScheduleTab({ project }: { project: any }) {
                                 whiteSpace: "nowrap" as const,
                                 pointerEvents: "none",
                               }}>
-                                {fmt(t.baselineFinish)}
+                                {t.percentComplete === 100 ? fmt(t.actualFinish ?? t.baselineFinish) : fmt(t.baselineFinish)}
                               </div>
                               {/* Drag-resize handle */}
                               <div
