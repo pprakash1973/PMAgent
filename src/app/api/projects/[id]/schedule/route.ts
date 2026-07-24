@@ -12,18 +12,19 @@ function computeEVM(tasks: any[]) {
   for (const t of tasks) {
     const planned = t.baselineDays;
     const s = new Date(t.baselineStart).getTime();
-    // For PV: use actualFinish when task is complete, otherwise baselineFinish
-    const effectiveFinish = t.percentComplete === 100 && t.actualFinish
-      ? new Date(t.actualFinish).getTime()
-      : new Date(t.baselineFinish).getTime();
-    const dur = effectiveFinish - s;
+    // PV always uses baselineFinish (the original plan)
+    const f = new Date(t.baselineFinish).getTime();
+    const dur = f - s;
 
     let plannedPct: number;
     if (today <= s) plannedPct = 0;
-    else if (today >= effectiveFinish) plannedPct = 1;
+    else if (today >= f) plannedPct = 1;
     else plannedPct = dur > 0 ? (today - s) / dur : 0;
 
     totalPV += planned * plannedPct;
+    // EV uses percentComplete (actual earned value); for completed tasks
+    // this naturally reflects the actual finish since we only credit 100%
+    // once actualFinish is set.
     totalEV += planned * (t.percentComplete / 100);
   }
 
