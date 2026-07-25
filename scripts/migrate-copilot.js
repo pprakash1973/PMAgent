@@ -41,17 +41,27 @@ async function main() {
     `);
     console.log("✓ Copilot migration complete");
 
-    // Seed prakash@pmAgent.dev as PM — upsert so it works on re-runs
-    const bcrypt = require("bcryptjs");
-    const { randomBytes } = require("crypto");
-    const hash = await bcrypt.hash("Password123!", 10);
-    const id = randomBytes(12).toString("hex");
-    await pool.query(`
-      INSERT INTO "User" ("id","orgId","email","fullName","passwordHash","role","status","approved","mfaEnabled","createdAt","updatedAt")
-      VALUES ($1, 'seed-org-1', 'prakash@pmAgent.dev', 'Prakash PM', $2, 'pm', 'active', true, false, NOW(), NOW())
-      ON CONFLICT ("email") DO UPDATE SET "role"='pm', "status"='active', "passwordHash"=$2
-    `, [id, hash]);
-    console.log("✓ prakash@pmAgent.dev seeded/updated");
+    // Seed prakash@pmAgent.dev as PM
+    try {
+      const bcrypt = require("bcryptjs");
+      const { randomBytes } = require("crypto");
+      const hash = await bcrypt.hash("Password123!", 10);
+      const id = randomBytes(12).toString("hex");
+      // Check if user exists first
+      const exists = await pool.query(`SELECT id FROM "User" WHERE email='prakash@pmAgent.dev'`);
+      if (exists.rows.length > 0) {
+        await pool.query(`UPDATE "User" SET "role"='pm', "status"='active', "passwordHash"=$1 WHERE email='prakash@pmAgent.dev'`, [hash]);
+        console.log("✓ prakash@pmAgent.dev updated");
+      } else {
+        await pool.query(`
+          INSERT INTO "User" ("id","orgId","email","fullName","passwordHash","role","status","approved","mfaEnabled","createdAt","updatedAt")
+          VALUES ($1, 'seed-org-1', 'prakash@pmAgent.dev', 'Prakash PM', $2, 'pm', 'active', true, false, NOW(), NOW())
+        `, [id, hash]);
+        console.log("✓ prakash@pmAgent.dev inserted");
+      }
+    } catch (seedErr) {
+      console.error("Seed error (non-fatal):", seedErr.message);
+    }
   } catch (err) {
     console.error("Copilot migration error:", err.message);
     process.exit(1);
