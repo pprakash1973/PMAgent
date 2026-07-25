@@ -1485,24 +1485,6 @@ const DOC_CLASS_OPTIONS = [
 const EXT_COLORS: Record<string, string> = { PDF: "#b83b3b", DOCX: "#2b5cb8", DOC: "#2b5cb8", XLSX: "#1b7a46", XLS: "#1b7a46", TXT: "#5b616e", CSV: "#5b616e" };
 const CLASS_LABELS: Record<string, string> = { sow: "SOW", brd: "BRD", srs: "SRS", estimation: "Est.", proposal: "Proposal", contract: "Contract", cr: "CR", other: "Other" };
 
-function ReadinessBadge({ band, score }: { band: string; score: number }) {
-  const cfg: Record<string, { bg: string; color: string; label: string }> = {
-    strong:       { bg: "#e3f3ea", color: "#158a5a", label: "Strong" },
-    adequate:     { bg: "#eef0fc", color: "#4f5bd5", label: "Adequate" },
-    marginal:     { bg: "#fbf0da", color: "#c17d12", label: "Marginal" },
-    insufficient: { bg: "#fbe4e2", color: "#cf3f3a", label: "Insufficient" },
-  };
-  const s = cfg[band] ?? cfg.insufficient;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, background: s.bg, borderRadius: 10, padding: "8px 14px" }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color: s.color, lineHeight: 1 }}>{Math.round(score)}</div>
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: s.color }}>{s.label} evidence</div>
-        <div style={{ fontSize: 10, color: s.color, opacity: 0.7 }}>readiness score / 100</div>
-      </div>
-    </div>
-  );
-}
 
 const REQ_STATUS_CFG: Record<string, { color: string; bg: string; label: string }> = {
   proposed:  { color: "#c17d12", bg: "#fbf0da", label: "Proposed" },
@@ -1603,19 +1585,56 @@ function RequirementsTab({ project }: { project: any }) {
   const confirmedCount = reqs.filter(r => r.status === "confirmed").length;
   const proposedCount  = reqs.filter(r => r.status === "proposed").length;
 
+  // Artifact types already generated — project_charter covers Statement of Work, scope_statement covers Business Requirements
+  const generatedArtifactTypes = new Set((project.artifacts || []).map((a: any) => a.artifactType));
+  const ARTIFACT_COVERS: Record<string, string[]> = {
+    project_charter: ["Statement of Work"],
+    scope_statement: ["Business Requirements"],
+    business_case:   ["Business Requirements", "Statement of Work"],
+  };
+  const coveredByArtifact = new Set<string>();
+  for (const [artType, labels] of Object.entries(ARTIFACT_COVERS)) {
+    if (generatedArtifactTypes.has(artType)) labels.forEach((l) => coveredByArtifact.add(l));
+  }
+  const effectiveMissing = (readiness?.missingMandatory ?? []).filter((l) => !coveredByArtifact.has(l));
+
   return (
     <div>
       {/* Evidence readiness strip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18, flexWrap: "wrap" as const }}>
-        {readiness && <ReadinessBadge band={readiness.band} score={readiness.score} />}
-        {readiness?.missingMandatory?.length ? (
-          <div style={{ fontSize: 12, color: "#c17d12", background: "#fbf0da", borderRadius: 8, padding: "6px 12px" }}>
-            Missing for adequate coverage: <strong>{readiness.missingMandatory.join(", ")}</strong>
-          </div>
-        ) : readiness?.score ? (
-          <div style={{ fontSize: 12, color: "#158a5a" }}>All mandatory document classes present</div>
-        ) : null}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+      {readiness && (
+        <div style={{ border: `0.5px solid ${C.border}`, borderRadius: 10, padding: "12px 16px", marginBottom: 18, background: C.surface2, display: "flex", alignItems: "flex-start", gap: 12 }}>
+          {effectiveMissing.length > 0 ? (
+            <>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" stroke="#92400e" strokeWidth="1.7" strokeLinejoin="round"/><path d="M14 2v6h6M12 17v-5M12 10h.01" stroke="#92400e" strokeWidth="1.7" strokeLinecap="round"/></svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 3 }}>Some required documents haven&apos;t been uploaded yet</div>
+                <div style={{ fontSize: 12, color: C.text2, lineHeight: 1.5, marginBottom: 8 }}>Upload the following so your AI assistant can generate accurate scope artifacts and extract requirements with full coverage.</div>
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 5 }}>
+                  {effectiveMissing.map((l) => (
+                    <span key={l} style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 10, background: "#fee2e2", color: "#b91c1c" }}>{l}</span>
+                  ))}
+                  {(readiness.missingMandatory ?? []).filter((l) => coveredByArtifact.has(l)).map((l) => (
+                    <span key={l} style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 10, background: "#dcfce7", color: "#166534" }}>{l} ✓ covered by artifact</span>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: "#e3f3ea", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M22 11.08V12a10 10 0 11-5.93-9.14" stroke="#166534" strokeWidth="1.7" strokeLinecap="round"/><path d="M22 4L12 14.01l-3-3" stroke="#166534" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: C.text }}>All required documents are in place</div>
+                <div style={{ fontSize: 12, color: C.text2, lineHeight: 1.5, marginTop: 3 }}>Your AI assistant has everything it needs to generate scope artifacts and extract requirements with full coverage.</div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18, gap: 8 }}>
           {docs.length > 0 && (
             <button
               onClick={handleExtract}
@@ -1636,7 +1655,6 @@ function RequirementsTab({ project }: { project: any }) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M5 20h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             Upload document
           </button>
-        </div>
       </div>
       {extractError && <div style={{ color: "#cf3f3a", fontSize: 12, marginBottom: 10 }}>{extractError}</div>}
 
