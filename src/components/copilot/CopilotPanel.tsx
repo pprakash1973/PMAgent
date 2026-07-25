@@ -410,8 +410,7 @@ export function CopilotPanel() {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{assistantName}</div>
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>
-                {TAB_LABEL[tabContext.tab] ?? "Project"} · Tier A+B+C
-                {tabContext.projectName && ` · ${tabContext.projectName}`}
+                {tabContext.projectName ?? "No project selected"}
               </div>
             </div>
             {ledgerActions.length > 0 && (
