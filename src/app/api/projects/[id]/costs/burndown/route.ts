@@ -71,8 +71,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }, 0);
   }
 
-  // EV: Σ(plannedCost × %complete) — snapshot at today, constant across time
-  const currentEV = tasks.reduce((s, t) => s + taskPlannedCost(t) * (t.percentComplete / 100), 0);
+  // EV: 0/100 rule — only credit full planned cost when task is 100% complete
+  const currentEV = tasks.reduce((s, t) => s + (t.percentComplete === 100 ? taskPlannedCost(t) : 0), 0);
 
   // AC: cumulative actual cost from entries up to each date
   function acAt(d: Date): number {
@@ -82,12 +82,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const totalAC = entries.reduce((s, e) => s + e.amount, 0);
-  const cpi = totalAC > 0 ? currentEV / totalAC : 1;
+  // CPI and SPI are undefined (null) when there is no actual cost or no planned value yet
+  const cpi = totalAC > 0 ? currentEV / totalAC : null;
   const pvNow = pvAt(today);
-  const spi = pvNow > 0 ? currentEV / pvNow : 1;
-  const eac = cpi > 0 ? bac / cpi : bac;
-  const etc = eac - totalAC;
-  const vac = bac - eac;
+  const spi = pvNow > 0 ? currentEV / pvNow : null;
+  // EAC only meaningful when CPI is available; fall back to null so UI shows "—"
+  const eac = cpi != null && cpi > 0 ? bac / cpi : null;
+  const etc = eac != null ? eac - totalAC : null;
+  const vac = eac != null ? bac - eac : null;
   const cv = currentEV - totalAC;
   const sv = currentEV - pvNow;
 
@@ -115,11 +117,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       totalAC: Math.round(totalAC * 100) / 100,
       totalEV: Math.round(currentEV * 100) / 100,
       pvNow: Math.round(pvNow * 100) / 100,
-      cpi: Math.round(cpi * 1000) / 1000,
-      spi: Math.round(spi * 1000) / 1000,
-      eac: Math.round(eac * 100) / 100,
-      etc: Math.round(etc * 100) / 100,
-      vac: Math.round(vac * 100) / 100,
+      cpi: cpi != null ? Math.round(cpi * 1000) / 1000 : null,
+      spi: spi != null ? Math.round(spi * 1000) / 1000 : null,
+      eac: eac != null ? Math.round(eac * 100) / 100 : null,
+      etc: etc != null ? Math.round(etc * 100) / 100 : null,
+      vac: vac != null ? Math.round(vac * 100) / 100 : null,
       cv: Math.round(cv * 100) / 100,
       sv: Math.round(sv * 100) / 100,
       percentSpent: bac > 0 ? Math.round((totalAC / bac) * 1000) / 10 : 0,

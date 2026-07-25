@@ -10,6 +10,10 @@ export interface CopilotTabContext {
     pv?: number | null;
     ev?: number | null;
     healthStatus?: string;
+    risksOpen?: number;
+    risksCritical?: number;
+    issuesOpen?: number;
+    issuesCritical?: number;
   };
 }
 

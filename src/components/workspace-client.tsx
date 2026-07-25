@@ -364,73 +364,576 @@ function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
   );
 }
 
-// ── RAID tab ───────────────────────────────────────────────────────────────────
+// ── Risk tab ────────────────────────────────────────────────────────────────────
 
-function RAIDTab({ project }: { project: any }) {
-  const risks = project.risks || [];
-  const issues = project.issues || [];
+const PROB_SCORE: Record<string, number> = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
+const IMP_SCORE: Record<string, number>  = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
+function riskScore(r: any) { return (PROB_SCORE[r.probability] ?? 3) * (IMP_SCORE[r.impact] ?? 3); }
+function scoreColor(s: number) {
+  if (s >= 15) return { color: C.red, bg: C.redLight };
+  if (s >= 9)  return { color: C.amber, bg: C.amberLight };
+  return { color: C.green, bg: C.greenLight };
+}
+function piColor(v: string) {
+  if (v === "very_high" || v === "high") return { color: C.red, bg: C.redLight };
+  if (v === "medium") return { color: C.amber, bg: C.amberLight };
+  return { color: C.green, bg: C.greenLight };
+}
 
-  function severityColor(s: string) {
-    if (s === "critical" || s === "high") return { color: C.red, bg: C.redLight };
-    if (s === "medium") return { color: C.amber, bg: C.amberLight };
-    return { color: C.green, bg: C.greenLight };
+const RISK_STATUSES = ["open", "in_progress", "mitigated", "closed", "escalated"];
+const RISK_CATEGORIES = ["Technical", "Schedule", "Cost", "Resource", "External", "Scope", "Organizational", "Other"];
+const PI_LEVELS = ["very_low", "low", "medium", "high", "very_high"];
+
+function RiskTab({ project }: { project: any }) {
+  const { openPanel, setTabContext } = useCopilot();
+  const [risks, setRisks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
+  const [search, setSearch] = useState("");
+  const [levelFilter, setLevelFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [adding, setAdding] = useState(false);
+  const [newForm, setNewForm] = useState({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "" });
+  const [saving, setSaving] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch(`/api/projects/${project.id}/risks`);
+    if (res.ok) {
+      const data = await res.json();
+      setRisks(data);
+      setTabContext({
+        tab: "risk",
+        projectId: project.id,
+        projectName: project.name,
+        kpiSnapshot: {
+          risksOpen: data.filter((r: any) => r.status === "open" || r.status === "in_progress").length,
+          risksCritical: data.filter((r: any) => riskScore(r) >= 15).length,
+        },
+      });
+    }
+    setLoading(false);
+  }, [project.id, project.name, setTabContext]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleImport() {
+    setImporting(true); setImportMsg("");
+    const res = await fetch(`/api/projects/${project.id}/risks/import`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) { setImportMsg(`✓ Imported ${data.imported} risks from artifact`); await load(); }
+    else setImportMsg(`✗ ${data.error}`);
+    setImporting(false);
   }
 
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newForm.description.trim()) return;
+    setSaving("new");
+    const res = await fetch(`/api/projects/${project.id}/risks`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newForm),
+    });
+    if (res.ok) { setAdding(false); setNewForm({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "" }); await load(); }
+    setSaving(null);
+  }
+
+  async function patchRisk(id: string, patch: any) {
+    setSaving(id);
+    await fetch(`/api/projects/${project.id}/risks/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    });
+    await load(); setSaving(null);
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id);
+    await fetch(`/api/projects/${project.id}/risks/${id}`, { method: "DELETE" });
+    await load(); setDeleting(null);
+  }
+
+  function startEdit(r: any) {
+    setEditId(r.id);
+    setEditForm({ description: r.description, category: r.category || "", probability: r.probability, impact: r.impact, owner: r.owner || "", mitigation: r.mitigation || "", status: r.status });
+  }
+  async function saveEdit() {
+    if (!editId) return;
+    await patchRisk(editId, editForm);
+    setEditId(null);
+  }
+
+  const filtered = useMemo(() => {
+    return risks.filter(r => {
+      const sc = riskScore(r);
+      const level = sc >= 15 ? "critical" : sc >= 9 ? "high" : sc >= 4 ? "medium" : "low";
+      const matchLevel = levelFilter === "all" || level === levelFilter;
+      const matchStatus = statusFilter === "all" || r.status === statusFilter;
+      const matchSearch = !search || r.description?.toLowerCase().includes(search.toLowerCase()) || r.owner?.toLowerCase().includes(search.toLowerCase()) || r.category?.toLowerCase().includes(search.toLowerCase());
+      return matchLevel && matchStatus && matchSearch;
+    });
+  }, [risks, search, levelFilter, statusFilter]);
+
+  const openCount = risks.filter(r => r.status === "open" || r.status === "in_progress").length;
+  const criticalCount = risks.filter(r => riskScore(r) >= 15).length;
+  const mitigatedCount = risks.filter(r => r.status === "mitigated" || r.status === "closed").length;
+
+  const AI_CHIPS = [
+    { icon: "🔍", label: "Review risk quality", msg: `Review the quality of the risk register for project "${project.name}". Are probability and impact ratings calibrated correctly? Are any obvious risks missing?` },
+    { icon: "⚡", label: "Identify missing risks", msg: `For project "${project.name}", what risks might we be missing? We currently have ${risks.length} risks logged. Suggest any gaps based on the project type.` },
+    { icon: "🛡", label: "Suggest mitigations", msg: `Suggest mitigation strategies for the top open risks in project "${project.name}". Focus on the highest-scoring open risks.` },
+    { icon: "🔺", label: "Escalation candidates", msg: `Which risks in project "${project.name}" should be escalated to the sponsor? Look for high score + open status + no mitigation plan.` },
+  ];
+
+  if (loading) return <div style={{ padding: "40px 0", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>Loading risks…</div>;
+
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "#fff", background: C.primary, borderRadius: 8, padding: "6px 13px" }}>Risks · {risks.length}</span>
-        <span style={{ fontSize: 12, fontWeight: 500, color: C.text2, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 13px" }}>Issues · {issues.length}</span>
-        <div style={{ flex: 1 }} />
-        <button style={{ height: 32, padding: "0 12px", background: C.surface, border: `1px solid #d3d7de`, borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, color: C.text2, cursor: "pointer" }}>+ Add risk</button>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* KPI strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+        {[
+          { label: "Total Risks", value: risks.length, sub: "All categories", color: C.primary, bg: C.primaryLight },
+          { label: "Critical / High", value: criticalCount, sub: "Score ≥ 15", color: C.red, bg: C.redLight },
+          { label: "Open", value: openCount, sub: "Awaiting mitigation", color: C.amber, bg: C.amberLight },
+          { label: "Mitigated", value: mitigatedCount, sub: "Response in place", color: C.green, bg: C.greenLight },
+        ].map(k => (
+          <div key={k.label} style={{ background: k.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: k.color, fontFamily: "'IBM Plex Mono',monospace" }}>{k.value}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, marginTop: 2, letterSpacing: ".04em", textTransform: "uppercase" as const }}>{k.label}</div>
+            <div style={{ fontSize: 9.5, color: C.text3, marginTop: 1 }}>{k.sub}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Risks table */}
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 18px", background: C.surface2, font: `600 10px 'IBM Plex Sans'`, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const }}>
-          <span style={{ width: 64 }}>ID</span>
-          <span style={{ flex: 1 }}>Description</span>
-          <span style={{ width: 70 }}>Prob</span>
-          <span style={{ width: 70 }}>Impact</span>
-          <span style={{ width: 80 }}>Score</span>
-          <span style={{ width: 90 }}>Owner</span>
-          <span style={{ width: 74 }}>Status</span>
+      {/* Toolbar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
+        <button onClick={() => setAdding(v => !v)} style={{ height: 30, padding: "0 12px", background: C.primary, color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>＋ Add Risk</button>
+        <button onClick={handleImport} disabled={importing} style={{ height: 30, padding: "0 12px", background: "rgba(0,110,116,.07)", color: C.primary, border: `1px solid rgba(0,110,116,.2)`, borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: importing ? "not-allowed" : "pointer", opacity: importing ? .7 : 1 }}>
+          {importing ? "Importing…" : "↓ Import from Risk Register artifact"}
+        </button>
+        {importMsg && <span style={{ fontSize: 11, color: importMsg.startsWith("✓") ? C.green : C.red }}>{importMsg}</span>}
+        <div style={{ flex: 1 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search risks…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface2, color: C.text, width: 180 }} />
+        <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }}>
+          <option value="all">All Levels</option>
+          <option value="critical">Critical (≥15)</option>
+          <option value="high">High (9–14)</option>
+          <option value="medium">Medium (4–8)</option>
+          <option value="low">Low (1–3)</option>
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }}>
+          <option value="all">All Status</option>
+          {RISK_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
+        </select>
+      </div>
+
+      {/* AI chips */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const, alignItems: "center" }}>
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: C.text3 }}>AI Copilot:</span>
+        {AI_CHIPS.map(c => (
+          <button key={c.label} onClick={() => openPanel(c.msg)} style={{ padding: "3px 11px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: "rgba(136,30,135,.07)", color: "#881E87", border: "1px solid rgba(136,30,135,.18)", cursor: "pointer" }}>
+            {c.icon} {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Add form */}
+      {adding && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: C.text }}>New Risk</div>
+          <form onSubmit={handleAdd} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>Description *</label>
+              <input value={newForm.description} onChange={e => setNewForm(f => ({ ...f, description: e.target.value }))} placeholder="Risk description…" required style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }} />
+            </div>
+            {[
+              { label: "Category", key: "category", options: RISK_CATEGORIES.map(c => ({ value: c, label: c })) },
+              { label: "Probability", key: "probability", options: PI_LEVELS.map(p => ({ value: p, label: p.replace("_", " ") })) },
+              { label: "Impact", key: "impact", options: PI_LEVELS.map(p => ({ value: p, label: p.replace("_", " ") })) },
+            ].map(f => (
+              <div key={f.key}>
+                <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>{f.label}</label>
+                <select value={(newForm as any)[f.key]} onChange={e => setNewForm(fm => ({ ...fm, [f.key]: e.target.value }))} style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }}>
+                  {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            ))}
+            <div>
+              <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>Owner</label>
+              <input value={newForm.owner} onChange={e => setNewForm(f => ({ ...f, owner: e.target.value }))} placeholder="Name" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>Mitigation Plan</label>
+              <input value={newForm.mitigation} onChange={e => setNewForm(f => ({ ...f, mitigation: e.target.value }))} placeholder="Response / mitigation strategy…" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
+              <button type="submit" disabled={saving === "new"} style={{ padding: "7px 16px", background: C.primary, color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{saving === "new" ? "Saving…" : "Save Risk"}</button>
+              <button type="button" onClick={() => setAdding(false)} style={{ padding: "7px 16px", background: "transparent", color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </form>
         </div>
-        {risks.length === 0 && <div style={{ padding: "20px 18px", fontSize: 13, color: C.text3 }}>No open risks — generate a Risk Register to populate.</div>}
-        {risks.map((r: any, i: number) => {
-          const sc = severityColor(r.severity || r.impact || "");
+      )}
+
+      {/* Table */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 90px 72px", gap: 8, padding: "8px 14px", background: C.surface2, fontSize: 10, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.text3, borderBottom: `1px solid ${C.border}` }}>
+          <span>ID</span><span>Description</span><span>Category</span><span>Prob</span><span>Impact</span><span>Score</span><span>Owner</span><span>Status</span><span>Actions</span>
+        </div>
+
+        {filtered.length === 0 && (
+          <div style={{ padding: "28px 14px", textAlign: "center" as const, color: C.text3, fontSize: 12 }}>
+            {risks.length === 0 ? "No risks yet — add one or import from the Risk Register artifact." : "No risks match current filters."}
+          </div>
+        )}
+
+        {filtered.map((r, i) => {
+          const sc = riskScore(r);
+          const scC = scoreColor(sc);
+          const isEdit = editId === r.id;
           return (
-            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", borderTop: `1px solid ${C.borderLight}` }}>
-              <span className="mono" style={{ width: 64, fontSize: 12, fontWeight: 600, color: C.text2 }}>R-{String(i + 1).padStart(3, "0")}</span>
-              <span style={{ flex: 1, fontSize: "12.5px" }}>{r.description}</span>
-              <span style={{ width: 70 }}><Badge label={r.probability || "Med"} color={sc.color} bg={sc.bg} /></span>
-              <span style={{ width: 70 }}><Badge label={r.impact || "Med"} color={sc.color} bg={sc.bg} /></span>
-              <span className="mono" style={{ width: 80, fontSize: 13, fontWeight: 600, color: sc.color }}>{r.riskScore || "—"}</span>
-              <span style={{ width: 90, fontSize: 12, color: C.text2 }}>{r.owner || "—"}</span>
-              <span style={{ width: 74 }}><Badge label={r.status || "Open"} color={C.text2} bg={C.surface2} /></span>
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 90px 72px", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, alignItems: "center", fontSize: 12, background: i % 2 === 1 ? C.surface2 : C.surface }}>
+              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, color: C.text3 }}>{r.riskId || `R-${String(i + 1).padStart(3, "0")}`}</span>
+
+              {isEdit ? (
+                <input value={editForm.description} onChange={e => setEditForm((f: any) => ({ ...f, description: e.target.value }))} style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 12, background: C.surface, color: C.text, width: "100%" }} />
+              ) : (
+                <span style={{ lineHeight: 1.4 }}>{r.description}</span>
+              )}
+
+              {isEdit ? (
+                <select value={editForm.category} onChange={e => setEditForm((f: any) => ({ ...f, category: e.target.value }))} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text }}>
+                  {RISK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              ) : (
+                <span style={{ fontSize: 11, color: C.text3 }}>{r.category || "—"}</span>
+              )}
+
+              {isEdit ? (
+                <select value={editForm.probability} onChange={e => setEditForm((f: any) => ({ ...f, probability: e.target.value }))} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text }}>
+                  {PI_LEVELS.map(p => <option key={p} value={p}>{p.replace("_", " ")}</option>)}
+                </select>
+              ) : (
+                <span><Badge label={r.probability?.replace("_", " ") || "Med"} color={piColor(r.probability).color} bg={piColor(r.probability).bg} /></span>
+              )}
+
+              {isEdit ? (
+                <select value={editForm.impact} onChange={e => setEditForm((f: any) => ({ ...f, impact: e.target.value }))} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text }}>
+                  {PI_LEVELS.map(p => <option key={p} value={p}>{p.replace("_", " ")}</option>)}
+                </select>
+              ) : (
+                <span><Badge label={r.impact?.replace("_", " ") || "Med"} color={piColor(r.impact).color} bg={piColor(r.impact).bg} /></span>
+              )}
+
+              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, fontWeight: 700, color: scC.color }}>{sc}</span>
+
+              {isEdit ? (
+                <input value={editForm.owner} onChange={e => setEditForm((f: any) => ({ ...f, owner: e.target.value }))} placeholder="Owner" style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text, width: "100%" }} />
+              ) : (
+                <span style={{ fontSize: 11, color: C.text2 }}>{r.owner || "—"}</span>
+              )}
+
+              {isEdit ? (
+                <select value={editForm.status} onChange={e => setEditForm((f: any) => ({ ...f, status: e.target.value }))} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text }}>
+                  {RISK_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
+                </select>
+              ) : (
+                <select value={r.status} onChange={e => patchRisk(r.id, { status: e.target.value })} disabled={saving === r.id} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text, cursor: "pointer" }}>
+                  {RISK_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
+                </select>
+              )}
+
+              <div style={{ display: "flex", gap: 4 }}>
+                {isEdit ? (
+                  <>
+                    <button onClick={saveEdit} disabled={saving === r.id} style={{ padding: "3px 8px", background: C.primary, color: "#fff", border: "none", borderRadius: 5, fontSize: 11, cursor: "pointer" }}>✓</button>
+                    <button onClick={() => setEditId(null)} style={{ padding: "3px 8px", background: "transparent", color: C.text3, border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, cursor: "pointer" }}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => startEdit(r)} style={{ width: 26, height: 26, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, cursor: "pointer", fontSize: 12 }}>✏</button>
+                    <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id} style={{ width: 26, height: 26, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.red, cursor: "pointer", fontSize: 12 }}>{deleting === r.id ? "…" : "🗑"}</button>
+                  </>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {/* Issues table */}
-      {issues.length > 0 && (
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ padding: "13px 18px", borderBottom: `1px solid ${C.borderLight}`, fontSize: 14, fontWeight: 600 }}>Open Issues</div>
-          {issues.map((iss: any) => {
-            const sc = severityColor(iss.severity || "medium");
-            return (
-              <div key={iss.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 18px", borderTop: `1px solid ${C.borderLight}` }}>
-                <Badge label={iss.severity || "Medium"} color={sc.color} bg={sc.bg} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "12.5px", fontWeight: 500 }}>{iss.description}</div>
-                  {iss.resolutionPlan && <div style={{ fontSize: 11.5, color: C.text3, marginTop: 3 }}>Plan: {iss.resolutionPlan}</div>}
-                </div>
-                <span style={{ fontSize: 12, color: C.text2, whiteSpace: "nowrap" as const }}>{iss.owner || "—"}</span>
-              </div>
-            );
-          })}
+      {filtered.length !== risks.length && (
+        <div style={{ fontSize: 11, color: C.text3, textAlign: "right" as const }}>Showing {filtered.length} of {risks.length} risks</div>
+      )}
+    </div>
+  );
+}
+
+// ── Issues tab ──────────────────────────────────────────────────────────────────
+
+const ISSUE_STATUSES = ["open", "in_progress", "resolved", "closed"];
+const ISSUE_SEVERITIES = ["critical", "high", "medium", "low"];
+
+function issueColor(s: string) {
+  if (s === "critical") return { color: C.red, bg: C.redLight };
+  if (s === "high") return { color: C.amber, bg: C.amberLight };
+  if (s === "low") return { color: C.green, bg: C.greenLight };
+  return { color: C.text2, bg: C.surface2 };
+}
+
+function IssuesTab({ project }: { project: any }) {
+  const { openPanel, setTabContext } = useCopilot();
+  const [issues, setIssues] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState("");
+  const [search, setSearch] = useState("");
+  const [sevFilter, setSevFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [adding, setAdding] = useState(false);
+  const [newForm, setNewForm] = useState({ description: "", severity: "medium", owner: "", resolution: "" });
+  const [saving, setSaving] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch(`/api/projects/${project.id}/issues`);
+    if (res.ok) {
+      const data = await res.json();
+      setIssues(data);
+      setTabContext({
+        tab: "issues",
+        projectId: project.id,
+        projectName: project.name,
+        kpiSnapshot: {
+          issuesOpen: data.filter((i: any) => i.status === "open" || i.status === "in_progress").length,
+          issuesCritical: data.filter((i: any) => i.severity === "critical").length,
+        },
+      });
+    }
+    setLoading(false);
+  }, [project.id, project.name, setTabContext]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleImport() {
+    setImporting(true); setImportMsg("");
+    const res = await fetch(`/api/projects/${project.id}/issues/import`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) { setImportMsg(`✓ Imported ${data.imported} issues from artifact`); await load(); }
+    else setImportMsg(`✗ ${data.error}`);
+    setImporting(false);
+  }
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newForm.description.trim()) return;
+    setSaving("new");
+    const res = await fetch(`/api/projects/${project.id}/issues`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newForm),
+    });
+    if (res.ok) { setAdding(false); setNewForm({ description: "", severity: "medium", owner: "", resolution: "" }); await load(); }
+    setSaving(null);
+  }
+
+  async function patchIssue(id: string, patch: any) {
+    setSaving(id);
+    await fetch(`/api/projects/${project.id}/issues/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    });
+    await load(); setSaving(null);
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id);
+    await fetch(`/api/projects/${project.id}/issues/${id}`, { method: "DELETE" });
+    await load(); setDeleting(null);
+  }
+
+  function startEdit(iss: any) {
+    setEditId(iss.id);
+    setEditForm({ description: iss.description, severity: iss.severity, owner: iss.owner || "", resolution: iss.resolution || "", status: iss.status });
+  }
+  async function saveEdit() {
+    if (!editId) return;
+    await patchIssue(editId, editForm);
+    setEditId(null);
+  }
+
+  const filtered = useMemo(() => {
+    return issues.filter(iss => {
+      const matchSev = sevFilter === "all" || iss.severity === sevFilter;
+      const matchStatus = statusFilter === "all" || iss.status === statusFilter;
+      const matchSearch = !search || iss.description?.toLowerCase().includes(search.toLowerCase()) || iss.owner?.toLowerCase().includes(search.toLowerCase());
+      return matchSev && matchStatus && matchSearch;
+    });
+  }, [issues, search, sevFilter, statusFilter]);
+
+  const openCount = issues.filter(i => i.status === "open" || i.status === "in_progress").length;
+  const criticalCount = issues.filter(i => i.severity === "critical").length;
+  const resolvedCount = issues.filter(i => i.status === "resolved" || i.status === "closed").length;
+
+  const AI_CHIPS = [
+    { icon: "🔍", label: "Review issue quality", msg: `Review the quality of the issue register for project "${project.name}". Are severity ratings appropriate? Are resolution plans adequate?` },
+    { icon: "💡", label: "Suggest resolutions", msg: `Suggest resolution approaches for the open critical issues in project "${project.name}". We have ${criticalCount} critical issues currently open.` },
+    { icon: "🔗", label: "Link issues to risks", msg: `For project "${project.name}", which of the current issues might have corresponding risks that should be raised or updated?` },
+    { icon: "📋", label: "Draft escalation memo", msg: `Draft a brief escalation memo for the sponsor covering the critical and overdue issues in project "${project.name}".` },
+  ];
+
+  if (loading) return <div style={{ padding: "40px 0", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>Loading issues…</div>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* KPI strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
+        {[
+          { label: "Total Issues", value: issues.length, sub: "All statuses", color: C.primary, bg: C.primaryLight },
+          { label: "Critical", value: criticalCount, sub: "Immediate action", color: C.red, bg: C.redLight },
+          { label: "Open", value: openCount, sub: "In progress / pending", color: C.amber, bg: C.amberLight },
+          { label: "Resolved", value: resolvedCount, sub: "Closed this period", color: C.green, bg: C.greenLight },
+        ].map(k => (
+          <div key={k.label} style={{ background: k.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: k.color, fontFamily: "'IBM Plex Mono',monospace" }}>{k.value}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, marginTop: 2, letterSpacing: ".04em", textTransform: "uppercase" as const }}>{k.label}</div>
+            <div style={{ fontSize: 9.5, color: C.text3, marginTop: 1 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
+        <button onClick={() => setAdding(v => !v)} style={{ height: 30, padding: "0 12px", background: C.primary, color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>＋ Add Issue</button>
+        <button onClick={handleImport} disabled={importing} style={{ height: 30, padding: "0 12px", background: "rgba(0,110,116,.07)", color: C.primary, border: `1px solid rgba(0,110,116,.2)`, borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: importing ? "not-allowed" : "pointer", opacity: importing ? .7 : 1 }}>
+          {importing ? "Importing…" : "↓ Import from Issue Register artifact"}
+        </button>
+        {importMsg && <span style={{ fontSize: 11, color: importMsg.startsWith("✓") ? C.green : C.red }}>{importMsg}</span>}
+        <div style={{ flex: 1 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search issues…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface2, color: C.text, width: 180 }} />
+        <select value={sevFilter} onChange={e => setSevFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }}>
+          <option value="all">All Severity</option>
+          {ISSUE_SEVERITIES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+        </select>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }}>
+          <option value="all">All Status</option>
+          {ISSUE_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
+        </select>
+      </div>
+
+      {/* AI chips */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const, alignItems: "center" }}>
+        <span style={{ fontSize: 10.5, fontWeight: 600, color: C.text3 }}>AI Copilot:</span>
+        {AI_CHIPS.map(c => (
+          <button key={c.label} onClick={() => openPanel(c.msg)} style={{ padding: "3px 11px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: "rgba(136,30,135,.07)", color: "#881E87", border: "1px solid rgba(136,30,135,.18)", cursor: "pointer" }}>
+            {c.icon} {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Add form */}
+      {adding && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: C.text }}>New Issue</div>
+          <form onSubmit={handleAdd} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>Description *</label>
+              <input value={newForm.description} onChange={e => setNewForm(f => ({ ...f, description: e.target.value }))} placeholder="Issue description…" required style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>Severity</label>
+              <select value={newForm.severity} onChange={e => setNewForm(f => ({ ...f, severity: e.target.value }))} style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }}>
+                {ISSUE_SEVERITIES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>Owner</label>
+              <input value={newForm.owner} onChange={e => setNewForm(f => ({ ...f, owner: e.target.value }))} placeholder="Name" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <label style={{ fontSize: 10.5, color: C.text3, display: "block", marginBottom: 3 }}>Resolution Plan</label>
+              <input value={newForm.resolution} onChange={e => setNewForm(f => ({ ...f, resolution: e.target.value }))} placeholder="Planned resolution approach…" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text }} />
+            </div>
+            <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
+              <button type="submit" disabled={saving === "new"} style={{ padding: "7px 16px", background: C.primary, color: "#fff", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{saving === "new" ? "Saving…" : "Save Issue"}</button>
+              <button type="button" onClick={() => setAdding(false)} style={{ padding: "7px 16px", background: "transparent", color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </form>
         </div>
+      )}
+
+      {/* Table */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 76px 96px 1fr 90px 82px 72px", gap: 8, padding: "8px 14px", background: C.surface2, fontSize: 10, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.text3, borderBottom: `1px solid ${C.border}` }}>
+          <span>ID</span><span>Description</span><span>Severity</span><span>Owner</span><span>Resolution Plan</span><span>Status</span><span>Due Date</span><span>Actions</span>
+        </div>
+
+        {filtered.length === 0 && (
+          <div style={{ padding: "28px 14px", textAlign: "center" as const, color: C.text3, fontSize: 12 }}>
+            {issues.length === 0 ? "No issues yet — add one or import from the Issue Register artifact." : "No issues match current filters."}
+          </div>
+        )}
+
+        {filtered.map((iss, i) => {
+          const sC = issueColor(iss.severity);
+          const isEdit = editId === iss.id;
+          return (
+            <div key={iss.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr 76px 96px 1fr 90px 82px 72px", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, alignItems: "center", fontSize: 12, background: i % 2 === 1 ? C.surface2 : C.surface }}>
+              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, fontWeight: 600, color: C.text3 }}>{iss.issueId || `I-${String(i + 1).padStart(3, "0")}`}</span>
+
+              {isEdit ? (
+                <input value={editForm.description} onChange={e => setEditForm((f: any) => ({ ...f, description: e.target.value }))} style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 12, background: C.surface, color: C.text, width: "100%" }} />
+              ) : <span style={{ lineHeight: 1.4 }}>{iss.description}</span>}
+
+              {isEdit ? (
+                <select value={editForm.severity} onChange={e => setEditForm((f: any) => ({ ...f, severity: e.target.value }))} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text }}>
+                  {ISSUE_SEVERITIES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                </select>
+              ) : <span><Badge label={iss.severity || "medium"} color={sC.color} bg={sC.bg} /></span>}
+
+              {isEdit ? (
+                <input value={editForm.owner} onChange={e => setEditForm((f: any) => ({ ...f, owner: e.target.value }))} style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text, width: "100%" }} />
+              ) : <span style={{ fontSize: 11, color: C.text2 }}>{iss.owner || "—"}</span>}
+
+              {isEdit ? (
+                <input value={editForm.resolution} onChange={e => setEditForm((f: any) => ({ ...f, resolution: e.target.value }))} style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text, width: "100%" }} />
+              ) : <span style={{ fontSize: 11, color: C.text3 }}>{iss.resolution || "—"}</span>}
+
+              {isEdit ? (
+                <select value={editForm.status} onChange={e => setEditForm((f: any) => ({ ...f, status: e.target.value }))} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text }}>
+                  {ISSUE_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
+                </select>
+              ) : (
+                <select value={iss.status} onChange={e => patchIssue(iss.id, { status: e.target.value })} disabled={saving === iss.id} style={{ padding: "3px 5px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text, cursor: "pointer" }}>
+                  {ISSUE_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
+                </select>
+              )}
+
+              <span style={{ fontSize: 11, color: C.text2 }}>{iss.dueDate ? new Date(iss.dueDate).toISOString().slice(0, 10) : "—"}</span>
+
+              <div style={{ display: "flex", gap: 4 }}>
+                {isEdit ? (
+                  <>
+                    <button onClick={saveEdit} disabled={saving === iss.id} style={{ padding: "3px 8px", background: C.primary, color: "#fff", border: "none", borderRadius: 5, fontSize: 11, cursor: "pointer" }}>✓</button>
+                    <button onClick={() => setEditId(null)} style={{ padding: "3px 8px", background: "transparent", color: C.text3, border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, cursor: "pointer" }}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => startEdit(iss)} style={{ width: 26, height: 26, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, cursor: "pointer", fontSize: 12 }}>✏</button>
+                    <button onClick={() => handleDelete(iss.id)} disabled={deleting === iss.id} style={{ width: 26, height: 26, borderRadius: 5, border: `1px solid ${C.border}`, background: C.surface, color: C.red, cursor: "pointer", fontSize: 12 }}>{deleting === iss.id ? "…" : "🗑"}</button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {filtered.length !== issues.length && (
+        <div style={{ fontSize: 11, color: C.text3, textAlign: "right" as const }}>Showing {filtered.length} of {issues.length} issues</div>
       )}
     </div>
   );
@@ -651,6 +1154,21 @@ function ScheduleTab({ project }: { project: any }) {
   // Critical path
   const [showCritical, setShowCritical] = useState(false);
   const criticalIds = useMemo(() => computeCriticalIds(tasks), [tasks]);
+
+  // Schedule filters
+  const [nameFilter, setNameFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      const matchName = !nameFilter || t.name?.toLowerCase().includes(nameFilter.toLowerCase());
+      const matchStatus = statusFilter === "all" || t.status === statusFilter;
+      const matchFrom = !dateFrom || (t.baselineStart && new Date(t.baselineStart) >= new Date(dateFrom));
+      const matchTo = !dateTo || (t.baselineFinish && new Date(t.baselineFinish) <= new Date(dateTo));
+      return matchName && matchStatus && matchFrom && matchTo;
+    });
+  }, [tasks, nameFilter, statusFilter, dateFrom, dateTo]);
 
   // AI Command Bar
   const [aiCmd, setAiCmd] = useState("");
@@ -944,10 +1462,9 @@ function ScheduleTab({ project }: { project: any }) {
           {/* ── EVM KPI strip ── */}
           <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
             {[
-              { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: "Schedule Performance Index", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.85 ? C.amberLight : C.redLight },
-              { label: "SV", value: kpi?.sv != null ? `${kpi.sv > 0 ? "+" : ""}${kpi.sv.toFixed(1)}d` : "—", sub: "Schedule Variance", color: (kpi?.sv ?? 0) >= 0 ? C.green : C.red, bg: (kpi?.sv ?? 0) >= 0 ? C.greenLight : C.redLight },
-              { label: "EV", value: kpi?.ev != null ? `${kpi.ev.toFixed(1)}d` : "—", sub: "Earned Value (days)", color: C.primary, bg: C.primaryLight },
-              { label: "PV", value: kpi?.pv != null ? `${kpi.pv.toFixed(1)}d` : "—", sub: "Planned Value (days)", color: C.text2, bg: C.surface2 },
+              { label: "EV", value: kpi?.ev != null ? `${kpi.ev.toFixed(1)}d` : "—", sub: "Earned Value — budgeted cost of work performed", color: C.primary, bg: C.primaryLight },
+              { label: "PV", value: kpi?.pv != null ? `${kpi.pv.toFixed(1)}d` : "—", sub: "Planned Value — budgeted cost of work scheduled", color: C.text2, bg: C.surface2 },
+              { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "Ahead of schedule ✓" : kpi.spi >= 0.85 ? "Slightly behind schedule" : "Behind schedule", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.85 ? C.amberLight : C.redLight },
             ].map(k => (
               <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 12, padding: "13px 15px" }}>
                 <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 24, fontWeight: 700, color: k.color }}>{k.value}</div>
@@ -958,6 +1475,28 @@ function ScheduleTab({ project }: { project: any }) {
           </div>
 
           {kpi?.spi != null && kpi.spi < 0.8 && <RecoveryPanel projectId={project.id} spi={kpi.spi} />}
+
+          {/* ── Schedule filters ── */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" as const, marginBottom: 10 }}>
+            <input value={nameFilter} onChange={e => setNameFilter(e.target.value)} placeholder="🔍 Filter by task name…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface2, color: C.text, width: 200 }} />
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }}>
+              <option value="all">All Status</option>
+              <option value="not_started">Not Started</option>
+              <option value="in_progress">In Progress</option>
+              <option value="complete">Complete</option>
+              <option value="on_hold">On Hold</option>
+            </select>
+            <span style={{ fontSize: 11, color: C.text3 }}>From</span>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }} />
+            <span style={{ fontSize: 11, color: C.text3 }}>To</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }} />
+            {(nameFilter || statusFilter !== "all" || dateFrom || dateTo) && (
+              <button onClick={() => { setNameFilter(""); setStatusFilter("all"); setDateFrom(""); setDateTo(""); }} style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 11, background: "transparent", color: C.text3, cursor: "pointer" }}>✕ Clear</button>
+            )}
+            {filteredTasks.length !== tasks.length && (
+              <span style={{ fontSize: 11, color: C.text3, marginLeft: 4 }}>Showing {filteredTasks.length} of {tasks.length} tasks</span>
+            )}
+          </div>
 
           {/* ── Split-pane Gantt ── */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
@@ -1003,7 +1542,7 @@ function ScheduleTab({ project }: { project: any }) {
                     <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "5px 8px 5px 28px" }}>
                       <div style={{ font: `700 12px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".04em", textTransform: "uppercase" as const, flex: 1 }}>{phase}</div>
                     </div>
-                    {tasks.filter(t => t.phase === phase).map(t => {
+                    {filteredTasks.filter(t => t.phase === phase).map(t => {
                       const isEditName = editCell?.taskId === t.id && editCell?.field === "name";
                       const isEditDays = editCell?.taskId === t.id && editCell?.field === "baselineDays";
                       const isEditPct = editCell?.taskId === t.id && editCell?.field === "percentComplete";
@@ -1135,7 +1674,7 @@ function ScheduleTab({ project }: { project: any }) {
                   <div key={phase}>
                     {/* Phase header spacer */}
                     <div style={{ height: 29, background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}` }} />
-                    {tasks.filter(t => t.phase === phase).map(t => {
+                    {filteredTasks.filter(t => t.phase === phase).map(t => {
                       const left = barLeft(t);
                       const width = barWidth(t);
                       const isCrit = showCritical && criticalIds.has(t.id);
@@ -2111,8 +2650,8 @@ function CostTab({ project }: { project: any }) {
 
   const s = data?.summary;
   const currency = s?.currency ?? project.currency ?? "USD";
-  const cpiColor = !s ? C.text : s.cpi >= 1 ? C.green : s.cpi >= 0.9 ? C.amber : C.red;
-  const spiColor2 = !s ? C.text : s.spi >= 1 ? C.green : s.spi >= 0.9 ? C.amber : C.red;
+  const cpiColor = !s || s.cpi == null ? C.text3 : s.cpi >= 1 ? C.green : s.cpi >= 0.9 ? C.amber : C.red;
+  const spiColor2 = !s || s.spi == null ? C.text3 : s.spi >= 1 ? C.green : s.spi >= 0.9 ? C.amber : C.red;
 
   const TEAL = "#006E74";
   const TEAL_BG = "rgba(0,110,116,.07)";
@@ -2140,14 +2679,11 @@ function CostTab({ project }: { project: any }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* ── KPI strip ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
           {[
-            { label: "BAC", value: s ? fmt$(s.bac, currency) : "—", sub: "Budget at Completion", color: TEAL, bg: TEAL_BG },
-            { label: "AC",  value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost", color: C.text, bg: C.surface2 },
-            { label: "EV",  value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value", color: TEAL, bg: TEAL_BG },
-            { label: "CPI", value: s ? s.cpi.toFixed(2) : "—", sub: s?.cpi >= 1 ? "Under budget ✓" : "Over budget", color: cpiColor, bg: !s ? C.surface2 : s.cpi >= 1 ? C.greenLight : s.cpi >= 0.9 ? C.amberLight : C.redLight },
-            { label: "EAC", value: s ? fmt$(s.eac, currency) : "—", sub: "Forecast at Completion", color: C.text, bg: C.surface2 },
-            { label: "VAC", value: s ? fmt$(s.vac, currency) : "—", sub: s?.vac >= 0 ? "Under forecast ✓" : "Cost overrun", color: !s ? C.text : s.vac >= 0 ? C.green : C.red, bg: !s ? C.surface2 : s.vac >= 0 ? C.greenLight : C.redLight },
+            { label: "EV",  value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value — budgeted cost of work performed", color: TEAL, bg: TEAL_BG },
+            { label: "AC",  value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost — actual cost of work performed to date", color: C.text, bg: C.surface2 },
+            { label: "CPI", value: s ? (s.cpi != null ? s.cpi.toFixed(2) : "—") : "—", sub: s?.cpi != null ? (s.cpi >= 1 ? "Under budget ✓  (CPI = EV ÷ AC)" : "Over budget  (CPI = EV ÷ AC)") : "CPI = EV ÷ AC  (log costs to calculate)", color: cpiColor, bg: !s || s.cpi == null ? C.surface2 : s.cpi >= 1 ? C.greenLight : s.cpi >= 0.9 ? C.amberLight : C.redLight },
           ].map((k) => (
             <div key={k.label} style={{ background: k.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: k.color, lineHeight: 1.1 }}>{loading ? "…" : k.value}</div>
@@ -2200,40 +2736,6 @@ function CostTab({ project }: { project: any }) {
                 </button>
               </form>
 
-              {/* divider */}
-              <div style={{ margin: "14px 0 10px", borderTop: `1px solid ${C.border}` }} />
-
-              {/* Variance summary */}
-              <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, marginBottom: 8, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>Variance Summary</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {[
-                  { label: "Cost Variance (CV)", value: s ? fmt$(s.cv, currency) : "—", good: !s || s.cv >= 0 },
-                  { label: "Schedule Variance (SV)", value: s ? fmt$(s.sv, currency) : "—", good: !s || s.sv >= 0 },
-                  { label: "TCPI (efficiency needed)", value: s && s.bac > 0 && s.totalAC < s.bac ? ((s.bac - s.totalEV) / (s.bac - s.totalAC)).toFixed(2) : "—", good: true },
-                ].map((row) => (
-                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: C.text2 }}>{row.label}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: row.good ? C.green : C.red }}>{loading ? "…" : row.value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Budget bar */}
-              {s && s.bac > 0 && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: C.text3, marginBottom: 4 }}>
-                    <span>Budget consumed</span>
-                    <span style={{ fontWeight: 600, color: s.percentSpent > 100 ? C.red : C.text2 }}>{s.percentSpent}%</span>
-                  </div>
-                  <div style={{ height: 7, background: C.surface2, borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${Math.min(s.percentSpent, 100)}%`, background: s.percentSpent > 100 ? C.red : s.percentSpent > 85 ? C.amber : C.green, borderRadius: 4, transition: "width .4s" }} />
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.text3, marginTop: 3 }}>
-                    <span>SPI: <strong style={{ color: spiColor2 }}>{s?.spi?.toFixed(2) ?? "—"}</strong></span>
-                    <span>ETC: <strong>{s ? fmt$(s.etc, currency) : "—"}</strong></span>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
@@ -2359,7 +2861,7 @@ function CostTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const TABS = ["Artifacts", "RAID", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting"];
+const TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting"];
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const [tab, setTab] = useState("Artifacts");
@@ -2421,7 +2923,8 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
 
       {/* Tab content */}
       {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} />}
-      {tab === "RAID" && <RAIDTab project={project} />}
+      {tab === "Risk" && <RiskTab project={project} />}
+      {tab === "Issues" && <IssuesTab project={project} />}
       {tab === "Resources" && <ResourcesTab project={project} />}
       {tab === "Schedule" && <ScheduleTab project={project} />}
       {tab === "Cost" && <CostTab project={project} />}

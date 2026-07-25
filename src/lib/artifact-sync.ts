@@ -110,6 +110,25 @@ export async function syncArtifactToTables(
       break;
     }
 
+    case "issue_register": {
+      const issues: any[] = (content.issues ?? content.issueRegister ?? content.issueItems ?? content.issueLog ?? []) as any[];
+      if (issues.length === 0) return;
+      await prisma.issue.deleteMany({ where: { projectId } });
+      await prisma.issue.createMany({
+        data: issues.map((iss: any) => ({
+          projectId,
+          issueId: iss.id ?? null,
+          description: String(iss.description ?? iss.title ?? iss.issue ?? ""),
+          severity: normaliseSeverity(iss.severity ?? iss.priority),
+          status: normaliseStatus(iss.status),
+          owner: iss.owner ?? null,
+          resolution: iss.resolutionPlan ?? iss.resolution ?? iss.action ?? null,
+          dueDate: iss.dueDate ?? iss.targetResolutionDate ? new Date(iss.dueDate ?? iss.targetResolutionDate) : null,
+        })),
+      });
+      break;
+    }
+
     case "raid_register": {
       // Sync risks
       const risks: any[] = content.risks ?? [];
