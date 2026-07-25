@@ -438,7 +438,10 @@ export function CopilotPanel() {
   return (
     <>
       {showNaming && (
-        <NamingCeremony onComplete={(name) => { setAssistantName(name); setShowNaming(false); }} />
+        <NamingCeremony
+          pmName={(session?.user as any)?.name?.split(" ")[0] || ""}
+          onComplete={(name) => { setAssistantName(name); setShowNaming(false); }}
+        />
       )}
 
       {/* FAB */}

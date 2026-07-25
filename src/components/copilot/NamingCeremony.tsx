@@ -2,10 +2,18 @@
 import { useState } from "react";
 
 interface Props {
+  pmName?: string;
   onComplete: (name: string) => void;
 }
 
-export function NamingCeremony({ onComplete }: Props) {
+const CAPABILITIES = [
+  { icon: "⚡", text: "Close tasks & update progress instantly" },
+  { icon: "🛡️", text: "Log risks and mitigate issues in seconds" },
+  { icon: "📊", text: "Regenerate decks, RAID logs & status reports" },
+  { icon: "🔍", text: "Analyze EVM, SPI, CPI and forecast delivery" },
+];
+
+export function NamingCeremony({ pmName, onComplete }: Props) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -14,7 +22,6 @@ export function NamingCeremony({ onComplete }: Props) {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) { onComplete("Copilot"); return; }
-
     setSaving(true);
     setError("");
     try {
@@ -32,77 +39,115 @@ export function NamingCeremony({ onComplete }: Props) {
     }
   }
 
+  const greeting = pmName ? `Welcome, ${pmName}.` : "Welcome aboard.";
+
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 9999,
-      background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
+      background: "rgba(10,14,22,0.72)", backdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "16px",
     }}>
       <div style={{
-        background: "#fff", borderRadius: 20, padding: "40px 36px",
-        maxWidth: 420, width: "90%", boxShadow: "0 24px 64px rgba(0,0,0,0.18)",
+        background: "#fff", borderRadius: 22,
+        maxWidth: 460, width: "100%",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.22)",
+        overflow: "hidden",
       }}>
-        {/* Avatar */}
+        {/* Header band */}
         <div style={{
-          width: 56, height: 56, borderRadius: "50%",
-          background: "linear-gradient(135deg, #4f5bd5 0%, #2dd4bf 100%)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 26, marginBottom: 20,
-        }}>🤖</div>
-
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: "#1a1d24", margin: "0 0 8px" }}>
-          Hi, I'm your project copilot!
-        </h2>
-        <p style={{ fontSize: 14, color: "#5b616e", margin: "0 0 24px", lineHeight: 1.6 }}>
-          I can summarize project health, analyze risks, explain metrics, and answer any PM questions.
-          What would you like to call me?
-        </p>
-
-        <form onSubmit={handleSubmit}>
-          <input
-            value={name}
-            onChange={(e) => { setName(e.target.value); setError(""); }}
-            placeholder='e.g. "SAM", "Max", "Alex"'
-            maxLength={20}
-            autoFocus
-            style={{
-              width: "100%", padding: "10px 14px", borderRadius: 10,
-              border: error ? "1.5px solid #cf3f3a" : "1.5px solid #cfd4f5",
-              fontSize: 15, outline: "none", boxSizing: "border-box",
-              fontFamily: "inherit",
-            }}
-          />
-          {error && <p style={{ fontSize: 12, color: "#cf3f3a", margin: "6px 0 0" }}>{error}</p>}
-
-          <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-            <button
-              type="submit"
-              disabled={saving}
-              style={{
-                flex: 1, padding: "11px 0", borderRadius: 10, border: "none",
-                background: "linear-gradient(135deg, #4f5bd5, #2dd4bf)",
-                color: "#fff", fontWeight: 600, fontSize: 14, cursor: saving ? "not-allowed" : "pointer",
-                opacity: saving ? 0.7 : 1,
-              }}
-            >
-              {saving ? "Saving…" : name.trim() ? `Let's go, ${name.trim()}!` : "Get started"}
-            </button>
-            <button
-              type="button"
-              onClick={() => onComplete("Copilot")}
-              style={{
-                padding: "11px 16px", borderRadius: 10,
-                border: "1.5px solid #e2e5ea", background: "transparent",
-                color: "#5b616e", fontSize: 14, cursor: "pointer",
-              }}
-            >
-              Skip
-            </button>
+          background: "linear-gradient(135deg, #003C51 0%, #006E74 55%, #0097AC 100%)",
+          padding: "28px 32px 24px",
+        }}>
+          {/* Brand row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: "rgba(255,255,255,0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3l7 4v10l-7 4-7-4V7l7-4z" stroke="#fff" strokeWidth="1.7" strokeLinejoin="round"/>
+                <path d="M12 12l7-4M12 12v9M12 12L5 8" stroke="#fff" strokeWidth="1.7" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <span style={{ color: "rgba(255,255,255,0.9)", fontSize: 13, fontWeight: 600, letterSpacing: "0.01em" }}>
+              PM Agent · AI Copilot
+            </span>
           </div>
-          <p style={{ fontSize: 11, color: "#8a909c", margin: "12px 0 0", textAlign: "center" }}>
-            You can rename me any time from the assistant settings.
+
+          <h2 style={{ color: "#fff", fontSize: 22, fontWeight: 700, margin: "0 0 6px", letterSpacing: "-0.02em" }}>
+            {greeting}
+          </h2>
+          <p style={{ color: "rgba(255,255,255,0.78)", fontSize: 13.5, margin: 0, lineHeight: 1.55 }}>
+            Your AI-powered PMO assistant is ready. Here's what I can do for you right now:
           </p>
-        </form>
+        </div>
+
+        {/* Capabilities grid */}
+        <div style={{ padding: "20px 32px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+          {CAPABILITIES.map((c) => (
+            <div key={c.text} style={{
+              display: "flex", alignItems: "flex-start", gap: 9,
+              background: "#f7f8fa", borderRadius: 10, padding: "10px 12px",
+            }}>
+              <span style={{ fontSize: 16, lineHeight: 1, marginTop: 1, flexShrink: 0 }}>{c.icon}</span>
+              <span style={{ fontSize: 12.5, color: "#3a3f4a", lineHeight: 1.45, fontWeight: 500 }}>{c.text}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Naming form */}
+        <div style={{ padding: "20px 32px 28px" }}>
+          <p style={{ fontSize: 13, color: "#5b616e", margin: "0 0 12px", fontWeight: 500 }}>
+            What would you like to call your assistant?
+          </p>
+          <form onSubmit={handleSubmit}>
+            <input
+              value={name}
+              onChange={(e) => { setName(e.target.value); setError(""); }}
+              placeholder='e.g. "SAM", "Max", "Alex"'
+              maxLength={20}
+              autoFocus
+              style={{
+                width: "100%", padding: "11px 14px", borderRadius: 10,
+                border: error ? "1.5px solid #cf3f3a" : "1.5px solid #d1d9e0",
+                fontSize: 14.5, outline: "none", boxSizing: "border-box",
+                fontFamily: "inherit", color: "#1a1d24",
+              }}
+            />
+            {error && <p style={{ fontSize: 12, color: "#cf3f3a", margin: "5px 0 0" }}>{error}</p>}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button
+                type="submit"
+                disabled={saving}
+                style={{
+                  flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
+                  background: saving ? "#b0bec5" : "linear-gradient(135deg, #006E74, #0097AC)",
+                  color: "#fff", fontWeight: 700, fontSize: 14,
+                  cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.01em",
+                }}
+              >
+                {saving ? "Saving…" : name.trim() ? `Let's go, ${name.trim()}!` : "Get started"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onComplete("Copilot")}
+                style={{
+                  padding: "12px 18px", borderRadius: 10,
+                  border: "1.5px solid #e2e5ea", background: "transparent",
+                  color: "#5b616e", fontSize: 14, cursor: "pointer",
+                }}
+              >
+                Skip
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: "#9aa0ab", margin: "10px 0 0", textAlign: "center" }}>
+              You can rename your assistant any time from settings.
+            </p>
+          </form>
+        </div>
       </div>
     </div>
   );
