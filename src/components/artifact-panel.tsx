@@ -75,7 +75,12 @@ export function ArtifactPanel({
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
   const [selectedOptional, setSelectedOptional] = useState<Set<string>>(new Set());
-  const [promoted, setPromoted] = useState<Set<string>>(new Set());
+  const [promoted, setPromoted] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(`promoted:${projectId}`);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
   const [phaseOverrides, setPhaseOverrides] = useState<Record<string, string>>({});
   const panelRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -216,6 +221,7 @@ export function ArtifactPanel({
     setPromoted((prev) => {
       const next = new Set(prev);
       selectedOptional.forEach((t) => next.add(t));
+      try { localStorage.setItem(`promoted:${projectId}`, JSON.stringify([...next])); } catch {}
       return next;
     });
     const count = selectedOptional.size;
