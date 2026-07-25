@@ -30,12 +30,23 @@ export async function PATCH(
         session.user.id!
       );
       if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
-
-      await prisma.assistantAction.update({
-        where: { id },
-        data: { status: "confirmed", confirmedAt: new Date() },
-      });
+      await prisma.assistantAction.update({ where: { id }, data: { status: "confirmed", confirmedAt: new Date() } });
       return NextResponse.json({ action: { ...action, status: "confirmed" }, artifact: result.artifact });
+    }
+
+    if (action.actionType === "BULK_CLOSE_TASKS") {
+      const taskIds = (payload.tasks as { id: string }[]).map((t) => t.id);
+      await prisma.scheduleTask.updateMany({ where: { id: { in: taskIds } }, data: { status: "done", percentComplete: 100 } });
+      await prisma.assistantAction.update({ where: { id }, data: { status: "confirmed", confirmedAt: new Date() } });
+      return NextResponse.json({ action: { ...action, status: "confirmed" }, count: taskIds.length });
+    }
+
+    if (action.actionType === "UPDATE_PROJECT_STATUS") {
+      const proj = await prisma.project.findUnique({ where: { id: payload.projectId || projectId }, select: { healthStatus: true } });
+      const prev = { healthStatus: proj?.healthStatus };
+      await prisma.project.update({ where: { id: payload.projectId || projectId }, data: { healthStatus: payload.healthStatus } });
+      await prisma.assistantAction.update({ where: { id }, data: { status: "confirmed", confirmedAt: new Date(), payload: { ...payload, prev } } });
+      return NextResponse.json({ action: { ...action, status: "confirmed" } });
     }
 
     return NextResponse.json({ error: "Unknown Tier C action type" }, { status: 400 });
@@ -48,13 +59,20 @@ export async function PATCH(
         await prisma.risk.delete({ where: { id: payload.riskId } });
       else if (action.actionType === "LOG_ISSUE" && payload.issueId)
         await (prisma as any).issue.delete({ where: { id: payload.issueId } });
+      else if (action.actionType === "CLOSE_TASK" && payload.taskId && payload.prev)
+        await prisma.scheduleTask.update({ where: { id: payload.taskId }, data: { status: payload.prev.status, percentComplete: payload.prev.percentComplete } });
+      else if (action.actionType === "UPDATE_TASK_PROGRESS" && payload.taskId && payload.prev)
+        await prisma.scheduleTask.update({ where: { id: payload.taskId }, data: { status: payload.prev.status, percentComplete: payload.prev.percentComplete } });
+      else if (action.actionType === "CLOSE_RISK" && payload.riskId && payload.prev)
+        await prisma.risk.update({ where: { id: payload.riskId }, data: { status: payload.prev.status } });
+      else if (action.actionType === "CLOSE_ISSUE" && payload.issueId && payload.prev)
+        await (prisma as any).issue.update({ where: { id: payload.issueId }, data: { status: payload.prev.status } });
+      else if (action.actionType === "CLOSE_MILESTONE" && payload.milestoneId && payload.prev)
+        await prisma.milestone.update({ where: { id: payload.milestoneId }, data: { status: payload.prev.status } });
     } catch (e: any) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
-    await prisma.assistantAction.update({
-      where: { id },
-      data: { status: "undone", undoneAt: new Date() },
-    });
+    await prisma.assistantAction.update({ where: { id }, data: { status: "undone", undoneAt: new Date() } });
     return NextResponse.json({ action: { ...action, status: "undone" } });
   }
 

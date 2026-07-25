@@ -40,6 +40,26 @@ const ACTION_LABELS: Record<string, string> = {
   LOG_RISK: "Risk Logged",
   LOG_ISSUE: "Issue Logged",
   REGEN_ARTIFACT: "Regenerate Artifact",
+  CLOSE_TASK: "Task Closed",
+  UPDATE_TASK_PROGRESS: "Task Progress Updated",
+  CLOSE_RISK: "Risk Mitigated",
+  CLOSE_ISSUE: "Issue Closed",
+  CLOSE_MILESTONE: "Milestone Completed",
+  BULK_CLOSE_TASKS: "Close All Open Tasks",
+  UPDATE_PROJECT_STATUS: "Update Project Status",
+};
+
+const ACTION_ICONS: Record<string, string> = {
+  LOG_RISK: "⚠️",
+  LOG_ISSUE: "🔴",
+  REGEN_ARTIFACT: "🔄",
+  CLOSE_TASK: "✅",
+  UPDATE_TASK_PROGRESS: "📊",
+  CLOSE_RISK: "🛡️",
+  CLOSE_ISSUE: "✔️",
+  CLOSE_MILESTONE: "🏁",
+  BULK_CLOSE_TASKS: "📋",
+  UPDATE_PROJECT_STATUS: "🚦",
 };
 
 function TierBadge({ tier }: { tier: string }) {
@@ -146,7 +166,7 @@ function ActionCardUI({
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: 16 }}>
-          {action.actionType === "LOG_RISK" ? "⚠️" : action.actionType === "LOG_ISSUE" ? "🔴" : "🔄"}
+          {ACTION_ICONS[action.actionType] ?? "🔄"}
         </span>
         <span style={{ fontWeight: 700, color: C.text }}>{ACTION_LABELS[action.actionType] || action.actionType}</span>
         <TierBadge tier={action.tier} />
@@ -169,6 +189,39 @@ function ActionCardUI({
         )}
         {action.actionType === "REGEN_ARTIFACT" && (
           <div>Regenerate <b>{p.label}</b> using current project data and AI templates.</div>
+        )}
+        {action.actionType === "CLOSE_TASK" && (
+          <div>Marked <b>{p.taskName}</b> as done (100%).</div>
+        )}
+        {action.actionType === "UPDATE_TASK_PROGRESS" && (
+          <div>Set <b>{p.taskName}</b> to <b>{p.percent}%</b> complete.</div>
+        )}
+        {action.actionType === "CLOSE_RISK" && (
+          <>
+            <div><b>{p.riskCode}</b> — {p.description}</div>
+            <div>Status changed to <b>mitigated</b>.</div>
+          </>
+        )}
+        {action.actionType === "CLOSE_ISSUE" && (
+          <div>Issue <b>{p.title}</b> marked as closed.</div>
+        )}
+        {action.actionType === "CLOSE_MILESTONE" && (
+          <div>Milestone <b>{p.milestoneName}</b> marked as completed.</div>
+        )}
+        {action.actionType === "BULK_CLOSE_TASKS" && (
+          <>
+            <div style={{ marginBottom: 6 }}>Close <b>{p.count}</b> open task{p.count !== 1 ? "s" : ""}:</div>
+            <div style={{ maxHeight: 100, overflowY: "auto", fontSize: 11.5 }}>
+              {(p.tasks as { name: string; status: string }[]).map((t, i) => (
+                <div key={i} style={{ padding: "2px 0", borderBottom: `1px solid ${C.border}` }}>
+                  · {t.name} <span style={{ color: C.text3 }}>({t.status})</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {action.actionType === "UPDATE_PROJECT_STATUS" && (
+          <div>Set project health status to <b style={{ color: p.healthStatus === "RED" ? C.red : p.healthStatus === "AMBER" ? C.amber : C.green }}>{p.healthStatus}</b>.</div>
         )}
       </div>
 
@@ -488,9 +541,10 @@ export function CopilotPanel() {
                   padding: "4px 0", fontSize: 12, borderBottom: `1px solid ${C.border}`,
                 }}>
                   <span style={{ color: C.text }}>
-                    {a.actionType === "LOG_RISK" ? "⚠️" : a.actionType === "LOG_ISSUE" ? "🔴" : "🔄"}{" "}
-                    {ACTION_LABELS[a.actionType]}
+                    {ACTION_ICONS[a.actionType] ?? "🔄"}{" "}
+                    {ACTION_LABELS[a.actionType] ?? a.actionType}
                     {a.payload?.riskCode ? ` · ${a.payload.riskCode}` : ""}
+                    {a.payload?.taskName ? ` · ${a.payload.taskName}` : ""}
                     {a.payload?.label ? ` · ${a.payload.label}` : ""}
                   </span>
                   <TierBadge tier={a.tier} />
@@ -519,7 +573,7 @@ export function CopilotPanel() {
                   </svg>
                 </div>
                 <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>
-                  Hi! I'm {assistantName}. I can analyze data, log risks/issues, and regenerate your project decks.
+                  Hi! I'm {assistantName}. I can close tasks, update progress, mitigate risks, log issues, and regenerate your project decks.
                 </p>
               </div>
             )}
