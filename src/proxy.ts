@@ -6,7 +6,8 @@ export function proxy(req: NextRequest) {
   const isPublic =
     pathname === "/login" ||
     pathname === "/register" ||
-    pathname.startsWith("/api/auth");
+    pathname.startsWith("/api/auth") ||
+    pathname === "/api/admin/reset-copilot";
 
   // Check for Auth.js v5 session cookie (JWT strategy)
   // v5 uses "authjs.session-token"; v4 used "next-auth.session-token"
