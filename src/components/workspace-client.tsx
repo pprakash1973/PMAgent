@@ -1966,6 +1966,15 @@ function StatusTab({ project }: { project: any }) {
 
 const COST_CATEGORIES = ["labor", "materials", "travel", "software", "training", "other"];
 
+const COST_CAT_STYLE: Record<string, { bg: string; color: string; border: string }> = {
+  labor:     { bg: "#e0f2fe", color: "#0369a1", border: "rgba(3,105,161,.2)" },
+  materials: { bg: "#fef9c3", color: "#854d0e", border: "rgba(133,77,14,.2)" },
+  travel:    { bg: "#fce7f3", color: "#be185d", border: "rgba(190,24,93,.2)" },
+  software:  { bg: "#f3e8ff", color: "#6d28d9", border: "rgba(109,40,217,.2)" },
+  training:  { bg: "#ecfdf5", color: "#065f46", border: "rgba(6,95,70,.2)" },
+  other:     { bg: "#f1f5f9", color: "#475569", border: "rgba(71,85,105,.2)" },
+};
+
 function fmt$(n: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
 }
@@ -1973,11 +1982,11 @@ function fmt$(n: number, currency = "USD") {
 function CostBurndownChart({ series, currency }: { series: any[]; currency: string }) {
   if (!series.length) return null;
 
-  const W = 700; const H = 220; const PAD = { top: 16, right: 20, bottom: 36, left: 72 };
+  const W = 560; const H = 200; const PAD = { top: 14, right: 16, bottom: 34, left: 68 };
   const inner = { w: W - PAD.left - PAD.right, h: H - PAD.top - PAD.bottom };
 
   const allVals = series.flatMap((s) => [s.pv, s.ev, s.ac]).filter((v) => v > 0);
-  const maxV = allVals.length ? Math.max(...allVals) * 1.08 : 1;
+  const maxV = allVals.length ? Math.max(...allVals) * 1.1 : 1;
 
   function xOf(i: number) { return PAD.left + (i / Math.max(series.length - 1, 1)) * inner.w; }
   function yOf(v: number) { return PAD.top + inner.h - (v / maxV) * inner.h; }
@@ -1988,52 +1997,61 @@ function CostBurndownChart({ series, currency }: { series: any[]; currency: stri
       .join(" ");
   }
 
-  const tickCount = 5;
+  const tickCount = 4;
   const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => (maxV * i) / tickCount);
   const xTicks = series.filter((_, i) => i % Math.max(1, Math.floor(series.length / 6)) === 0);
 
+  // EV area fill path
+  const evFill = series.map((s, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(s.ev).toFixed(1)}`).join(" ")
+    + ` L${xOf(series.length - 1).toFixed(1)},${(PAD.top + inner.h).toFixed(1)} L${PAD.left.toFixed(1)},${(PAD.top + inner.h).toFixed(1)} Z`;
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, display: "block" }}>
-      {/* Grid */}
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", display: "block" }}>
+      <defs>
+        <linearGradient id="evFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#006E74" stopOpacity="0.15" />
+          <stop offset="100%" stopColor="#006E74" stopOpacity="0" />
+        </linearGradient>
+      </defs>
       {yTicks.map((v, i) => (
         <g key={i}>
           <line x1={PAD.left} x2={W - PAD.right} y1={yOf(v)} y2={yOf(v)} stroke={C.border} strokeWidth={0.5} />
-          <text x={PAD.left - 6} y={yOf(v) + 4} textAnchor="end" fontSize={9} fill={C.text3}>
+          <text x={PAD.left - 5} y={yOf(v) + 4} textAnchor="end" fontSize={9} fill={C.text3}>
             {fmt$(v, currency).replace(/\.00$/, "")}
           </text>
         </g>
       ))}
-      {/* X axis labels */}
       {xTicks.map((s, i) => {
         const idx = series.indexOf(s);
         return (
-          <text key={i} x={xOf(idx)} y={H - 6} textAnchor="middle" fontSize={8.5} fill={C.text3}>
+          <text key={i} x={xOf(idx)} y={H - 4} textAnchor="middle" fontSize={8.5} fill={C.text3}>
             {s.date.slice(5)}
           </text>
         );
       })}
-      {/* Today line */}
       {(() => {
         const todayStr = new Date().toISOString().slice(0, 10);
         const ti = series.findIndex((s) => s.date >= todayStr);
         if (ti < 0) return null;
-        return <line x1={xOf(ti)} x2={xOf(ti)} y1={PAD.top} y2={H - PAD.bottom} stroke={C.text3} strokeWidth={1} strokeDasharray="4 3" />;
+        return (
+          <>
+            <line x1={xOf(ti)} x2={xOf(ti)} y1={PAD.top} y2={H - PAD.bottom} stroke={C.text3} strokeWidth={1} strokeDasharray="3 3" />
+            <text x={xOf(ti) + 3} y={PAD.top + 10} fontSize={8} fill={C.text3}>Today</text>
+          </>
+        );
       })()}
-      {/* PV line */}
+      <path d={evFill} fill="url(#evFill)" />
       <path d={linePath("pv")} fill="none" stroke={C.text3} strokeWidth={1.5} strokeDasharray="5 3" />
-      {/* EV line */}
-      <path d={linePath("ev")} fill="none" stroke={C.primary} strokeWidth={2} />
-      {/* AC line */}
+      <path d={linePath("ev")} fill="none" stroke="#006E74" strokeWidth={2} />
       <path d={linePath("ac")} fill="none" stroke={C.red} strokeWidth={2} />
-      {/* Legend */}
       {[
         { color: C.text3, label: "PV (Planned)", dash: true },
-        { color: C.primary, label: "EV (Earned)", dash: false },
+        { color: "#006E74", label: "EV (Earned)", dash: false },
         { color: C.red, label: "AC (Actual)", dash: false },
       ].map((l, i) => (
-        <g key={i} transform={`translate(${PAD.left + i * 130}, ${H - 10})`}>
-          <line x1={0} x2={18} y1={0} y2={0} stroke={l.color} strokeWidth={2} strokeDasharray={l.dash ? "4 2" : undefined} />
-          <text x={22} y={4} fontSize={9} fill={C.text2}>{l.label}</text>
+        <g key={i} transform={`translate(${PAD.left + i * 110}, ${H - 8})`}>
+          <line x1={0} x2={16} y1={0} y2={0} stroke={l.color} strokeWidth={2} strokeDasharray={l.dash ? "4 2" : undefined} />
+          <text x={20} y={4} fontSize={8.5} fill={C.text2}>{l.label}</text>
         </g>
       ))}
     </svg>
@@ -2041,12 +2059,30 @@ function CostBurndownChart({ series, currency }: { series: any[]; currency: stri
 }
 
 function CostTab({ project }: { project: any }) {
+  const { tabContext } = useCopilot();
+
+  // ── data ──
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // ── form ──
   const [adding, setAdding] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: "", category: "labor", description: "" });
   const [formErr, setFormErr] = useState("");
+
+  // ── table ──
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [catFilter, setCatFilter] = useState("all");
+
+  // ── AI sidebar ──
+  type ChatMsg = { role: "user" | "assistant"; content: string; streaming?: boolean };
+  const [aiMessages, setAiMessages] = useState<ChatMsg[]>([
+    { role: "assistant", content: "Hi! I can **log entries**, **delete records**, and **run forecasts** for this project. Just ask — or use the quick actions below." },
+  ]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const aiEndRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2056,6 +2092,7 @@ function CostTab({ project }: { project: any }) {
   }, [project.id]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -2066,8 +2103,12 @@ function CostTab({ project }: { project: any }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date: form.date, amount: Number(form.amount), category: form.category, description: form.description }),
     });
-    if (res.ok) { setForm({ date: new Date().toISOString().slice(0, 10), amount: "", category: "labor", description: "" }); await load(); }
-    else setFormErr("Failed to save entry");
+    if (res.ok) {
+      setForm({ date: new Date().toISOString().slice(0, 10), amount: "", category: "labor", description: "" });
+      await load();
+    } else {
+      setFormErr("Failed to save entry");
+    }
     setAdding(false);
   }
 
@@ -2078,144 +2119,397 @@ function CostTab({ project }: { project: any }) {
     setDeleting(null);
   }
 
+  async function sendAiMessage(text: string) {
+    const msg = text.trim();
+    if (!msg || aiLoading) return;
+    setAiInput("");
+    setAiMessages((prev) => [...prev, { role: "user", content: msg }]);
+    setAiLoading(true);
+    setAiMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
+
+    const s = data?.summary;
+    const currency = s?.currency ?? project.currency ?? "USD";
+    const systemHint = `You are an AI cost assistant for the project "${project.name}" (ID: ${project.id}).
+Current cost summary: BAC=${s?.bac ?? "unknown"}, AC=${s?.totalAC ?? 0}, EV=${s?.totalEV ?? 0}, CPI=${s?.cpi?.toFixed(2) ?? "N/A"}, EAC=${s?.eac ?? "N/A"}, currency=${currency}.
+Recent entries: ${(data?.entries ?? []).slice(-5).map((e: any) => `${e.date} ${e.category} ${e.amount} ${e.description}`).join("; ")}.
+You can help the PM: log cost entries (provide details and say you'll log it), delete entries (confirm by entry ID or description), run EAC/ETC forecasts, or summarise spend. When the PM asks to log an entry, extract date/amount/category/description and log it via the API if possible.`;
+
+    try {
+      const res = await fetch("/api/copilot/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: msg,
+          projectId: project.id,
+          tab: "cost",
+          history: aiMessages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+          kpiSnapshot: s ? { spi: s.spi, pv: s.totalPV, ev: s.totalEV, healthStatus: project.healthStatus } : undefined,
+          systemOverride: systemHint,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setAiMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "assistant", content: err.error || "Something went wrong." };
+          return next;
+        });
+        setAiLoading(false);
+        return;
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const json = JSON.parse(line.slice(6));
+          if (json.chunk) {
+            setAiMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              next[next.length - 1] = { ...last, content: last.content + json.chunk };
+              return next;
+            });
+          }
+          if (json.done || json.error) break;
+        }
+      }
+      setAiMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = { ...next[next.length - 1], streaming: false };
+        return next;
+      });
+      // Refresh data in case AI triggered a cost action
+      await load();
+    } catch {
+      setAiMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = { role: "assistant", content: "Connection error — please try again." };
+        return next;
+      });
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   const s = data?.summary;
-  const currency = s?.currency ?? "USD";
+  const currency = s?.currency ?? project.currency ?? "USD";
   const cpiColor = !s ? C.text : s.cpi >= 1 ? C.green : s.cpi >= 0.9 ? C.amber : C.red;
   const spiColor2 = !s ? C.text : s.spi >= 1 ? C.green : s.spi >= 0.9 ? C.amber : C.red;
 
+  const TEAL = "#006E74";
+  const TEAL_BG = "rgba(0,110,116,.07)";
+  const TEAL_BORDER = "rgba(0,110,116,.2)";
+  const AI_BG = "#f5f6ff";
+  const AI_BORDER = "#c7d2fe";
+
+  const filteredEntries = useMemo(() => {
+    const entries: any[] = data?.entries ? [...data.entries].reverse() : [];
+    return entries.filter((e) => {
+      const matchCat = catFilter === "all" || e.category === catFilter;
+      const matchSearch = !search || e.description?.toLowerCase().includes(search.toLowerCase()) || e.category.includes(search.toLowerCase());
+      return matchCat && matchSearch;
+    });
+  }, [data, search, catFilter]);
+
+  const totalLogged = data?.entries?.reduce((acc: number, e: any) => acc + e.amount, 0) ?? 0;
+
+  const QUICK_ACTIONS = [
+    { icon: "📋", label: "Log an entry for me", msg: "I need to log a cost entry. Can you help me?" },
+    { icon: "🗑", label: "Delete last entry", msg: "Please delete the most recent cost entry." },
+    { icon: "🔮", label: "Run EAC forecast", msg: "Run a detailed EAC and ETC forecast for this project based on current CPI." },
+    { icon: "📊", label: "Summarise by category", msg: "Summarise the total spend broken down by category." },
+  ];
+
   return (
-    <div style={{ maxWidth: 900 }}>
-      {/* ── EVM KPI strip ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 10, marginBottom: 22 }}>
-        {[
-          { label: "BAC", value: s ? fmt$(s.bac, currency) : "—", sub: "Budget at Completion", color: C.primary, bg: C.primaryLight },
-          { label: "AC", value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost", color: C.text, bg: C.surface2 },
-          { label: "EV", value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value", color: C.primary, bg: C.primaryLight },
-          { label: "CPI", value: s ? s.cpi.toFixed(2) : "—", sub: s?.cpi >= 1 ? "Under budget" : "Over budget", color: cpiColor, bg: !s ? C.surface2 : s.cpi >= 1 ? C.greenLight : s.cpi >= 0.9 ? C.amberLight : C.redLight },
-          { label: "EAC", value: s ? fmt$(s.eac, currency) : "—", sub: "Forecast at Completion", color: C.text, bg: C.surface2 },
-          { label: "VAC", value: s ? fmt$(s.vac, currency) : "—", sub: s?.vac >= 0 ? "Under forecast" : "Cost overrun", color: !s ? C.text : s.vac >= 0 ? C.green : C.red, bg: !s ? C.surface2 : s.vac >= 0 ? C.greenLight : C.redLight },
-        ].map((k) => (
-          <div key={k.label} style={{ background: k.bg, borderRadius: 8, padding: "10px 12px" }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: k.color, lineHeight: 1.2 }}>{loading ? "…" : k.value}</div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, marginTop: 2 }}>{k.label}</div>
-            <div style={{ fontSize: 9.5, color: C.text3, marginTop: 1 }}>{k.sub}</div>
-          </div>
-        ))}
-      </div>
+    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
 
-      {/* ── Budget progress bar ── */}
-      {s && s.bac > 0 && (
-        <div style={{ marginBottom: 22 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ fontSize: 11.5, color: C.text2, fontWeight: 500 }}>Budget consumed</span>
-            <span style={{ fontSize: 11.5, color: s.percentSpent > 100 ? C.red : C.text2 }}>{s.percentSpent}% of {fmt$(s.bac, currency)}</span>
-          </div>
-          <div style={{ height: 8, background: C.surface2, borderRadius: 4, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${Math.min(s.percentSpent, 100)}%`, background: s.percentSpent > 100 ? C.red : s.percentSpent > 85 ? C.amber : C.green, borderRadius: 4, transition: "width .4s" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-            <span style={{ fontSize: 10, color: C.text3 }}>SPI: <strong style={{ color: spiColor2 }}>{s?.spi?.toFixed(2) ?? "—"}</strong></span>
-            <span style={{ fontSize: 10, color: C.text3 }}>ETC remaining: <strong>{s ? fmt$(s.etc, currency) : "—"}</strong></span>
-          </div>
-        </div>
-      )}
+      {/* ════ LEFT + CENTRE COLUMN ════ */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
 
-      {/* ── Burndown chart ── */}
-      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "16px 18px", marginBottom: 22 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Cost Burndown — PV / EV / AC</div>
-        {loading ? (
-          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 12 }}>Loading…</div>
-        ) : data?.series?.length ? (
-          <CostBurndownChart series={data.series} currency={currency} />
-        ) : (
-          <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 12 }}>
-            No cost data yet. Add entries below to see the burndown chart.
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr", gap: 18, alignItems: "start" }}>
-        {/* ── Add cost entry form ── */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "16px 18px" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Log Cost Entry</div>
-          <form onSubmit={handleAdd} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div>
-              <label style={{ fontSize: 11, color: C.text2, display: "block", marginBottom: 3 }}>Date</label>
-              <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-                style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, color: C.text2, display: "block", marginBottom: 3 }}>Amount ({currency})</label>
-              <input type="number" step="0.01" min="0" placeholder="0.00" value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, color: C.text2, display: "block", marginBottom: 3 }}>Category</label>
-              <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" }}>
-                {COST_CATEGORIES.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 11, color: C.text2, display: "block", marginBottom: 3 }}>Description (optional)</label>
-              <input type="text" placeholder="e.g. Sprint 3 dev hours" value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" }} />
-            </div>
-            {formErr && <div style={{ fontSize: 11, color: C.red }}>{formErr}</div>}
-            <button type="submit" disabled={adding}
-              style={{ marginTop: 4, padding: "8px 0", background: C.primary, color: "#fff", border: "none", borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: adding ? "not-allowed" : "pointer", opacity: adding ? 0.7 : 1 }}>
-              {adding ? "Saving…" : "+ Add Entry"}
-            </button>
-          </form>
-        </div>
-
-        {/* ── Cost entries list ── */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "16px 18px" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>
-            Cost Entries
-            {data?.entries?.length > 0 && <span style={{ fontSize: 11, color: C.text3, fontWeight: 400, marginLeft: 8 }}>{data.entries.length} records · Total {fmt$(data.entries.reduce((s: number, e: any) => s + e.amount, 0), currency)}</span>}
-          </div>
-          {loading ? (
-            <div style={{ color: C.text3, fontSize: 12 }}>Loading…</div>
-          ) : !data?.entries?.length ? (
-            <div style={{ color: C.text3, fontSize: 12, padding: "20px 0", textAlign: "center" }}>No cost entries yet.</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
-              {[...data.entries].reverse().map((e: any) => (
-                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: C.surface2, borderRadius: 7, border: `1px solid ${C.border}` }}>
-                  <div style={{ fontSize: 10.5, color: C.text3, minWidth: 72 }}>{e.date}</div>
-                  <div style={{ fontSize: 10, padding: "1px 7px", background: C.primaryLight, color: C.primary, borderRadius: 10, fontWeight: 600 }}>{e.category}</div>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text, minWidth: 70, textAlign: "right" }}>{fmt$(e.amount, currency)}</div>
-                  <div style={{ fontSize: 11, color: C.text2, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.description}</div>
-                  <button onClick={() => handleDelete(e.id)} disabled={deleting === e.id}
-                    style={{ fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: "2px 4px", flexShrink: 0 }}>
-                    {deleting === e.id ? "…" : "✕"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Variance summary ── */}
-      {s && (
-        <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+        {/* ── KPI strip ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 }}>
           {[
-            { label: "Cost Variance (CV)", value: fmt$(s.cv, currency), good: s.cv >= 0, tip: s.cv >= 0 ? "Under budget" : "Over budget" },
-            { label: "Schedule Variance (SV)", value: fmt$(s.sv, currency), good: s.sv >= 0, tip: s.sv >= 0 ? "Ahead of plan" : "Behind plan" },
-            { label: "To-Complete (TCPI)", value: s.bac > 0 && s.totalAC < s.bac ? ((s.bac - s.totalEV) / (s.bac - s.totalAC)).toFixed(2) : "—", good: true, tip: "Work efficiency needed to finish on budget" },
+            { label: "BAC", value: s ? fmt$(s.bac, currency) : "—", sub: "Budget at Completion", color: TEAL, bg: TEAL_BG },
+            { label: "AC",  value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost", color: C.text, bg: C.surface2 },
+            { label: "EV",  value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value", color: TEAL, bg: TEAL_BG },
+            { label: "CPI", value: s ? s.cpi.toFixed(2) : "—", sub: s?.cpi >= 1 ? "Under budget ✓" : "Over budget", color: cpiColor, bg: !s ? C.surface2 : s.cpi >= 1 ? C.greenLight : s.cpi >= 0.9 ? C.amberLight : C.redLight },
+            { label: "EAC", value: s ? fmt$(s.eac, currency) : "—", sub: "Forecast at Completion", color: C.text, bg: C.surface2 },
+            { label: "VAC", value: s ? fmt$(s.vac, currency) : "—", sub: s?.vac >= 0 ? "Under forecast ✓" : "Cost overrun", color: !s ? C.text : s.vac >= 0 ? C.green : C.red, bg: !s ? C.surface2 : s.vac >= 0 ? C.greenLight : C.redLight },
           ].map((k) => (
-            <div key={k.label} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px" }}>
-              <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>{k.label}</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: k.good ? C.green : C.red }}>{k.value}</div>
-              <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{k.tip}</div>
+            <div key={k.label} style={{ background: k.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: k.color, lineHeight: 1.1 }}>{loading ? "…" : k.value}</div>
+              <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text3, marginTop: 3, letterSpacing: ".04em" }}>{k.label}</div>
+              <div style={{ fontSize: 9, color: C.text3, marginTop: 1 }}>{k.sub}</div>
             </div>
           ))}
         </div>
-      )}
+
+        {/* ── Top split: form | chart ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "272px 1fr", gap: 14, alignItems: "start" }}>
+
+          {/* ── Log Cost Entry form ── */}
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, fontSize: 12.5, fontWeight: 600, color: C.text, display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: TEAL }}>＋</span> Log Cost Entry
+            </div>
+            <div style={{ padding: 14 }}>
+              <form onSubmit={handleAdd} style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 10.5, fontWeight: 500, color: C.text3, display: "block", marginBottom: 3 }}>Date</label>
+                    <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                      style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" as const }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10.5, fontWeight: 500, color: C.text3, display: "block", marginBottom: 3 }}>Amount ({currency})</label>
+                    <input type="number" step="0.01" min="0" placeholder="0.00" value={form.amount}
+                      onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                      style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" as const }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10.5, fontWeight: 500, color: C.text3, display: "block", marginBottom: 3 }}>Category</label>
+                  <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                    style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" as const }}>
+                    {COST_CATEGORIES.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10.5, fontWeight: 500, color: C.text3, display: "block", marginBottom: 3 }}>Description (optional)</label>
+                  <input type="text" placeholder="e.g. Sprint 3 dev hours" value={form.description}
+                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                    style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, background: C.surface2, color: C.text, boxSizing: "border-box" as const }} />
+                </div>
+                {formErr && <div style={{ fontSize: 11, color: C.red }}>{formErr}</div>}
+                <button type="submit" disabled={adding}
+                  style={{ padding: "8px 0", background: TEAL, color: "#fff", border: "none", borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: adding ? "not-allowed" : "pointer", opacity: adding ? 0.7 : 1, marginTop: 2 }}>
+                  {adding ? "Saving…" : "+ Add Entry"}
+                </button>
+              </form>
+
+              {/* divider */}
+              <div style={{ margin: "14px 0 10px", borderTop: `1px solid ${C.border}` }} />
+
+              {/* Variance summary */}
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, marginBottom: 8, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>Variance Summary</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {[
+                  { label: "Cost Variance (CV)", value: s ? fmt$(s.cv, currency) : "—", good: !s || s.cv >= 0 },
+                  { label: "Schedule Variance (SV)", value: s ? fmt$(s.sv, currency) : "—", good: !s || s.sv >= 0 },
+                  { label: "TCPI (efficiency needed)", value: s && s.bac > 0 && s.totalAC < s.bac ? ((s.bac - s.totalEV) / (s.bac - s.totalAC)).toFixed(2) : "—", good: true },
+                ].map((row) => (
+                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: C.text2 }}>{row.label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: row.good ? C.green : C.red }}>{loading ? "…" : row.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Budget bar */}
+              {s && s.bac > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: C.text3, marginBottom: 4 }}>
+                    <span>Budget consumed</span>
+                    <span style={{ fontWeight: 600, color: s.percentSpent > 100 ? C.red : C.text2 }}>{s.percentSpent}%</span>
+                  </div>
+                  <div style={{ height: 7, background: C.surface2, borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${Math.min(s.percentSpent, 100)}%`, background: s.percentSpent > 100 ? C.red : s.percentSpent > 85 ? C.amber : C.green, borderRadius: 4, transition: "width .4s" }} />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.text3, marginTop: 3 }}>
+                    <span>SPI: <strong style={{ color: spiColor2 }}>{s?.spi?.toFixed(2) ?? "—"}</strong></span>
+                    <span>ETC: <strong>{s ? fmt$(s.etc, currency) : "—"}</strong></span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Chart ── */}
+          <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>Cost Burndown — PV / EV / AC</span>
+            </div>
+            <div style={{ padding: "14px 16px 10px" }}>
+              {loading ? (
+                <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 12 }}>Loading…</div>
+              ) : data?.series?.length ? (
+                <CostBurndownChart series={data.series} currency={currency} />
+              ) : (
+                <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 12 }}>
+                  No cost data yet. Add entries to see the burndown.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Cost Entries Table ── */}
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+          {/* table toolbar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>Cost Entries</span>
+            {data?.entries?.length > 0 && (
+              <span style={{ fontSize: 11, color: C.text3 }}>{data.entries.length} records · Total {fmt$(totalLogged, currency)}</span>
+            )}
+            <input
+              type="text"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ marginLeft: "auto", padding: "5px 9px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 11, background: C.surface2, color: C.text, outline: "none", width: 160 }}
+            />
+            <select
+              value={catFilter}
+              onChange={(e) => setCatFilter(e.target.value)}
+              style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 11, background: C.surface2, color: C.text2, outline: "none" }}
+            >
+              <option value="all">All categories</option>
+              {COST_CATEGORIES.map((c) => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+            </select>
+          </div>
+
+          {loading ? (
+            <div style={{ padding: "24px 0", textAlign: "center", color: C.text3, fontSize: 12 }}>Loading…</div>
+          ) : !filteredEntries.length ? (
+            <div style={{ padding: "24px 0", textAlign: "center", color: C.text3, fontSize: 12 }}>
+              {data?.entries?.length ? "No entries match your filter." : "No cost entries yet. Add your first entry above."}
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: C.surface2 }}>
+                  {["Date", "Category", "Description", "Amount", ""].map((h) => (
+                    <th key={h} style={{ textAlign: h === "Amount" ? "right" : "left", padding: "7px 12px", fontSize: 10, fontWeight: 600, color: C.text3, letterSpacing: ".04em", textTransform: "uppercase" as const, borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredEntries.map((e: any) => {
+                  const cat = COST_CAT_STYLE[e.category] ?? COST_CAT_STYLE.other;
+                  return (
+                    <tr key={e.id} style={{ borderBottom: `1px solid ${C.border}` }}
+                      onMouseEnter={(ev) => (ev.currentTarget.style.background = C.surface2)}
+                      onMouseLeave={(ev) => (ev.currentTarget.style.background = "transparent")}>
+                      <td style={{ padding: "8px 12px", fontSize: 11, color: C.text3, whiteSpace: "nowrap" as const }}>{e.date}</td>
+                      <td style={{ padding: "8px 12px" }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: cat.bg, color: cat.color, border: `1px solid ${cat.border}` }}>
+                          {e.category}
+                        </span>
+                      </td>
+                      <td style={{ padding: "8px 12px", fontSize: 11.5, color: C.text2, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{e.description || "—"}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 12, fontWeight: 600, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt$(e.amount, currency)}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                        <button
+                          onClick={() => handleDelete(e.id)}
+                          disabled={deleting === e.id}
+                          title="Delete entry"
+                          style={{ width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "none", border: `1px solid ${C.border}`, borderRadius: 5, cursor: "pointer", fontSize: 11, color: C.text3, transition: "all .15s" }}
+                          onMouseEnter={(ev) => { ev.currentTarget.style.background = C.redLight; ev.currentTarget.style.borderColor = C.red; ev.currentTarget.style.color = C.red; }}
+                          onMouseLeave={(ev) => { ev.currentTarget.style.background = "none"; ev.currentTarget.style.borderColor = C.border; ev.currentTarget.style.color = C.text3; }}
+                        >
+                          {deleting === e.id ? "…" : "✕"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: C.surface2, borderTop: `1px solid ${C.border}` }}>
+                  <td colSpan={3} style={{ padding: "7px 12px", fontSize: 11, color: C.text3 }}>
+                    {filteredEntries.length} of {data?.entries?.length ?? 0} entries
+                  </td>
+                  <td style={{ padding: "7px 12px", fontSize: 12, fontWeight: 700, color: C.text, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    {fmt$(filteredEntries.reduce((acc: number, e: any) => acc + e.amount, 0), currency)}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+
+      </div>{/* /left+centre */}
+
+      {/* ════ AI SIDEBAR ════ */}
+      <div style={{ width: 272, flexShrink: 0, display: "flex", flexDirection: "column", background: AI_BG, border: `1px solid ${AI_BORDER}`, borderRadius: 12, overflow: "hidden", height: "fit-content", position: "sticky", top: 16 }}>
+
+        {/* header */}
+        <div style={{ padding: "11px 13px", borderBottom: `1px solid ${AI_BORDER}`, display: "flex", alignItems: "center", gap: 9 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(135deg, ${TEAL}, #6366f1)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>🤖</div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#003C51" }}>Cost Assistant</div>
+            <div style={{ fontSize: 10, color: "#6366f1" }}>AI-powered · Cost tab</div>
+          </div>
+        </div>
+
+        {/* messages */}
+        <div style={{ padding: "12px 12px 8px", display: "flex", flexDirection: "column", gap: 9, maxHeight: 360, overflowY: "auto" }}>
+          {aiMessages.map((m, i) => (
+            <div key={i} style={{
+              alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+              maxWidth: "88%",
+              background: m.role === "user" ? TEAL : C.surface,
+              color: m.role === "user" ? "#fff" : C.text,
+              border: m.role === "assistant" ? `1px solid ${AI_BORDER}` : "none",
+              borderRadius: m.role === "user" ? "10px 4px 10px 10px" : "4px 10px 10px 10px",
+              padding: "8px 10px",
+              fontSize: 11.5,
+              lineHeight: 1.5,
+            }}>
+              {m.content || (m.streaming ? <span style={{ opacity: .5 }}>●●●</span> : "")}
+            </div>
+          ))}
+          <div ref={aiEndRef} />
+        </div>
+
+        {/* quick actions */}
+        <div style={{ padding: "8px 12px 6px", borderTop: `1px solid ${AI_BORDER}` }}>
+          <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text3, letterSpacing: ".04em", textTransform: "uppercase" as const, marginBottom: 5 }}>Quick Actions</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {QUICK_ACTIONS.map((qa) => (
+              <button
+                key={qa.label}
+                onClick={() => sendAiMessage(qa.msg)}
+                disabled={aiLoading}
+                style={{ padding: "6px 9px", background: C.surface, border: `1px solid ${AI_BORDER}`, borderRadius: 7, fontSize: 11, color: "#003C51", cursor: "pointer", textAlign: "left" as const, opacity: aiLoading ? 0.5 : 1, transition: "all .12s" }}
+                onMouseEnter={(e) => { if (!aiLoading) { e.currentTarget.style.background = TEAL_BG; e.currentTarget.style.borderColor = TEAL_BORDER; e.currentTarget.style.color = TEAL; } }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = C.surface; e.currentTarget.style.borderColor = AI_BORDER; e.currentTarget.style.color = "#003C51"; }}
+              >
+                {qa.icon} {qa.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* input */}
+        <div style={{ padding: "8px 10px", borderTop: `1px solid ${AI_BORDER}`, display: "flex", gap: 6 }}>
+          <input
+            value={aiInput}
+            onChange={(e) => setAiInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAiMessage(aiInput); } }}
+            placeholder="Ask about costs…"
+            disabled={aiLoading}
+            style={{ flex: 1, padding: "7px 10px", border: `1px solid ${AI_BORDER}`, borderRadius: 8, fontSize: 11.5, background: C.surface, color: C.text, outline: "none" }}
+          />
+          <button
+            onClick={() => sendAiMessage(aiInput)}
+            disabled={aiLoading || !aiInput.trim()}
+            style={{ width: 32, height: 32, background: TEAL, border: "none", borderRadius: 8, color: "#fff", fontSize: 14, cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: aiLoading || !aiInput.trim() ? 0.5 : 1, flexShrink: 0 }}
+          >↑</button>
+        </div>
+
+      </div>{/* /ai-sidebar */}
+
     </div>
   );
 }
