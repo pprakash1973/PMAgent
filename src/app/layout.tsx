@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { SessionProvider } from "@/components/session-provider";
+import { CopilotProvider } from "@/components/copilot/CopilotContext";
+import { CopilotPanel } from "@/components/copilot/CopilotPanel";
 
 export const metadata: Metadata = {
   title: "PM Agent — AI-Powered PMO Platform | UST",
@@ -14,8 +16,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <SessionProvider>
-          {children}
-          <Toaster />
+          <CopilotProvider>
+            {children}
+            <CopilotPanel />
+            <Toaster />
+          </CopilotProvider>
         </SessionProvider>
       </body>
     </html>

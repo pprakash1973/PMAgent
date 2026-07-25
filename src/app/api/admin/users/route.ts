@@ -1,4 +1,4 @@
-export const dynamic = "force-dynamic";
+﻿export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const users = await prisma.user.findMany({
     where,
     select: {
-      id: true, email: true, fullName: true, role: true, status: true,
+      id: true, email: true, fullName: true, role: true, status: true, copilotEnabled: true,
       createdAt: true, updatedAt: true,
       programAssignments: {
         include: {
@@ -76,11 +76,11 @@ export async function POST(req: NextRequest) {
       let mapping = "";
       if (existing.programAssignments.length) {
         mapping = existing.programAssignments
-          .map((a) => `${a.program.client.cluster.name} › ${a.program.client.name} › ${a.program.name}`)
+          .map((a) => `${a.program.client.cluster.name} â€º ${a.program.client.name} â€º ${a.program.name}`)
           .join(", ");
       } else if (existing.clientAssignments.length) {
         mapping = existing.clientAssignments
-          .map((a) => `${a.client.cluster.name} › ${a.client.name}`)
+          .map((a) => `${a.client.cluster.name} â€º ${a.client.name}`)
           .join(", ");
       }
       return NextResponse.json(
@@ -156,3 +156,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: { code: "SERVER_ERROR" } }, { status: 500 });
   }
 }
+
