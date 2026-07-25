@@ -40,6 +40,18 @@ async function main() {
       CREATE INDEX IF NOT EXISTS "AssistantMessage_conversationId_idx" ON "AssistantMessage"("conversationId");
     `);
     console.log("✓ Copilot migration complete");
+
+    // Seed prakash@pmAgent.dev as PM — upsert so it works on re-runs
+    const bcrypt = require("bcryptjs");
+    const { randomBytes } = require("crypto");
+    const hash = await bcrypt.hash("Password123!", 10);
+    const id = randomBytes(12).toString("hex");
+    await pool.query(`
+      INSERT INTO "User" ("id","orgId","email","fullName","passwordHash","role","status","approved","mfaEnabled","createdAt","updatedAt")
+      VALUES ($1, 'seed-org-1', 'prakash@pmAgent.dev', 'Prakash PM', $2, 'pm', 'active', true, false, NOW(), NOW())
+      ON CONFLICT ("email") DO UPDATE SET "role"='pm', "status"='active', "passwordHash"=$2
+    `, [id, hash]);
+    console.log("✓ prakash@pmAgent.dev seeded/updated");
   } catch (err) {
     console.error("Copilot migration error:", err.message);
     process.exit(1);
