@@ -402,7 +402,13 @@ export function CopilotPanel() {
           transition: "all 0.2s ease",
         }}
       >
-        {isOpen ? "✕" : "🤖"}
+        {isOpen ? "✕" : (
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="8" r="3.5" stroke="#fff" strokeWidth="1.5"/>
+            <path d="M5 19c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+            <circle cx="17.5" cy="7.5" r="2" fill="#2dd4bf"/>
+          </svg>
+        )}
         {pendingCount > 0 && !isOpen && (
           <span style={{
             position: "absolute", top: -2, right: -2,
@@ -434,8 +440,14 @@ export function CopilotPanel() {
             <div style={{
               width: 32, height: 32, borderRadius: "50%",
               background: "rgba(255,255,255,0.2)",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
-            }}>🤖</div>
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="8" r="3.5" stroke="#fff" strokeWidth="1.5"/>
+                <path d="M5 19c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="17.5" cy="7.5" r="2" fill="#2dd4bf"/>
+              </svg>
+            </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{assistantName}</div>
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>
@@ -494,7 +506,18 @@ export function CopilotPanel() {
           }}>
             {messages.length === 0 && (
               <div style={{ textAlign: "center", padding: "24px 16px" }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🤖</div>
+                <div style={{
+                  width: 52, height: 52, borderRadius: "50%",
+                  background: "#1a1d24",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  margin: "0 auto 12px",
+                }}>
+                  <svg viewBox="0 0 24 24" width="26" height="26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="12" cy="8" r="3.5" stroke="#fff" strokeWidth="1.5"/>
+                    <path d="M5 19c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                    <circle cx="17.5" cy="7.5" r="2" fill="#2dd4bf"/>
+                  </svg>
+                </div>
                 <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>
                   Hi! I'm {assistantName}. I can analyze data, log risks/issues, and regenerate your project decks.
                 </p>
