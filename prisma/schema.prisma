@@ -710,6 +710,21 @@ model AssistantConversation {
   user     User               @relation(fields: [userId], references: [id])
   project  Project?           @relation(fields: [projectId], references: [id])
   messages AssistantMessage[]
+  actions  AssistantAction[]
+}
+
+model AssistantAction {
+  id             String    @id @default(cuid())
+  conversationId String
+  actionType     String
+  tier           String
+  payload        Json
+  status         String    @default("proposed")
+  confirmedAt    DateTime?
+  undoneAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation AssistantConversation @relation(fields: [conversationId], references: [id])
 }
 
 model AssistantMessage {
