@@ -7,7 +7,6 @@ import {
   ShieldAlert, MessageSquare, Grid3x3, BadgeCheck, ClipboardList, AlertCircle,
   Gavel, FileBarChart, RefreshCw, GraduationCap, FileCheck, TrendingUp, ScrollText,
   Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Check, Lock,
-  ArrowRight, Square, CheckSquare2,
 } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
@@ -29,11 +28,12 @@ const C = {
   slate: "#475569", slateLight: "#f8fafc", slateBorder: "#cbd5e1",
 };
 
-const MANDATORY_COLS = [
-  { id: "initiation", label: "Initiation",            phases: ["initiation"],             color: "#0F6E56", bg: "#E1F5EE", border: "#5DCAA5" },
-  { id: "planning",   label: "Planning",               phases: ["planning"],               color: "#3C3489", bg: "#EEEDFE", border: "#AFA9EC" },
-  { id: "exec_mon",   label: "Execution & Monitoring", phases: ["execution","monitoring"], color: "#185FA5", bg: "#E6F1FB", border: "#6AABDF" },
-  { id: "closure",    label: "Closure",                phases: ["closure"],                color: "#3B6D11", bg: "#EAF3DE", border: "#7DC053" },
+const PHASES = [
+  { id: "initiation", label: "Initiation", dot: "#f59e0b", pill: { bg: "#fef3c7", color: "#92400e" } },
+  { id: "planning",   label: "Planning",   dot: "#3b82f6", pill: { bg: "#dbeafe", color: "#1d4ed8" } },
+  { id: "execution",  label: "Execution",  dot: "#22c55e", pill: { bg: "#dcfce7", color: "#15803d" } },
+  { id: "monitoring", label: "Monitoring", dot: "#a855f7", pill: { bg: "#f3e8ff", color: "#7e22ce" } },
+  { id: "closure",    label: "Closure",    dot: "#ef4444", pill: { bg: "#fee2e2", color: "#b91c1c" } },
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -219,207 +219,176 @@ export function ArtifactPanel({
     toast({ title: `${count} artifact${count !== 1 ? "s" : ""} moved to phase`, description: "They now appear in the Recommended section" });
   }
 
-  const recommendedTypes = new Set(catalog.filter((c) => c.mandatory).map((c) => c.type));
-  const effectiveRecommended = new Set([...recommendedTypes, ...promoted]);
-  const optionalEntries = catalog.filter((c) => !effectiveRecommended.has(c.type));
   const generatedCount = localArtifacts.length;
   const isUploading = !!uploading;
 
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px", position: "relative" }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", position: "relative" }}>
       <input ref={fileInputRef} type="file" style={{ display: "none" }}
         accept=".xlsx,.xls,.csv,.pdf,.docx,.pptx,.txt" onChange={handleFileChange} />
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Project Artifacts</div>
-          <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>{generatedCount} of {catalog.length} generated</div>
-        </div>
+      <div style={{ padding: "14px 18px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Project Artifacts</div>
+        <div style={{ fontSize: 12, color: C.text3 }}>{generatedCount} of {catalog.length} generated</div>
       </div>
 
-      {/* Generating banner */}
-      {generating.size > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
-          <Loader2 className="animate-spin" style={{ width: 14, height: 14, flexShrink: 0 }} />
-          {generating.size === 1
-            ? <>Generating <span style={{ fontWeight: 600 }}>{[...generating][0].replace(/_/g, " ")}</span> — this takes 20–40 seconds…</>
-            : <><span style={{ fontWeight: 600 }}>{generating.size} sub-agents</span> generating in parallel…</>
-          }
-        </div>
-      )}
+      {/* Phase rows */}
+      {PHASES.map((phase, phaseIdx) => {
+        const phaseEntries = catalog.filter((c) => c.phase === phase.id);
+        const phaseGenerated = phaseEntries.filter((c) => localArtifacts.find((a) => a.artifactType === c.type)).length;
+        const expandedInPhase = expanded && phaseEntries.some((e) => e.type === expanded);
 
-      {/* ── RECOMMENDED SECTION ── */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "10px 14px", background: "#0f766e", borderRadius: 10 }}>
-          <Check style={{ width: 16, height: 16, color: "#fff" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.01em" }}>Recommended Artifacts</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginLeft: "auto" }}>Required for all projects</span>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-          {MANDATORY_COLS.map((col) => {
-            const colEntries = catalog.filter((c) =>
-              col.phases.includes(c.phase) && effectiveRecommended.has(c.type)
-            );
-            return (
-              <div key={col.id}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: "#fff", background: col.color, borderRadius: 7, padding: "5px 12px", letterSpacing: "0.02em", display: "block", width: "100%", textAlign: "center" }}>
-                    {col.label}
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {colEntries.map((entry) => (
-                    <ArtifactCard
-                      key={entry.type}
-                      entry={entry}
-                      artifact={localArtifacts.find((a) => a.artifactType === entry.type)}
-                      isGen={generating.has(entry.type)}
-                      isUp={uploading === entry.type}
-                      isDel={deleting === entry.type}
-                      isExpanded={expanded === entry.type}
-                      isUploading={isUploading}
-                      menuFor={menuFor}
-                      guardrailError={guardrailErrors[entry.type]}
-                      phaseMeta={{ color: col.color, bg: col.bg, border: col.border }}
-                      engagementMode={engagementMode}
-                      promoted={promoted.has(entry.type)}
-                      onGenerate={generate}
-                      onUpload={handleUploadClick}
-                      onDelete={deleteArtifact}
-                      onToggleExpand={() => setExpanded(expanded === entry.type ? null : entry.type)}
-                      onToggleMenu={() => setMenuFor(menuFor === entry.type ? null : entry.type)}
-                      onCloseMenu={() => setMenuFor(null)}
-                      onDownload={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Expanded artifact under recommended */}
-        {expanded && effectiveRecommended.has(expanded) && (() => {
-          const art = localArtifacts.find((a) => a.artifactType === expanded);
-          const ent = catalog.find((c) => c.type === expanded);
-          if (!art?.content || !ent) return null;
-          const col = MANDATORY_COLS.find((c) => c.phases.includes(art.phase)) ?? MANDATORY_COLS[0];
-          return (
-            <div style={{ marginTop: 14, background: C.surface, border: `1.5px solid ${col.border}`, borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: `1px solid ${col.border}`, background: col.bg }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: col.color }}>{ent.label}</span>
-                <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
-              </div>
-              <div style={{ padding: 16 }}>
-                <ArtifactDocument artifactType={art.artifactType} content={art.content} projectId={projectId} />
-              </div>
+        return (
+          <div key={phase.id}>
+            {/* Phase header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px 8px" }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: phase.dot, flexShrink: 0 }} />
+              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", padding: "3px 10px", borderRadius: 20, background: phase.pill.bg, color: phase.pill.color, whiteSpace: "nowrap" }}>
+                {phase.label}
+              </span>
+              <span style={{ fontSize: 11, color: C.text3, marginLeft: "auto" }}>{phaseGenerated} of {phaseEntries.length} generated</span>
             </div>
-          );
-        })()}
-      </div>
 
-      {/* ── OPTIONAL SECTION ── */}
-      <div style={{ paddingBottom: selectedOptional.size > 0 ? 60 : 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "10px 14px", background: "#475569", borderRadius: 10 }}>
-          <Square style={{ width: 15, height: 15, color: "#fff" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.01em" }}>Optional Artifacts</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginLeft: "auto" }}>Select and move to phase as needed</span>
-        </div>
+            {/* Cards row */}
+            <div style={{ display: "flex", gap: 8, padding: "0 18px 14px", overflowX: "auto", scrollbarWidth: "thin" }}>
+              {phaseEntries.map((entry) => {
+                const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
+                const isGen = generating.has(entry.type);
+                const isMandatory = entry.mandatory;
+                const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
+                const Icon = ARTIFACT_ICON[entry.type] ?? FileText;
+                const isExpandedCard = expanded === entry.type;
 
-        {optionalEntries.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "24px 0", fontSize: 13, color: C.textMuted }}>
-            All optional artifacts have been moved to their phases.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(158px,1fr))", gap: 10 }}>
-            {optionalEntries.map((entry) => (
-              <ArtifactCard
-                key={entry.type}
-                entry={entry}
-                artifact={localArtifacts.find((a) => a.artifactType === entry.type)}
-                isGen={generating.has(entry.type)}
-                isUp={uploading === entry.type}
-                isDel={deleting === entry.type}
-                isExpanded={expanded === entry.type}
-                isUploading={isUploading}
-                menuFor={menuFor}
-                guardrailError={guardrailErrors[entry.type]}
-                phaseMeta={{ color: C.slate, bg: C.slateLight, border: C.slateBorder }}
-                engagementMode={engagementMode}
-                selectable
-                selected={selectedOptional.has(entry.type)}
-                onSelect={() => {
-                  setSelectedOptional((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(entry.type)) next.delete(entry.type); else next.add(entry.type);
-                    return next;
-                  });
-                }}
-                onGenerate={generate}
-                onUpload={handleUploadClick}
-                onDelete={deleteArtifact}
-                onToggleExpand={() => setExpanded(expanded === entry.type ? null : entry.type)}
-                onToggleMenu={() => setMenuFor(menuFor === entry.type ? null : entry.type)}
-                onCloseMenu={() => setMenuFor(null)}
-                onDownload={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)}
-              />
-            ))}
-          </div>
-        )}
+                return (
+                  <div
+                    key={entry.type}
+                    style={{
+                      flexShrink: 0, width: 128,
+                      borderRadius: 10, padding: "11px 10px",
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      textAlign: "center", gap: 5, position: "relative", cursor: "pointer",
+                      background: isGen ? "#f5f4ff" : C.surface,
+                      border: artifact && !isGen
+                        ? `1.5px solid #1a1d24`
+                        : isMandatory
+                          ? `1.5px dashed #374151`
+                          : `1.5px dashed #d1d5db`,
+                      outline: isExpandedCard ? `2px solid ${C.primary}` : "none",
+                      outlineOffset: 2,
+                      transition: "box-shadow .15s",
+                    }}
+                    onClick={() => !isGen && artifact && setExpanded(isExpandedCard ? null : entry.type)}
+                  >
+                    {/* Format tag */}
+                    <span style={{
+                      position: "absolute", top: 6, right: 6,
+                      fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 3,
+                      background: artifact ? "#1a1d24" : "#e5e7eb",
+                      color: artifact ? "#fff" : "#9ca3af",
+                    }}>{format}</span>
 
-        {/* Expanded artifact under optional */}
-        {expanded && !effectiveRecommended.has(expanded) && (() => {
-          const art = localArtifacts.find((a) => a.artifactType === expanded);
-          const ent = catalog.find((c) => c.type === expanded);
-          if (!art?.content || !ent) return null;
-          return (
-            <div style={{ marginTop: 14, background: C.surface, border: `1.5px solid ${C.slateBorder}`, borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: `1px solid ${C.slateBorder}`, background: C.slateLight }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.slate }}>{ent.label}</span>
-                <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
-              </div>
-              <div style={{ padding: 16 }}>
-                <ArtifactDocument artifactType={art.artifactType} content={art.content} projectId={projectId} />
-              </div>
+                    {/* Star button */}
+                    {isMandatory ? (
+                      <span title="Required artifact" style={{ position: "absolute", top: 5, left: 6, fontSize: 12, color: "#f59e0b", lineHeight: 1 }}>★</span>
+                    ) : (
+                      <button
+                        title={promoted.has(entry.type) ? "Unpin from recommended" : "Pin to recommended"}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setPromoted((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(entry.type)) next.delete(entry.type); else next.add(entry.type);
+                            return next;
+                          });
+                        }}
+                        style={{ position: "absolute", top: 3, left: 5, fontSize: 13, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: promoted.has(entry.type) ? "#f59e0b" : "#d1d5db", padding: 0 }}
+                      >{promoted.has(entry.type) ? "★" : "☆"}</button>
+                    )}
+
+                    {isGen ? (
+                      <GenerationProgress label={entry.label} isRegen={!!artifact} />
+                    ) : (
+                      <>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: 8, marginTop: 4,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: artifact ? "#f0f0f8" : isMandatory ? "#f3f4f6" : "#f9fafb",
+                        }}>
+                          <Icon style={{ width: 16, height: 16, color: artifact ? C.primary : isMandatory ? "#6b7280" : "#9ca3af" }} />
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.3, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>
+                          {entry.label}
+                        </div>
+                        {artifact ? (
+                          <>
+                            <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#1a1d24", color: "#fff" }}>Generated</span>
+                            <div style={{ display: "flex", gap: 4, marginTop: 2 }}>
+                              <button
+                                onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }}
+                                style={{ fontSize: 10, padding: "2px 7px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}
+                              >View</button>
+                              <button
+                                onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }}
+                                style={{ fontSize: 10, padding: "2px 7px", borderRadius: 5, border: "none", background: "#1a1d24", color: "#fff", cursor: "pointer" }}
+                              >↺</button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: isMandatory ? "#1f2937" : "#e5e7eb", color: isMandatory ? "#f9fafb" : "#9ca3af" }}>
+                              {isMandatory ? "Required" : "Optional"}
+                            </span>
+                            {guardrailErrors[entry.type] && (
+                              <div style={{ fontSize: 9, color: C.red, lineHeight: 1.3, marginTop: 2 }}>{guardrailErrors[entry.type]}</div>
+                            )}
+                            <button
+                              onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }}
+                              style={{
+                                marginTop: 2, fontSize: 10, padding: "3px 9px", borderRadius: 6,
+                                border: isMandatory ? "none" : `1px solid #d1d5db`,
+                                background: isMandatory ? "#1a1d24" : "transparent",
+                                color: isMandatory ? "#fff" : "#6b7280",
+                                cursor: "pointer", fontWeight: 500,
+                              }}
+                            >Generate</button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })()}
-      </div>
 
-      {/* ── STICKY ACTION BAR ── */}
-      {selectedOptional.size > 0 && (
-        <div style={{
-          position: "sticky", bottom: 0,
-          background: "#1e293b", borderRadius: "0 0 14px 14px",
-          padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
-          boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
-          margin: "0 -20px -18px",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <CheckSquare2 style={{ width: 16, height: 16, color: "#94a3b8" }} />
-            <span style={{ fontSize: 13, color: "#e2e8f0" }}>
-              <span style={{ fontWeight: 700, color: "#fff" }}>{selectedOptional.size}</span>{" "}
-              artifact{selectedOptional.size !== 1 ? "s" : ""} selected
-            </span>
+            {/* Expanded artifact viewer */}
+            {expandedInPhase && (() => {
+              const art = localArtifacts.find((a) => a.artifactType === expanded);
+              const ent = catalog.find((c) => c.type === expanded);
+              if (!art?.content || !ent) return null;
+              return (
+                <div style={{ margin: "0 18px 14px", border: `1.5px solid #1a1d24`, borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: `1px solid ${C.border}`, background: "#f8f8f6" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ent.label}</span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <button onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${ent.type}/export`)} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>Download</button>
+                      <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
+                    </div>
+                  </div>
+                  <div style={{ padding: 16 }}>
+                    <ArtifactDocument artifactType={art.artifactType} content={art.content} projectId={projectId} />
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Divider between phases */}
+            {phaseIdx < PHASES.length - 1 && (
+              <div style={{ height: 1, background: C.border, margin: "0 18px" }} />
+            )}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={() => setSelectedOptional(new Set())}
-              style={{ height: 34, padding: "0 14px", background: "transparent", color: "#94a3b8", border: "1px solid #475569", borderRadius: 8, cursor: "pointer", font: `500 12.5px 'IBM Plex Sans',sans-serif` }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleMoveToPhase}
-              style={{ height: 34, padding: "0 16px", background: "#0f766e", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", font: `600 12.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <ArrowRight style={{ width: 14, height: 14 }} /> Move to Phase
-            </button>
-          </div>
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
