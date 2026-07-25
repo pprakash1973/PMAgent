@@ -29,7 +29,7 @@ function detectIntent(message: string): Intent {
   const msg = message.toLowerCase();
 
   // Artifact regeneration — Tier C
-  if (/regen|regenerate|update|rewrite|create|refresh/.test(msg)) {
+  if (/regen|regenerate|generate|update|rewrite|create|refresh|make|produce|build/.test(msg)) {
     if (/initiation.?deck|project.?initiation|charter.?deck/.test(msg))
       return { type: "REGEN_ARTIFACT", tier: "c", params: { artifactType: "initiation_deck", label: "Project Initiation Deck" } };
     if (/ewsr|weekly.?status|status.?report|wsr/.test(msg))
