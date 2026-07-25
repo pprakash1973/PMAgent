@@ -384,9 +384,11 @@ export function ArtifactPanel({
                     {isStarred ? "☆ Unpin" : "★ Pin"}
                   </button>
                 )}
-                <button onClick={openPhasePicker} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
-                  ⤴ Phase
-                </button>
+                {!isMandatory && !isStarred && (
+                  <button onClick={openPhasePicker} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
+                    ⤴ Phase
+                  </button>
+                )}
               </div>
             )}
           </>
