@@ -2059,7 +2059,7 @@ function CostBurndownChart({ series, currency }: { series: any[]; currency: stri
 }
 
 function CostTab({ project }: { project: any }) {
-  const { tabContext } = useCopilot();
+  const { openPanel } = useCopilot();
 
   // ── data ──
   const [data, setData] = useState<any>(null);
@@ -2075,15 +2075,6 @@ function CostTab({ project }: { project: any }) {
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
 
-  // ── AI sidebar ──
-  type ChatMsg = { role: "user" | "assistant"; content: string; streaming?: boolean };
-  const [aiMessages, setAiMessages] = useState<ChatMsg[]>([
-    { role: "assistant", content: "Hi! I can **log entries**, **delete records**, and **run forecasts** for this project. Just ask — or use the quick actions below." },
-  ]);
-  const [aiInput, setAiInput] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
-  const aiEndRef = useRef<HTMLDivElement>(null);
-
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/projects/${project.id}/costs/burndown`);
@@ -2092,7 +2083,6 @@ function CostTab({ project }: { project: any }) {
   }, [project.id]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { aiEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -2119,87 +2109,6 @@ function CostTab({ project }: { project: any }) {
     setDeleting(null);
   }
 
-  async function sendAiMessage(text: string) {
-    const msg = text.trim();
-    if (!msg || aiLoading) return;
-    setAiInput("");
-    setAiMessages((prev) => [...prev, { role: "user", content: msg }]);
-    setAiLoading(true);
-    setAiMessages((prev) => [...prev, { role: "assistant", content: "", streaming: true }]);
-
-    const s = data?.summary;
-    const currency = s?.currency ?? project.currency ?? "USD";
-    const systemHint = `You are an AI cost assistant for the project "${project.name}" (ID: ${project.id}).
-Current cost summary: BAC=${s?.bac ?? "unknown"}, AC=${s?.totalAC ?? 0}, EV=${s?.totalEV ?? 0}, CPI=${s?.cpi?.toFixed(2) ?? "N/A"}, EAC=${s?.eac ?? "N/A"}, currency=${currency}.
-Recent entries: ${(data?.entries ?? []).slice(-5).map((e: any) => `${e.date} ${e.category} ${e.amount} ${e.description}`).join("; ")}.
-You can help the PM: log cost entries (provide details and say you'll log it), delete entries (confirm by entry ID or description), run EAC/ETC forecasts, or summarise spend. When the PM asks to log an entry, extract date/amount/category/description and log it via the API if possible.`;
-
-    try {
-      const res = await fetch("/api/copilot/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: msg,
-          projectId: project.id,
-          tab: "cost",
-          history: aiMessages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
-          kpiSnapshot: s ? { spi: s.spi, pv: s.totalPV, ev: s.totalEV, healthStatus: project.healthStatus } : undefined,
-          systemOverride: systemHint,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setAiMessages((prev) => {
-          const next = [...prev];
-          next[next.length - 1] = { role: "assistant", content: err.error || "Something went wrong." };
-          return next;
-        });
-        setAiLoading(false);
-        return;
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const json = JSON.parse(line.slice(6));
-          if (json.chunk) {
-            setAiMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              next[next.length - 1] = { ...last, content: last.content + json.chunk };
-              return next;
-            });
-          }
-          if (json.done || json.error) break;
-        }
-      }
-      setAiMessages((prev) => {
-        const next = [...prev];
-        next[next.length - 1] = { ...next[next.length - 1], streaming: false };
-        return next;
-      });
-      // Refresh data in case AI triggered a cost action
-      await load();
-    } catch {
-      setAiMessages((prev) => {
-        const next = [...prev];
-        next[next.length - 1] = { role: "assistant", content: "Connection error — please try again." };
-        return next;
-      });
-    } finally {
-      setAiLoading(false);
-    }
-  }
-
   const s = data?.summary;
   const currency = s?.currency ?? project.currency ?? "USD";
   const cpiColor = !s ? C.text : s.cpi >= 1 ? C.green : s.cpi >= 0.9 ? C.amber : C.red;
@@ -2208,8 +2117,6 @@ You can help the PM: log cost entries (provide details and say you'll log it), d
   const TEAL = "#006E74";
   const TEAL_BG = "rgba(0,110,116,.07)";
   const TEAL_BORDER = "rgba(0,110,116,.2)";
-  const AI_BG = "#f5f6ff";
-  const AI_BORDER = "#c7d2fe";
 
   const filteredEntries = useMemo(() => {
     const entries: any[] = data?.entries ? [...data.entries].reverse() : [];
@@ -2223,17 +2130,14 @@ You can help the PM: log cost entries (provide details and say you'll log it), d
   const totalLogged = data?.entries?.reduce((acc: number, e: any) => acc + e.amount, 0) ?? 0;
 
   const QUICK_ACTIONS = [
-    { icon: "📋", label: "Log an entry for me", msg: "I need to log a cost entry. Can you help me?" },
-    { icon: "🗑", label: "Delete last entry", msg: "Please delete the most recent cost entry." },
+    { icon: "📋", label: "Log an entry", msg: "I need to log a cost entry. Can you help me?" },
+    { icon: "🗑", label: "Delete an entry", msg: "Please help me delete a cost entry." },
     { icon: "🔮", label: "Run EAC forecast", msg: "Run a detailed EAC and ETC forecast for this project based on current CPI." },
     { icon: "📊", label: "Summarise by category", msg: "Summarise the total spend broken down by category." },
   ];
 
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-
-      {/* ════ LEFT + CENTRE COLUMN ════ */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* ── KPI strip ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 }}>
@@ -2335,8 +2239,19 @@ You can help the PM: log cost entries (provide details and say you'll log it), d
 
           {/* ── Chart ── */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
-            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
               <span style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>Cost Burndown — PV / EV / AC</span>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 5, flexWrap: "wrap" as const }}>
+                {QUICK_ACTIONS.map((qa) => (
+                  <button
+                    key={qa.label}
+                    onClick={() => openPanel(qa.msg)}
+                    style={{ fontSize: 11, padding: "3px 9px", borderRadius: 6, border: `1px solid ${TEAL_BORDER}`, background: TEAL_BG, color: TEAL, cursor: "pointer", fontWeight: 500, whiteSpace: "nowrap" as const }}
+                  >
+                    {qa.icon} {qa.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div style={{ padding: "14px 16px 10px" }}>
               {loading ? (
@@ -2437,78 +2352,6 @@ You can help the PM: log cost entries (provide details and say you'll log it), d
             </table>
           )}
         </div>
-
-      </div>{/* /left+centre */}
-
-      {/* ════ AI SIDEBAR ════ */}
-      <div style={{ width: 272, flexShrink: 0, display: "flex", flexDirection: "column", background: AI_BG, border: `1px solid ${AI_BORDER}`, borderRadius: 12, overflow: "hidden", height: "fit-content", position: "sticky", top: 16 }}>
-
-        {/* header */}
-        <div style={{ padding: "11px 13px", borderBottom: `1px solid ${AI_BORDER}`, display: "flex", alignItems: "center", gap: 9 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(135deg, ${TEAL}, #6366f1)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>🤖</div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#003C51" }}>Cost Assistant</div>
-            <div style={{ fontSize: 10, color: "#6366f1" }}>AI-powered · Cost tab</div>
-          </div>
-        </div>
-
-        {/* messages */}
-        <div style={{ padding: "12px 12px 8px", display: "flex", flexDirection: "column", gap: 9, maxHeight: 360, overflowY: "auto" }}>
-          {aiMessages.map((m, i) => (
-            <div key={i} style={{
-              alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-              maxWidth: "88%",
-              background: m.role === "user" ? TEAL : C.surface,
-              color: m.role === "user" ? "#fff" : C.text,
-              border: m.role === "assistant" ? `1px solid ${AI_BORDER}` : "none",
-              borderRadius: m.role === "user" ? "10px 4px 10px 10px" : "4px 10px 10px 10px",
-              padding: "8px 10px",
-              fontSize: 11.5,
-              lineHeight: 1.5,
-            }}>
-              {m.content || (m.streaming ? <span style={{ opacity: .5 }}>●●●</span> : "")}
-            </div>
-          ))}
-          <div ref={aiEndRef} />
-        </div>
-
-        {/* quick actions */}
-        <div style={{ padding: "8px 12px 6px", borderTop: `1px solid ${AI_BORDER}` }}>
-          <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text3, letterSpacing: ".04em", textTransform: "uppercase" as const, marginBottom: 5 }}>Quick Actions</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {QUICK_ACTIONS.map((qa) => (
-              <button
-                key={qa.label}
-                onClick={() => sendAiMessage(qa.msg)}
-                disabled={aiLoading}
-                style={{ padding: "6px 9px", background: C.surface, border: `1px solid ${AI_BORDER}`, borderRadius: 7, fontSize: 11, color: "#003C51", cursor: "pointer", textAlign: "left" as const, opacity: aiLoading ? 0.5 : 1, transition: "all .12s" }}
-                onMouseEnter={(e) => { if (!aiLoading) { e.currentTarget.style.background = TEAL_BG; e.currentTarget.style.borderColor = TEAL_BORDER; e.currentTarget.style.color = TEAL; } }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = C.surface; e.currentTarget.style.borderColor = AI_BORDER; e.currentTarget.style.color = "#003C51"; }}
-              >
-                {qa.icon} {qa.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* input */}
-        <div style={{ padding: "8px 10px", borderTop: `1px solid ${AI_BORDER}`, display: "flex", gap: 6 }}>
-          <input
-            value={aiInput}
-            onChange={(e) => setAiInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAiMessage(aiInput); } }}
-            placeholder="Ask about costs…"
-            disabled={aiLoading}
-            style={{ flex: 1, padding: "7px 10px", border: `1px solid ${AI_BORDER}`, borderRadius: 8, fontSize: 11.5, background: C.surface, color: C.text, outline: "none" }}
-          />
-          <button
-            onClick={() => sendAiMessage(aiInput)}
-            disabled={aiLoading || !aiInput.trim()}
-            style={{ width: 32, height: 32, background: TEAL, border: "none", borderRadius: 8, color: "#fff", fontSize: 14, cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: aiLoading || !aiInput.trim() ? 0.5 : 1, flexShrink: 0 }}
-          >↑</button>
-        </div>
-
-      </div>{/* /ai-sidebar */}
 
     </div>
   );
