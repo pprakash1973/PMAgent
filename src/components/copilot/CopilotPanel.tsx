@@ -260,6 +260,18 @@ export function CopilotPanel() {
       .then((d) => setQuickActions(d.quickActions || []));
   }, [tabContext.tab]);
 
+  // Reset conversation when project changes
+  const prevProjectIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (tabContext.projectId && tabContext.projectId !== prevProjectIdRef.current) {
+      setMessages([]);
+      setActionCards([]);
+      setInput("");
+      setShowLedger(false);
+      prevProjectIdRef.current = tabContext.projectId;
+    }
+  }, [tabContext.projectId]);
+
   useEffect(() => {
     if (prefillMessage && isOpen) {
       setInput(prefillMessage);
