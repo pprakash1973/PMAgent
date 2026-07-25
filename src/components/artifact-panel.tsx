@@ -74,6 +74,9 @@ export function ArtifactPanel({
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
   const [selectedOptional, setSelectedOptional] = useState<Set<string>>(new Set());
   const [promoted, setPromoted] = useState<Set<string>>(new Set());
+  const [phaseOverrides, setPhaseOverrides] = useState<Record<string, string>>({});
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [phasePickerFor, setPhasePickerFor] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef<string | null>(null);
 
@@ -224,8 +227,14 @@ export function ArtifactPanel({
   const effectiveRecommended = new Set([
     ...catalog.filter((c) => c.mandatory).map((c) => c.type),
     ...promoted,
+    ...Object.keys(phaseOverrides),
   ]);
   const optionalEntries = catalog.filter((c) => !effectiveRecommended.has(c.type));
+
+  // Returns the phase to use for a card (override takes precedence)
+  function cardPhase(entry: CatalogEntry) {
+    return phaseOverrides[entry.type] ?? entry.phase;
+  }
 
   // Renders a single phase row of cards (filtered by entryFilter)
   function PhaseRow({ phase, entries }: { phase: typeof PHASES[0]; entries: CatalogEntry[] }) {
@@ -272,65 +281,112 @@ export function ArtifactPanel({
     const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
     const isGen = generating.has(entry.type);
     const isMandatory = entry.mandatory;
-    const isStarred = isMandatory || promoted.has(entry.type);
+    const isPinned = promoted.has(entry.type) || !!phaseOverrides[entry.type];
+    const isStarred = isMandatory || isPinned;
     const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
     const Icon = ARTIFACT_ICON[entry.type] ?? FileText;
     const isExpandedCard = expanded === entry.type;
+    const isHovered = hoveredCard === entry.type;
+    const showPicker = phasePickerFor === entry.type;
+
+    function togglePin(ev: React.MouseEvent) {
+      ev.stopPropagation();
+      setPhasePickerFor(null);
+      setPromoted((prev) => {
+        const n = new Set(prev);
+        if (isPinned) {
+          n.delete(entry.type);
+          setPhaseOverrides((po) => { const p = { ...po }; delete p[entry.type]; return p; });
+        } else {
+          n.add(entry.type);
+        }
+        return n;
+      });
+    }
+
+    function openPhasePicker(ev: React.MouseEvent) {
+      ev.stopPropagation();
+      setPhasePickerFor(showPicker ? null : entry.type);
+    }
+
+    function assignPhase(ev: React.MouseEvent, phaseId: string) {
+      ev.stopPropagation();
+      setPhaseOverrides((prev) => ({ ...prev, [entry.type]: phaseId }));
+      setPromoted((prev) => { const n = new Set(prev); n.add(entry.type); return n; });
+      setPhasePickerFor(null);
+      setHoveredCard(null);
+    }
 
     return (
       <div
-        style={{
-          flexShrink: 0, width: 128, borderRadius: 10, padding: "11px 10px",
-          display: "flex", flexDirection: "column", alignItems: "center",
-          textAlign: "center", gap: 5, position: "relative", cursor: "pointer",
-          background: isGen ? "#f5f4ff" : C.surface,
-          border: artifact && !isGen
-            ? `1.5px solid #1a1d24`
-            : isMandatory ? `1.5px dashed #374151` : `1.5px dashed #d1d5db`,
-          outline: isExpandedCard ? `2px solid ${C.primary}` : "none",
-          outlineOffset: 2,
-        }}
+        style={{ flexShrink: 0, width: 168, borderRadius: 10, padding: "13px 12px 12px", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 6, position: "relative", cursor: "pointer", background: isGen ? "#f5f4ff" : C.surface, border: artifact && !isGen ? `1.5px solid #1a1d24` : isMandatory ? `1.5px dashed #374151` : `1.5px dashed #d1d5db`, outline: isExpandedCard ? `2px solid ${C.primary}` : "none", outlineOffset: 2 }}
         onClick={() => !isGen && artifact && setExpanded(isExpandedCard ? null : entry.type)}
+        onMouseEnter={() => { if (!isGen) setHoveredCard(entry.type); }}
+        onMouseLeave={() => { setHoveredCard(null); if (!showPicker) setPhasePickerFor(null); }}
       >
         {/* Format tag */}
-        <span style={{ position: "absolute", top: 6, right: 6, fontSize: 8, fontWeight: 700, padding: "1px 4px", borderRadius: 3, background: artifact ? "#1a1d24" : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
+        <span style={{ position: "absolute", top: 6, right: 7, fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: artifact ? "#1a1d24" : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
 
         {/* Star */}
         {isMandatory ? (
-          <span title="Required" style={{ position: "absolute", top: 5, left: 6, fontSize: 12, color: "#f59e0b", lineHeight: 1 }}>★</span>
+          <span title="Required" style={{ position: "absolute", top: 5, left: 7, fontSize: 13, color: "#f59e0b", lineHeight: 1 }}>★</span>
         ) : (
-          <button
-            title={isStarred ? "Unpin" : "Pin to recommended"}
-            onClick={(ev) => { ev.stopPropagation(); setPromoted((prev) => { const n = new Set(prev); n.has(entry.type) ? n.delete(entry.type) : n.add(entry.type); return n; }); }}
-            style={{ position: "absolute", top: 3, left: 5, fontSize: 13, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: isStarred ? "#f59e0b" : "#d1d5db", padding: 0 }}
-          >{isStarred ? "★" : "☆"}</button>
+          <button title={isStarred ? "Unpin from recommended" : "Pin to recommended"} onClick={togglePin} style={{ position: "absolute", top: 4, left: 6, fontSize: 14, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: isStarred ? "#f59e0b" : "#d1d5db", padding: 0 }}>
+            {isStarred ? "★" : "☆"}
+          </button>
         )}
 
         {isGen ? (
           <GenerationProgress label={entry.label} isRegen={!!artifact} />
         ) : (
           <>
-            <div style={{ width: 32, height: 32, borderRadius: 8, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", background: artifact ? "#f0f0f8" : isMandatory ? "#f3f4f6" : "#f9fafb" }}>
-              <Icon style={{ width: 16, height: 16, color: artifact ? C.primary : isMandatory ? "#6b7280" : "#9ca3af" }} />
+            <div style={{ width: 38, height: 38, borderRadius: 9, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", background: artifact ? "#f0f0f8" : isMandatory ? "#f3f4f6" : "#f9fafb" }}>
+              <Icon style={{ width: 18, height: 18, color: artifact ? C.primary : isMandatory ? "#6b7280" : "#9ca3af" }} />
             </div>
-            <div style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.3, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>{entry.label}</div>
+            <div style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.35, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>{entry.label}</div>
             {artifact ? (
               <>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#1a1d24", color: "#fff" }}>Generated</span>
-                <div style={{ display: "flex", gap: 4, marginTop: 2 }}>
-                  <button onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>View</button>
-                  <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 5, border: "none", background: "#1a1d24", color: "#fff", cursor: "pointer" }}>↺</button>
+                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "#1a1d24", color: "#fff" }}>Generated</span>
+                <div style={{ display: "flex", gap: 5, marginTop: 2 }}>
+                  <button onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }} style={{ fontSize: 10, padding: "3px 9px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>View</button>
+                  <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 10, padding: "3px 9px", borderRadius: 5, border: "none", background: "#1a1d24", color: "#fff", cursor: "pointer" }}>↺</button>
                 </div>
               </>
             ) : (
               <>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: isMandatory ? "#1f2937" : "#e5e7eb", color: isMandatory ? "#f9fafb" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
+                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: isMandatory ? "#1f2937" : "#e5e7eb", color: isMandatory ? "#f9fafb" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
                 {guardrailErrors[entry.type] && <div style={{ fontSize: 9, color: C.red, lineHeight: 1.3 }}>{guardrailErrors[entry.type]}</div>}
-                <button
-                  onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }}
-                  style={{ marginTop: 2, fontSize: 10, padding: "3px 9px", borderRadius: 6, border: isMandatory ? "none" : `1px solid #d1d5db`, background: isMandatory ? "#1a1d24" : "transparent", color: isMandatory ? "#fff" : "#6b7280", cursor: "pointer", fontWeight: 500 }}
-                >Generate</button>
+                <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ marginTop: 2, fontSize: 10, padding: "4px 11px", borderRadius: 6, border: isMandatory ? "none" : `1px solid #d1d5db`, background: isMandatory ? "#1a1d24" : "transparent", color: isMandatory ? "#fff" : "#6b7280", cursor: "pointer", fontWeight: 500 }}>Generate</button>
               </>
+            )}
+
+            {/* Hover action bar */}
+            {isHovered && !showPicker && (
+              <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: 7, left: "50%", transform: "translateX(-50%)", background: C.surface, border: `0.5px solid ${C.border}`, borderRadius: 8, padding: "4px 5px", display: "flex", gap: 4, whiteSpace: "nowrap", boxShadow: "0 3px 10px rgba(0,0,0,.10)", zIndex: 20 }}>
+                {!isMandatory && (
+                  <button onClick={togglePin} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `0.5px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>
+                    {isStarred ? "☆ Unpin" : "★ Pin"}
+                  </button>
+                )}
+                <button onClick={openPhasePicker} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `0.5px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}>
+                  ⤴ Move to phase
+                </button>
+              </div>
+            )}
+
+            {/* Phase picker dropdown */}
+            {showPicker && (
+              <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: 7, left: "50%", transform: "translateX(-50%)", background: C.surface, border: `0.5px solid ${C.border}`, borderRadius: 9, padding: 5, display: "flex", flexDirection: "column", gap: 3, boxShadow: "0 4px 14px rgba(0,0,0,.13)", zIndex: 30, minWidth: 148 }}>
+                <div style={{ fontSize: 9, fontWeight: 600, color: C.text3, padding: "1px 6px 3px", letterSpacing: "0.05em" }}>ASSIGN TO PHASE</div>
+                {PHASES.map((ph) => (
+                  <button key={ph.id} onClick={(ev) => assignPhase(ev, ph.id)} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "none", background: cardPhase(entry) === ph.id ? "#f0f0f8" : "transparent", color: C.text, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: ph.dot, flexShrink: 0, display: "inline-block" }} />
+                    {ph.label}
+                    {cardPhase(entry) === ph.id && <span style={{ marginLeft: "auto", fontSize: 10, color: C.primary }}>✓</span>}
+                  </button>
+                ))}
+                <button onClick={(ev) => { ev.stopPropagation(); setPhasePickerFor(null); }} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `0.5px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer", marginTop: 2 }}>Cancel</button>
+              </div>
             )}
           </>
         )}
@@ -359,7 +415,7 @@ export function ArtifactPanel({
           <PhaseRow
             key={phase.id}
             phase={phase}
-            entries={catalog.filter((c) => c.phase === phase.id && effectiveRecommended.has(c.type))}
+            entries={catalog.filter((c) => cardPhase(c) === phase.id && effectiveRecommended.has(c.type))}
           />
         ))}
       </div>
@@ -378,7 +434,7 @@ export function ArtifactPanel({
             <PhaseRow
               key={phase.id}
               phase={phase}
-              entries={optionalEntries.filter((c) => c.phase === phase.id)}
+              entries={optionalEntries.filter((c) => cardPhase(c) === phase.id)}
             />
           ))
         )}
