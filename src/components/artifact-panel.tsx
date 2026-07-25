@@ -95,6 +95,33 @@ export function ArtifactPanel({
     });
   }, [artifacts]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Listen for Copilot-triggered regeneration events
+  useEffect(() => {
+    function onGenerating(e: Event) {
+      const { artifactType } = (e as CustomEvent).detail;
+      setGenerating((prev) => new Set(prev).add(artifactType));
+      setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
+    }
+    function onGenerated(e: Event) {
+      const { artifactType, artifact } = (e as CustomEvent).detail;
+      setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
+      if (artifact) {
+        setLocalArtifacts((prev) => {
+          const idx = prev.findIndex((a) => a.artifactType === artifactType);
+          if (idx >= 0) { const copy = [...prev]; copy[idx] = artifact; return copy; }
+          return [...prev, artifact];
+        });
+        router.refresh();
+      }
+    }
+    window.addEventListener("copilot:artifact:generating", onGenerating);
+    window.addEventListener("copilot:artifact:generated", onGenerated);
+    return () => {
+      window.removeEventListener("copilot:artifact:generating", onGenerating);
+      window.removeEventListener("copilot:artifact:generated", onGenerated);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function generate(artifactType: string) {
     setGenerating((prev) => new Set(prev).add(artifactType));
     setMenuFor(null);

@@ -84,13 +84,30 @@ function ActionCardUI({
 
   async function handleConfirm() {
     setLoading(true);
+    const artifactType = action.payload?.artifactType as string | undefined;
+    // Signal artifact panel to show its spinner
+    if (action.actionType === "REGEN_ARTIFACT" && artifactType) {
+      window.dispatchEvent(new CustomEvent("copilot:artifact:generating", { detail: { artifactType } }));
+    }
     const res = await fetch(`/api/copilot/actions/${action.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ operation: "confirm", projectId }),
     });
+    const data = res.ok ? await res.json().catch(() => ({})) : {};
     setLoading(false);
-    if (res.ok) onComplete(action.id, "confirmed");
+    if (res.ok) {
+      // Signal artifact panel to update and stop spinner
+      if (action.actionType === "REGEN_ARTIFACT" && artifactType) {
+        window.dispatchEvent(new CustomEvent("copilot:artifact:generated", { detail: { artifactType, artifact: data.artifact } }));
+      }
+      onComplete(action.id, "confirmed");
+    } else {
+      // Stop spinner on error
+      if (action.actionType === "REGEN_ARTIFACT" && artifactType) {
+        window.dispatchEvent(new CustomEvent("copilot:artifact:generated", { detail: { artifactType, artifact: null } }));
+      }
+    }
   }
 
   async function handleUndo() {
