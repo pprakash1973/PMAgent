@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { generateArtifactForProject } from "@/lib/generate-artifact-for-project";
 
 // PATCH — confirm (Tier C), undo (Tier B), or dismiss
 export async function PATCH(
@@ -19,21 +21,36 @@ export async function PATCH(
   if (!action) return NextResponse.json({ error: "Action not found" }, { status: 404 });
 
   if (operation === "confirm" && action.tier === "c") {
-    // Execute the Tier C action
-    const result = await executeTierCAction(action, projectId, session.user as any);
-    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+    const payload = action.payload as any;
 
-    await prisma.assistantAction.update({
-      where: { id },
-      data: { status: "confirmed", confirmedAt: new Date() },
-    });
-    return NextResponse.json({ action: { ...action, status: "confirmed" }, result: result.data });
+    if (action.actionType === "REGEN_ARTIFACT") {
+      const result = await generateArtifactForProject(
+        payload.projectId || projectId,
+        payload.artifactType,
+        session.user.id!
+      );
+      if (result.error) return NextResponse.json({ error: result.error }, { status: 400 });
+
+      await prisma.assistantAction.update({
+        where: { id },
+        data: { status: "confirmed", confirmedAt: new Date() },
+      });
+      return NextResponse.json({ action: { ...action, status: "confirmed" }, artifact: result.artifact });
+    }
+
+    return NextResponse.json({ error: "Unknown Tier C action type" }, { status: 400 });
   }
 
   if (operation === "undo" && action.tier === "b") {
-    const result = await undoTierBAction(action, projectId, session.user as any);
-    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
-
+    const payload = action.payload as any;
+    try {
+      if (action.actionType === "LOG_RISK" && payload.riskId)
+        await prisma.risk.delete({ where: { id: payload.riskId } });
+      else if (action.actionType === "LOG_ISSUE" && payload.issueId)
+        await (prisma as any).issue.delete({ where: { id: payload.issueId } });
+    } catch (e: any) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     await prisma.assistantAction.update({
       where: { id },
       data: { status: "undone", undoneAt: new Date() },
@@ -47,31 +64,6 @@ export async function PATCH(
   }
 
   return NextResponse.json({ error: "Invalid operation" }, { status: 400 });
-}
-
-async function executeTierCAction(action: any, projectId: string, user: any) {
-  const payload = action.payload as any;
-
-  if (action.actionType === "REGEN_ARTIFACT") {
-    try {
-      const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-      const res = await fetch(`${baseUrl}/api/projects/${projectId}/artifacts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-copilot-internal": "1" },
-        body: JSON.stringify({ artifactType: payload.artifactType }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        return { ok: false, error: err.error?.message || "Generation failed" };
-      }
-      const data = await res.json();
-      return { ok: true, data };
-    } catch (e: any) {
-      return { ok: false, error: e.message };
-    }
-  }
-
-  return { ok: false, error: "Unknown action type" };
 }
 
 async function undoTierBAction(action: any, projectId: string, user: any) {
