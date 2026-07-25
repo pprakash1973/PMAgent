@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
+import { ARTIFACT_CATALOG } from "@/lib/utils";
 
 const TAB_QUICK_ACTIONS: Record<string, string[]> = {
   schedule:   ["What tasks are at risk this week?", "Summarize schedule health", "Which tasks are on the critical path?"],
@@ -28,16 +29,38 @@ type Intent =
 function detectIntent(message: string): Intent {
   const msg = message.toLowerCase();
 
-  // Artifact regeneration — Tier C
+  // Artifact regeneration — Tier C (catalog-driven, covers all artifact types)
   if (/regen|regenerate|generate|update|rewrite|create|refresh|make|produce|build/.test(msg)) {
-    if (/initiation.?deck|project.?initiation|charter.?deck/.test(msg))
-      return { type: "REGEN_ARTIFACT", tier: "c", params: { artifactType: "initiation_deck", label: "Project Initiation Deck" } };
-    if (/ewsr|weekly.?status|status.?report|wsr/.test(msg))
-      return { type: "REGEN_ARTIFACT", tier: "c", params: { artifactType: "weekly_status", label: "Weekly Status Report (EWSR)" } };
-    if (/wbs|work.?breakdown/.test(msg))
-      return { type: "REGEN_ARTIFACT", tier: "c", params: { artifactType: "wbs", label: "WBS" } };
-    if (/risk.?register/.test(msg))
-      return { type: "REGEN_ARTIFACT", tier: "c", params: { artifactType: "risk_register", label: "Risk Register" } };
+    // Extra aliases that don't appear verbatim in the label
+    const ALIASES: Record<string, string> = {
+      "initiation deck": "initiation_deck",
+      "project initiation": "initiation_deck",
+      "charter deck": "initiation_deck",
+      "ewsr": "weekly_status",
+      "wsr": "weekly_status",
+      "weekly status": "weekly_status",
+      "status report": "weekly_status",
+      "wbs": "wbs",
+      "work breakdown": "wbs",
+      "evm": "evm_analysis",
+      "earned value": "evm_analysis",
+      "raci": "raci_matrix",
+      "raid": "raid_register",
+    };
+    // Check aliases first
+    for (const [alias, artifactType] of Object.entries(ALIASES)) {
+      if (msg.includes(alias)) {
+        const entry = ARTIFACT_CATALOG.find((a) => a.type === artifactType);
+        if (entry) return { type: "REGEN_ARTIFACT", tier: "c", params: { artifactType: entry.type, label: entry.label } };
+      }
+    }
+    // Then check catalog labels (e.g. "issue register", "stakeholder register", "closure report")
+    for (const entry of ARTIFACT_CATALOG) {
+      const normalized = entry.label.toLowerCase().replace(/_/g, " ");
+      if (msg.includes(normalized) || msg.includes(entry.type.replace(/_/g, " "))) {
+        return { type: "REGEN_ARTIFACT", tier: "c", params: { artifactType: entry.type, label: entry.label } };
+      }
+    }
   }
 
   // Log risk — Tier B
