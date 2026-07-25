@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { refreshAdvisories } from "@/lib/refresh-advisories";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; issueId: string }> }) {
   const session = await auth();
@@ -19,6 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.dueDate !== undefined && { dueDate: body.dueDate ? new Date(body.dueDate) : null }),
     },
   });
+  refreshAdvisories(id).catch(() => {});
   return NextResponse.json(issue);
 }
 

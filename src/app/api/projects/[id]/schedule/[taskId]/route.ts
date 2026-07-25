@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { refreshAdvisories } from "@/lib/refresh-advisories";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,7 @@ export async function PATCH(
   });
 
   syncProjectHealth(id).catch(() => {});
+  refreshAdvisories(id).catch(() => {});
   return NextResponse.json(updated);
 }
 

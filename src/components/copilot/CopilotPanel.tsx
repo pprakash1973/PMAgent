@@ -291,6 +291,9 @@ export function CopilotPanel() {
   const [loading, setLoading] = useState(false);
   const [quickActions, setQuickActions] = useState<string[]>([]);
   const [showLedger, setShowLedger] = useState(false);
+  const [review, setReview] = useState<any>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [showReview, setShowReview] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -432,6 +435,19 @@ export function CopilotPanel() {
     costs: "Cost", status: "Status", resources: "Resources", default: "Project",
   };
 
+  async function runReview() {
+    if (!tabContext.projectId || reviewLoading) return;
+    setReviewLoading(true);
+    setShowReview(true);
+    setReview(null);
+    try {
+      const res = await fetch(`/api/projects/${tabContext.projectId}/reviews`, { method: "POST" });
+      const d = await res.json();
+      setReview(d.review ?? null);
+    } catch { setReview(null); }
+    finally { setReviewLoading(false); }
+  }
+
   const ledgerActions = actionCards.filter((a) => a.status !== "dismissed");
   const pendingCount = actionCards.filter((a) => a.status === "proposed").length;
 
@@ -510,6 +526,21 @@ export function CopilotPanel() {
                 {tabContext.projectName ?? "No project selected"}
               </div>
             </div>
+            {tabContext.projectId && (
+              <button
+                onClick={runReview}
+                disabled={reviewLoading}
+                title="Run M1 Review Brief"
+                style={{
+                  padding: "3px 9px", borderRadius: 10, border: "none",
+                  background: showReview ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.2)",
+                  color: "#fff", fontSize: 11, cursor: reviewLoading ? "not-allowed" : "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                {reviewLoading ? "⏳" : "📋 Review"}
+              </button>
+            )}
             {ledgerActions.length > 0 && (
               <button
                 onClick={() => setShowLedger((v) => !v)}
@@ -520,7 +551,7 @@ export function CopilotPanel() {
                   fontSize: 11, cursor: "pointer", fontWeight: 600,
                 }}
               >
-                📋 {ledgerActions.length}
+                🗂 {ledgerActions.length}
               </button>
             )}
             <button
@@ -553,6 +584,92 @@ export function CopilotPanel() {
                   <TierBadge tier={a.tier} />
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Review Brief */}
+          {showReview && (
+            <div style={{ borderBottom: `1px solid ${C.border}`, background: "#fafbfc", maxHeight: 360, overflowY: "auto" }}>
+              <div style={{ padding: "10px 14px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.text2, letterSpacing: ".05em" }}>M1 REVIEW BRIEF</span>
+                <button onClick={() => setShowReview(false)} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, fontSize: 14 }}>×</button>
+              </div>
+              {reviewLoading && <div style={{ padding: "12px 14px", fontSize: 12, color: C.text3 }}>Running advisory sweep…</div>}
+              {!reviewLoading && !review && <div style={{ padding: "12px 14px", fontSize: 12, color: C.text3 }}>No project selected.</div>}
+              {!reviewLoading && review && (() => {
+                const r = review;
+                const sevColor: Record<string, string> = { s1: "#cf3f3a", s2: "#c17d12", s3: "#4f5bd5", s4: "#8a909c" };
+                return (
+                  <div style={{ padding: "6px 14px 14px", fontSize: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                    {/* Position */}
+                    <div>
+                      <div style={{ fontWeight: 700, color: C.text, fontSize: 11, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 5 }}>Position</div>
+                      <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8 }}>
+                        {[
+                          { label: "Phase", value: r.position.phase ?? "—" },
+                          { label: "Tasks", value: `${r.position.completedTasks}/${r.position.totalTasks}` },
+                          { label: "SPI", value: r.position.spi != null ? r.position.spi.toFixed(2) : "—" },
+                          { label: "CPI", value: r.position.cpi != null ? r.position.cpi.toFixed(2) : "—" },
+                          { label: "Open Risks", value: r.position.openRisks },
+                          { label: "Open Issues", value: r.position.openIssues },
+                        ].map(kpi => (
+                          <div key={kpi.label} style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 7, padding: "4px 10px", minWidth: 72, textAlign: "center" as const }}>
+                            <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{kpi.value}</div>
+                            <div style={{ fontSize: 10, color: C.text3 }}>{kpi.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Diagnosis */}
+                    <div>
+                      <div style={{ fontWeight: 700, color: C.text, fontSize: 11, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 4 }}>Diagnosis</div>
+                      {r.diagnosis.map((line: string, i: number) => (
+                        <div key={i} style={{ color: C.text2, lineHeight: 1.5, marginBottom: 3 }}>· {line}</div>
+                      ))}
+                    </div>
+                    {/* Findings */}
+                    {r.findings.length > 0 && (
+                      <div>
+                        <div style={{ fontWeight: 700, color: C.text, fontSize: 11, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 4 }}>
+                          Findings ({r.findings.length})
+                        </div>
+                        {r.findings.map((f: any, i: number) => (
+                          <div key={i} style={{ display: "flex", gap: 7, marginBottom: 5, alignItems: "flex-start" }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: sevColor[f.severity] ?? C.text3, minWidth: 16, paddingTop: 1 }}>
+                              {f.severity.toUpperCase()}
+                            </span>
+                            <div>
+                              <div style={{ color: C.text, fontWeight: 600 }}>{f.statement}</div>
+                              {f.evidenceSummary && <div style={{ color: C.text3, fontSize: 11 }}>{f.evidenceSummary}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Sequence */}
+                    {r.sequence.length > 0 && (
+                      <div>
+                        <div style={{ fontWeight: 700, color: C.text, fontSize: 11, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 4 }}>Sequence</div>
+                        {r.sequence.map((s: string, i: number) => (
+                          <div key={i} style={{ color: C.text2, lineHeight: 1.5, marginBottom: 3 }}>
+                            <span style={{ fontWeight: 700, color: C.primary }}>{i + 1}.</span> {s}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Watch */}
+                    {r.watch?.length > 0 && (
+                      <div>
+                        <div style={{ fontWeight: 700, color: C.amber, fontSize: 11, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 4 }}>Watch</div>
+                        {r.watch.map((s: string, i: number) => (
+                          <div key={i} style={{ color: C.text2, lineHeight: 1.5, marginBottom: 3 }}>⚠ {s}</div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 10, color: C.text3 }}>Generated {new Date(r.generatedAt).toLocaleString()}</div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
