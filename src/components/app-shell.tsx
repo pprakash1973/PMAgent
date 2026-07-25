@@ -300,7 +300,6 @@ export function AppShell({
         <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
           {children}
         </div>
-        <DockedAIBar role={role} />
       </div>
     </div>
   );

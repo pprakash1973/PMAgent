@@ -104,7 +104,7 @@ export function NamingCeremony({ pmName, onComplete }: Props) {
 
         {/* Naming form */}
         <div style={{ padding: "20px 32px 28px" }}>
-          <p style={{ fontSize: 13, color: "#5b616e", margin: "0 0 12px", fontWeight: 500 }}>
+          <p style={{ fontSize: 14, color: "#5b616e", margin: "0 0 12px", fontWeight: 700 }}>
             What would you like to call your assistant?
           </p>
           <form onSubmit={handleSubmit}>

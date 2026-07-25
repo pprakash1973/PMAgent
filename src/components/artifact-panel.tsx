@@ -17,14 +17,16 @@ type Selection = { artifactType: string; selectionStatus: string };
 type CatalogEntry = { type: string; label: string; phase: string; mandatory?: boolean };
 
 const C = {
-  primary: "#4f5bd5", primaryLight: "#eef0fc", primaryBorder: "#cfd4f5",
+  primary: "#006E74", primaryLight: "rgba(0,110,116,.08)", primaryBorder: "rgba(0,110,116,.25)",
+  primaryAlt: "#0097AC",
+  petrol: "#003C51",
   border: "#e2e5ea", borderLight: "#eceef2",
   surface: "#fff", surface2: "#f7f8fa",
-  text: "#1a1d24", text2: "#5b616e", text3: "#8a909c", textMuted: "#a8adb8",
-  green: "#158a5a", greenLight: "#e3f3ea",
+  text: "#231F20", text2: "#5b616e", text3: "#8a909c", textMuted: "#a8adb8",
+  green: "#01B27C", greenLight: "#e3f3ea",
   amber: "#c17d12", amberLight: "#fbf0da",
   red: "#cf3f3a", redLight: "#fbe4e2",
-  teal: "#0f766e", tealLight: "#f0fdf4", tealBorder: "#99f6e4",
+  teal: "#006E74", tealLight: "rgba(0,110,116,.06)", tealBorder: "rgba(0,110,116,.2)",
   slate: "#475569", slateLight: "#f8fafc", slateBorder: "#cbd5e1",
 };
 
@@ -342,7 +344,7 @@ export function ArtifactPanel({
         onMouseEnter={() => { if (!isGen) setHoveredCard(entry.type); }}
         onMouseLeave={() => setHoveredCard(null)}
       >
-        <span style={{ position: "absolute", top: 6, right: 7, fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: artifact ? "#1a1d24" : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
+        <span style={{ position: "absolute", top: 6, right: 7, fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: artifact ? C.primary : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
 
         {isMandatory ? (
           <span title="Required" style={{ position: "absolute", top: 5, left: 7, fontSize: 15, color: "#f59e0b", lineHeight: 1 }}>★</span>
@@ -362,23 +364,23 @@ export function ArtifactPanel({
             <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.35, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>{entry.label}</div>
             {artifact ? (
               <>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "#1a1d24", color: "#fff" }}>Generated</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: C.primary, color: "#fff" }}>Generated</span>
                 <div style={{ display: "flex", gap: 5, marginTop: 2 }}>
-                  <button onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>View</button>
-                  <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: "none", background: "#1a1d24", color: "#fff", cursor: "pointer" }}>↺</button>
+                  <button onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: `1px solid ${C.primary}`, background: "transparent", color: C.primary, cursor: "pointer" }}>View</button>
+                  <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: "none", background: C.primaryAlt, color: "#fff", cursor: "pointer" }}>↺</button>
                 </div>
               </>
             ) : (
               <>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: isMandatory ? "#1f2937" : "#e5e7eb", color: isMandatory ? "#f9fafb" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: isMandatory ? C.petrol : "#e5e7eb", color: isMandatory ? "#fff" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
                 {guardrailErrors[entry.type] && <div style={{ fontSize: 11, color: C.red, lineHeight: 1.3 }}>{guardrailErrors[entry.type]}</div>}
-                <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ marginTop: 2, fontSize: 12, padding: "4px 11px", borderRadius: 6, border: isMandatory ? "none" : `1px solid #d1d5db`, background: isMandatory ? "#1a1d24" : "transparent", color: isMandatory ? "#fff" : "#6b7280", cursor: "pointer", fontWeight: 500 }}>Generate</button>
+                <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ marginTop: 2, fontSize: 12, padding: "4px 11px", borderRadius: 6, border: isMandatory ? "none" : `1px solid ${C.primaryAlt}`, background: isMandatory ? C.primary : "transparent", color: isMandatory ? "#fff" : C.primaryAlt, cursor: "pointer", fontWeight: 500 }}>Generate</button>
               </>
             )}
 
             {/* Hover action bar — stays inside card, above content */}
             {isHovered && (
-              <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: -1, left: 0, right: 0, borderRadius: "10px 10px 0 0", background: "rgba(26,29,36,0.88)", display: "flex", justifyContent: "center", gap: 4, padding: "5px 6px" }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: -1, left: 0, right: 0, borderRadius: "10px 10px 0 0", background: "rgba(0,60,81,0.88)", display: "flex", justifyContent: "center", gap: 4, padding: "5px 6px" }}>
                 {!isMandatory && (
                   <button onClick={togglePin} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
                     {isStarred ? "☆ Unpin" : "★ Pin"}
@@ -436,10 +438,10 @@ export function ArtifactPanel({
 
       {/* ── RECOMMENDED SECTION ── */}
       <div style={{ borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", background: "#0f766e" }}>
-          <Check style={{ width: 15, height: 15, color: "#fff" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Recommended Artifacts</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginLeft: "auto" }}>★ star any optional artifact to add it here</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", background: "rgba(0,110,116,.07)", borderBottom: `1px solid rgba(0,110,116,.15)` }}>
+          <span style={{ fontSize: 14, color: "#F59E0B" }}>★</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#006E74" }}>Recommended Artifacts</span>
+          <span style={{ fontSize: 11, color: "rgba(0,110,116,.55)", marginLeft: "auto" }}>★ star any optional artifact to add it here</span>
         </div>
         {PHASES.map((phase) => (
           <PhaseRow
@@ -452,10 +454,10 @@ export function ArtifactPanel({
 
       {/* ── OPTIONAL SECTION ── */}
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", background: "#475569" }}>
-          <span style={{ fontSize: 14, color: "#fff" }}>☆</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Optional Artifacts</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginLeft: "auto" }}>Star to move to recommended</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", background: C.surface2, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` }}>
+          <span style={{ fontSize: 14, color: C.text3 }}>☆</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.text2 }}>Optional Artifacts</span>
+          <span style={{ fontSize: 11, color: C.textMuted, marginLeft: "auto" }}>Star to move to recommended</span>
         </div>
         {optionalEntries.length === 0 ? (
           <div style={{ textAlign: "center", padding: "24px 0", fontSize: 13, color: C.textMuted }}>All optional artifacts have been pinned to recommended.</div>
@@ -477,7 +479,7 @@ export function ArtifactPanel({
 const GEN_STAGES = [
   { key: "read",       label: "Reading project",     icon: "📂", delay: 400  },
   { key: "guardrails", label: "Checking guardrails",  icon: "🛡️", delay: 900  },
-  { key: "ai",         label: "AI drafting",          icon: "✨", delay: null }, // stays until done
+  { key: "ai",         label: "Subagent working",     icon: "✨", delay: null },
   { key: "saving",     label: "Saving",               icon: "💾", delay: 300  },
   { key: "done",       label: "Done",                 icon: "✓",  delay: null },
 ];
@@ -502,9 +504,9 @@ function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolea
 
   return (
     <div style={{
-      border: `1.5px dashed #a5b4fc`,
+      border: `1.5px dashed rgba(0,151,172,.5)`,
       borderRadius: 12, padding: "14px 12px",
-      background: "#f5f4ff",
+      background: "rgba(0,151,172,.04)",
       display: "flex", flexDirection: "column", alignItems: "stretch",
       minHeight: 120,
     }}>
@@ -526,9 +528,9 @@ function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolea
                 width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 11,
-                background: isDone ? "#1a1d24" : isActive ? "#4f5bd5" : "#e5e7eb",
+                background: isDone ? "#006E74" : isActive ? "#0097AC" : "#e5e7eb",
                 color: isDone || isActive ? "#fff" : "#9ca3af",
-                boxShadow: isActive ? "0 0 0 4px rgba(79,91,213,0.18)" : "none",
+                boxShadow: isActive ? "0 0 0 4px rgba(0,151,172,0.2)" : "none",
                 transition: "all 0.3s ease",
                 animation: isActive ? "pulse-stage 1.5s ease-in-out infinite" : "none",
               }}>
@@ -549,7 +551,7 @@ function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolea
       <div style={{ height: 4, borderRadius: 99, background: "#e5e7eb", overflow: "hidden", marginBottom: 6 }}>
         <div style={{
           height: "100%", borderRadius: 99,
-          background: "linear-gradient(90deg, #4f5bd5, #2dd4bf)",
+          background: "linear-gradient(90deg, #006E74, #0097AC)",
           width: stage >= GEN_STAGES.length - 2 ? "100%" : "40%",
           marginLeft: stage >= GEN_STAGES.length - 2 ? 0 : undefined,
           animation: stage < GEN_STAGES.length - 2 ? "slide-bar 1.6s ease-in-out infinite" : "none",
@@ -562,7 +564,7 @@ function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolea
       </div>
 
       <style>{`
-        @keyframes pulse-stage { 0%,100%{box-shadow:0 0 0 0 rgba(79,91,213,.3)} 50%{box-shadow:0 0 0 6px rgba(79,91,213,0)} }
+        @keyframes pulse-stage { 0%,100%{box-shadow:0 0 0 0 rgba(0,151,172,.3)} 50%{box-shadow:0 0 0 6px rgba(0,151,172,0)} }
         @keyframes slide-bar { 0%{margin-left:0;width:30%} 50%{margin-left:40%;width:40%} 100%{margin-left:100%;width:0} }
       `}</style>
     </div>

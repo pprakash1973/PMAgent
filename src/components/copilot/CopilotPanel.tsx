@@ -451,9 +451,9 @@ export function CopilotPanel() {
         style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 1000,
           width: 52, height: 52, borderRadius: "50%", border: "none",
-          background: isOpen ? "#1a1d24" : "linear-gradient(135deg, #4f5bd5 0%, #2dd4bf 100%)",
+          background: isOpen ? "#003C51" : "linear-gradient(135deg, #006E74 0%, #0097AC 100%)",
           color: "#fff", fontSize: 22, cursor: "pointer",
-          boxShadow: "0 4px 20px rgba(79,91,213,0.4)",
+          boxShadow: "0 4px 20px rgba(0,110,116,0.4)",
           display: "flex", alignItems: "center", justifyContent: "center",
           transition: "all 0.2s ease",
         }}
@@ -490,7 +490,7 @@ export function CopilotPanel() {
           {/* Header */}
           <div style={{
             padding: "14px 18px 12px",
-            background: "linear-gradient(135deg, #4f5bd5 0%, #2dd4bf 100%)",
+            background: "linear-gradient(135deg, #006E74 0%, #0097AC 100%)",
             display: "flex", alignItems: "center", gap: 10,
           }}>
             <div style={{
