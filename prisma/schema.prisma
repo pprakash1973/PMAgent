@@ -263,6 +263,7 @@ model Project {
   requirements       Requirement[]
   gaps               Gap[]
   assistantConversations AssistantConversation[]
+  advisories         Advisory[]
 
   @@unique([orgId, code])
 }
@@ -736,4 +737,45 @@ model AssistantMessage {
   createdAt      DateTime @default(now())
 
   conversation AssistantConversation @relation(fields: [conversationId], references: [id])
+}
+
+// ── Advisory Engine ────────────────────────────────────────────────────────────
+
+model Advisory {
+  id              String    @id @default(cuid())
+  projectId       String
+  ruleId          String    // e.g. "RA-04", "SCH-02"
+  pack            String    // ra | sch | bud | iss | xar
+  class           String    // c1 | c2 | c3 | c4
+  severity        String    // s1 | s2 | s3 | s4
+  provenance      String    @default("p1") // p1 | p3
+  tab             String    // risk | schedule | cost | issues | cross
+  objectType      String?   // "risk" | "task" | "issue"
+  objectId        String?
+  statement       String
+  evidenceSummary String
+  draftPayload    Json?
+  state           String    @default("proposed") // proposed|accepted|deferred|dismissed|resolved
+  rankScore       Float     @default(0)
+  mode            String    @default("m1") // m1|m2|m3
+  createdAt       DateTime  @default(now())
+  stateChangedAt  DateTime?
+  deferredUntil   DateTime?
+
+  project Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actions AdvisoryAction[]
+
+  @@index([projectId, state, severity])
+  @@index([projectId, tab, state])
+  @@unique([projectId, ruleId, objectId])
+}
+
+model AdvisoryAction {
+  id              String   @id @default(cuid())
+  advisoryId      String
+  action          String   // accept|dismiss|defer|link
+  dismissalReason String?
+  createdAt       DateTime @default(now())
+
+  advisory Advisory @relation(fields: [advisoryId], references: [id], onDelete: Cascade)
 }

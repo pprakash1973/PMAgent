@@ -2859,13 +2859,160 @@ function CostTab({ project }: { project: any }) {
   );
 }
 
+// ── Advisory Panel ─────────────────────────────────────────────────────────────
+
+const SEV_COLOR: Record<string, { bg: string; color: string; label: string }> = {
+  s1: { bg: "#fbe4e2", color: "#cf3f3a", label: "Critical" },
+  s2: { bg: "#fbf0da", color: "#c17d12", label: "High" },
+  s3: { bg: "#eef0fc", color: "#4f5bd5", label: "Medium" },
+  s4: { bg: "#f7f8fa", color: "#5b616e", label: "Low" },
+};
+
+type Advisory = {
+  id: string; ruleId: string; severity: string; class: string; tab: string;
+  statement: string; evidenceSummary: string; draftPayload: any; state: string;
+};
+
+function AdvisoryPanel({
+  projectId, tab, open, onClose, onAction,
+}: {
+  projectId: string; tab: string; open: boolean; onClose: () => void;
+  onAction?: () => void;
+}) {
+  const [advisories, setAdvisories] = useState<Advisory[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [acting, setActing] = useState<string | null>(null);
+  const [dismissInput, setDismissInput] = useState<string | null>(null);
+  const [dismissReason, setDismissReason] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetch(`/api/projects/${projectId}/advisories?tab=${tab}`)
+      .then(r => r.json())
+      .then(d => setAdvisories(d.advisories ?? []))
+      .finally(() => setLoading(false));
+  }, [open, projectId, tab]);
+
+  async function doAction(advId: string, action: "accept" | "dismiss" | "defer", reason?: string) {
+    setActing(advId);
+    await fetch(`/api/projects/${projectId}/advisories/${advId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, dismissalReason: reason }),
+    });
+    setAdvisories(prev => prev.filter(a => a.id !== advId));
+    setActing(null);
+    setDismissInput(null);
+    setDismissReason("");
+    onAction?.();
+  }
+
+  if (!open) return null;
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, right: 0, width: 360, height: "100vh",
+      background: "#fff", borderLeft: "1.5px solid #e2e5ea",
+      boxShadow: "-4px 0 24px rgba(0,0,0,.08)", zIndex: 500,
+      display: "flex", flexDirection: "column", fontFamily: "'IBM Plex Sans',sans-serif",
+    }}>
+      {/* Header */}
+      <div style={{ padding: "16px 18px 14px", borderBottom: "1px solid #e2e5ea", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1d24" }}>Advisory Panel</div>
+          <div style={{ fontSize: 11, color: "#8a909c", marginTop: 2 }}>Peer review findings for this tab</div>
+        </div>
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "#8a909c", lineHeight: 1 }}>×</button>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px" }}>
+        {loading && <div style={{ color: "#8a909c", fontSize: 13, padding: 12 }}>Loading advisories…</div>}
+        {!loading && advisories.length === 0 && (
+          <div style={{ color: "#8a909c", fontSize: 13, padding: 12, textAlign: "center" }}>
+            No open findings for this tab.
+          </div>
+        )}
+        {advisories.map(adv => {
+          const sev = SEV_COLOR[adv.severity] ?? SEV_COLOR.s4;
+          return (
+            <div key={adv.id} style={{
+              border: "1.5px solid #e2e5ea", borderRadius: 10, marginBottom: 12,
+              overflow: "hidden", background: "#fafbfc",
+            }}>
+              {/* Severity stripe */}
+              <div style={{ background: sev.bg, padding: "7px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: sev.color, textTransform: "uppercase", letterSpacing: ".06em" }}>
+                  {sev.label}
+                </span>
+                <span style={{ fontSize: 10, color: "#8a909c", fontFamily: "monospace" }}>{adv.ruleId}</span>
+              </div>
+
+              {/* Content */}
+              <div style={{ padding: "10px 12px" }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1d24", lineHeight: 1.4, marginBottom: 6 }}>{adv.statement}</div>
+                {adv.evidenceSummary && (
+                  <div style={{ fontSize: 12, color: "#5b616e", marginBottom: 8, lineHeight: 1.5 }}>{adv.evidenceSummary}</div>
+                )}
+
+                {/* Actions */}
+                {dismissInput === adv.id ? (
+                  <div style={{ marginTop: 6 }}>
+                    <input
+                      value={dismissReason}
+                      onChange={e => setDismissReason(e.target.value)}
+                      placeholder="Reason for dismissal (optional)"
+                      style={{ width: "100%", fontSize: 12, padding: "5px 8px", border: "1px solid #d3d7de", borderRadius: 6, marginBottom: 6, boxSizing: "border-box" as const }}
+                    />
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        onClick={() => doAction(adv.id, "dismiss", dismissReason)}
+                        disabled={acting === adv.id}
+                        style={{ flex: 1, fontSize: 12, padding: "5px 0", border: "none", borderRadius: 6, background: "#fbe4e2", color: "#cf3f3a", cursor: "pointer", fontWeight: 600 }}
+                      >Confirm Dismiss</button>
+                      <button onClick={() => setDismissInput(null)} style={{ fontSize: 12, padding: "5px 10px", border: "1px solid #e2e5ea", borderRadius: 6, background: "#fff", cursor: "pointer" }}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" as const }}>
+                    <button
+                      onClick={() => doAction(adv.id, "accept")}
+                      disabled={acting === adv.id}
+                      style={{ fontSize: 12, padding: "5px 11px", border: "none", borderRadius: 6, background: "#e3f3ea", color: "#158a5a", cursor: "pointer", fontWeight: 600 }}
+                    >Accept</button>
+                    <button
+                      onClick={() => doAction(adv.id, "defer")}
+                      disabled={acting === adv.id}
+                      style={{ fontSize: 12, padding: "5px 11px", border: "1px solid #d3d7de", borderRadius: 6, background: "#fff", color: "#5b616e", cursor: "pointer" }}
+                    >Defer 28d</button>
+                    <button
+                      onClick={() => setDismissInput(adv.id)}
+                      style={{ fontSize: 12, padding: "5px 11px", border: "1px solid #d3d7de", borderRadius: 6, background: "#fff", color: "#5b616e", cursor: "pointer" }}
+                    >Dismiss</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
 const TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting"];
 
+// Advisory-panel-enabled tabs
+const ADV_TABS = new Set(["risk", "issues", "schedule", "cost"]);
+
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const [tab, setTab] = useState("Artifacts");
   const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
+  const [badges, setBadges] = useState<Record<string, number>>({});
+  const [advOpen, setAdvOpen] = useState(false);
 
   const { setTabContext } = useCopilot();
   useEffect(() => {
@@ -2875,6 +3022,21 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       projectName: project.name,
     });
   }, [tab, project.id, project.name, setTabContext]);
+
+  // Load badge counts on mount and after advisory actions
+  const loadBadges = useCallback(() => {
+    fetch(`/api/projects/${project.id}/advisories?tab=all`)
+      .then(r => r.json())
+      .then(d => setBadges(d.badges ?? {}))
+      .catch(() => {});
+  }, [project.id]);
+
+  useEffect(() => { loadBadges(); }, [loadBadges]);
+
+  const tabKey = tab.toLowerCase().replace(/ /g, "_");
+  const panelTabKey = tab === "Scope Control" ? "scope" : tabKey;
+  const showAdvButton = ADV_TABS.has(panelTabKey);
+  const tabBadge = badges[panelTabKey] ?? 0;
 
   return (
     <div style={{ padding: "22px 26px 40px" }}>
@@ -2904,21 +3066,54 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       />
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 26, borderBottom: `1.5px solid ${C.border}`, marginBottom: 20 }}>
-        {TABS.map(t => (
+      <div style={{ display: "flex", gap: 0, borderBottom: `1.5px solid ${C.border}`, marginBottom: 20, alignItems: "flex-end" }}>
+        <div style={{ display: "flex", gap: 26, flex: 1 }}>
+          {TABS.map(t => {
+            const k = t.toLowerCase().replace(/ /g, "_") === "scope_control" ? "scope" : t.toLowerCase().replace(/ /g, "_");
+            const bc = badges[k] ?? 0;
+            return (
+              <button
+                key={t}
+                onClick={() => { setTab(t); setAdvOpen(false); }}
+                style={{
+                  padding: "0 1px 13px", border: "none", background: "transparent", cursor: "pointer",
+                  fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "13.5px",
+                  fontWeight: tab === t ? 700 : 500,
+                  color: tab === t ? C.text : C.text3,
+                  borderBottom: tab === t ? `2.5px solid ${C.primary}` : "2.5px solid transparent",
+                  marginBottom: "-1.5px", transition: "color .15s",
+                  display: "flex", alignItems: "center", gap: 5,
+                }}
+              >
+                {t}
+                {bc > 0 && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, background: "#cf3f3a", color: "#fff",
+                    borderRadius: 99, padding: "1px 5px", lineHeight: "16px", minWidth: 16, textAlign: "center",
+                  }}>{bc}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {showAdvButton && (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            onClick={() => setAdvOpen(v => !v)}
             style={{
-              padding: "0 1px 13px", border: "none", background: "transparent", cursor: "pointer",
-              fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "13.5px",
-              fontWeight: tab === t ? 700 : 500,
-              color: tab === t ? C.text : C.text3,
-              borderBottom: tab === t ? `2.5px solid ${C.primary}` : "2.5px solid transparent",
-              marginBottom: "-1.5px", transition: "color .15s",
+              marginBottom: 10, marginLeft: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              padding: "5px 13px", border: "1px solid #d3d7de", borderRadius: 7,
+              background: advOpen ? C.primary : "#fff", color: advOpen ? "#fff" : C.text2,
+              display: "flex", alignItems: "center", gap: 6, fontFamily: "'IBM Plex Sans',sans-serif",
             }}
-          >{t}</button>
-        ))}
+          >
+            {tabBadge > 0 && (
+              <span style={{ background: advOpen ? "rgba(255,255,255,.3)" : "#cf3f3a", color: "#fff", borderRadius: 99, padding: "1px 5px", fontSize: 10, fontWeight: 700 }}>
+                {tabBadge}
+              </span>
+            )}
+            Advisor {advOpen ? "▶" : "◀"}
+          </button>
+        )}
       </div>
 
       {/* Tab content */}
@@ -2930,6 +3125,15 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       {tab === "Cost" && <CostTab project={project} />}
       {tab === "Scope Control" && <RequirementsTab project={project} />}
       {tab === "Status Reporting" && <StatusTab project={project} />}
+
+      {/* Advisory drawer */}
+      <AdvisoryPanel
+        projectId={project.id}
+        tab={panelTabKey}
+        open={advOpen}
+        onClose={() => setAdvOpen(false)}
+        onAction={loadBadges}
+      />
     </div>
   );
 }
