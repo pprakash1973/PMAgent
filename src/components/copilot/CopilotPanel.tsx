@@ -318,7 +318,8 @@ export function CopilotPanel() {
       .then(d => {
         setEnabled(d.copilotEnabled);
         setAssistantName(d.assistantName || "Advisor");
-        if (!d.isNamed && d.copilotEnabled) setShowNaming(true);
+        // Show ceremony when copilot hasn't been activated yet
+        if (!d.copilotEnabled) setShowNaming(true);
       })
       .catch(() => setEnabled(false));
   }, [session]);
@@ -394,7 +395,21 @@ export function CopilotPanel() {
     } finally { setLoading(false); }
   }, [loading, messages, tabContext]);
 
-  if (!session?.user || enabled === false || enabled === null || skippedThisSession) return null;
+  if (!session?.user || enabled === null || skippedThisSession) return null;
+
+  // Ceremony: show full-screen onboarding when not yet activated
+  if (showNaming && enabled === false) {
+    return (
+      <NamingCeremony
+        pmName={(session?.user as any)?.name?.split(" ")[0] || ""}
+        onComplete={n => { setAssistantName(n); setShowNaming(false); setEnabled(true); }}
+        onSkip={() => { setShowNaming(false); setSkippedThisSession(true); }}
+      />
+    );
+  }
+
+  // FAB + panel only visible after activation
+  if (enabled === false) return null;
 
   const ledgerActions = actionCards.filter(a => a.status !== "dismissed");
   const pendingCount = actionCards.filter(a => a.status === "proposed").length;
@@ -402,13 +417,6 @@ export function CopilotPanel() {
 
   return (
     <>
-      {showNaming && (
-        <NamingCeremony
-          pmName={(session?.user as any)?.name?.split(" ")[0] || ""}
-          onComplete={n => { setAssistantName(n); setShowNaming(false); setEnabled(true); }}
-          onSkip={() => { setShowNaming(false); setSkippedThisSession(true); closePanel(); }}
-        />
-      )}
 
       {/* FAB */}
       <button
