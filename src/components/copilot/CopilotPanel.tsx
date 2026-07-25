@@ -296,6 +296,7 @@ export function CopilotPanel() {
   const { tabContext, isOpen, openPanel, closePanel, prefillMessage, clearPrefill } = useCopilot();
 
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [skippedThisSession, setSkippedThisSession] = useState(false);
   const [assistantName, setAssistantName] = useState("Advisor");
   const [showNaming, setShowNaming] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -393,7 +394,7 @@ export function CopilotPanel() {
     } finally { setLoading(false); }
   }, [loading, messages, tabContext]);
 
-  if (!session?.user || enabled === false || enabled === null) return null;
+  if (!session?.user || enabled === false || enabled === null || skippedThisSession) return null;
 
   const ledgerActions = actionCards.filter(a => a.status !== "dismissed");
   const pendingCount = actionCards.filter(a => a.status === "proposed").length;
@@ -404,7 +405,8 @@ export function CopilotPanel() {
       {showNaming && (
         <NamingCeremony
           pmName={(session?.user as any)?.name?.split(" ")[0] || ""}
-          onComplete={n => { setAssistantName(n); setShowNaming(false); }}
+          onComplete={n => { setAssistantName(n); setShowNaming(false); setEnabled(true); }}
+          onSkip={() => { setShowNaming(false); setSkippedThisSession(true); closePanel(); }}
         />
       )}
 

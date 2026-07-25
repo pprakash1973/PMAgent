@@ -13,9 +13,9 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    assistantName: user?.assistantName ?? "Copilot",
-    copilotEnabled: user?.copilotEnabled ?? true,
-    isNamed: user?.assistantName !== "Copilot" && !!user?.assistantName,
+    assistantName: user?.assistantName ?? "Advisor",
+    copilotEnabled: user?.copilotEnabled ?? false,
+    isNamed: user?.copilotEnabled === true,
   });
 }
 
@@ -42,9 +42,9 @@ export async function PATCH(req: NextRequest) {
 
   const updated = await prisma.user.update({
     where: { id: session.user.id },
-    data: { assistantName: name },
-    select: { assistantName: true },
+    data: { assistantName: name, copilotEnabled: true },
+    select: { assistantName: true, copilotEnabled: true },
   });
 
-  return NextResponse.json({ assistantName: updated.assistantName });
+  return NextResponse.json({ assistantName: updated.assistantName, copilotEnabled: updated.copilotEnabled });
 }

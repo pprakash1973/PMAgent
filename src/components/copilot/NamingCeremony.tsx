@@ -44,7 +44,7 @@ const CAPABILITIES = [
   },
 ];
 
-export function NamingCeremony({ pmName, onComplete }: { pmName?: string; onComplete: (name: string) => void }) {
+export function NamingCeremony({ pmName, onComplete, onSkip }: { pmName?: string; onComplete: (name: string) => void; onSkip: () => void }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -192,14 +192,14 @@ export function NamingCeremony({ pmName, onComplete }: { pmName?: string; onComp
               {saving ? "Activating…" : `Let's go, ${displayName} →`}
             </button>
             <button
-              onClick={() => handleSubmit("Advisor")}
+              onClick={onSkip}
               style={{
                 padding: "12px 18px", borderRadius: 10,
                 border: "1.5px solid #e2e5ea", background: "transparent",
                 color: "#6b7280", fontSize: 14, cursor: "pointer", fontFamily: ff,
               }}
             >
-              Skip
+              I'll do it later
             </button>
           </div>
 

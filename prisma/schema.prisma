@@ -72,7 +72,7 @@ model User {
   escalationsResolved      Escalation[]              @relation("EscalationResolvedBy")
   escalationComments       EscalationComment[]
   notificationPreference   NotificationPreference?
-  copilotEnabled         Boolean                   @default(true)
+  copilotEnabled         Boolean                   @default(false)
   assistantName          String                    @default("Copilot")
   assistantConversations AssistantConversation[]
 }
