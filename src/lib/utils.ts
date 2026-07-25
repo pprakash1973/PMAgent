@@ -62,7 +62,6 @@ export const ARTIFACT_CATALOG = [
   { type: "issue_register",         label: "Issue Register",                     phase: "execution",  mandatory: true  },
   { type: "decision_log",           label: "Decision Log",                       phase: "execution",  mandatory: false },
   // Monitoring
-  { type: "weekly_status",          label: "Weekly Status Report",               phase: "monitoring", mandatory: true  },
   { type: "monthly_status",         label: "Monthly Status Report",              phase: "monitoring", mandatory: false },
   { type: "change_log",             label: "Change Control Register",            phase: "monitoring", mandatory: true  },
   // Closure
@@ -74,7 +73,6 @@ export const ARTIFACT_CATALOG = [
 export const ARTIFACT_FORMAT: Record<string, "xlsx" | "pptx" | "docx"> = {
   // PowerPoint
   initiation_deck: "pptx",
-  weekly_status:   "pptx",
   monthly_status:  "pptx",
   // Excel
   stakeholder_register: "xlsx",
@@ -98,9 +96,9 @@ export const ARTIFACT_FORMAT: Record<string, "xlsx" | "pptx" | "docx"> = {
 
 export const DEFAULT_DETAILED_ARTIFACTS = [
   "project_charter", "stakeholder_register", "wbs", "milestone_plan",
-  "raid_register", "risk_register", "communication_plan", "raci_matrix", "weekly_status",
+  "raid_register", "risk_register", "communication_plan", "raci_matrix",
 ];
 
 export const DEFAULT_HIGH_LEVEL_ARTIFACTS = [
-  "project_charter", "milestone_plan", "raid_register", "weekly_status",
+  "project_charter", "milestone_plan", "raid_register",
 ];
