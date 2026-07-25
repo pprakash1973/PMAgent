@@ -156,23 +156,23 @@ export default function LoginPage() {
         }}
       >
         <div style={{ width: "100%", maxWidth: 380 }}>
-          <div style={{ marginBottom: 26 }}>
-            <h2 style={{ fontSize: 22, fontWeight: 700, color: "#1a1d24", letterSpacing: "-.01em", margin: 0 }}>
+          <div style={{ marginBottom: 28 }}>
+            <h2 style={{ fontSize: 26, fontWeight: 700, color: "#1a1d24", letterSpacing: "-.01em", margin: 0 }}>
               Welcome back
             </h2>
-            <p style={{ fontSize: "13.5px", color: "#5b616e", marginTop: 6 }}>
+            <p style={{ fontSize: 15, color: "#5b616e", marginTop: 8 }}>
               Sign in to your PMO workspace
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             {error && (
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
-                  fontSize: 13,
+                  fontSize: 14,
                   color: "#cf3f3a",
                   background: "#fbe4e2",
                   border: "1px solid #f3c9c6",
@@ -184,8 +184,8 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <Label htmlFor="email">Email</Label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <Label htmlFor="email" style={{ fontSize: 15 }}>Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -193,10 +193,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                style={{ fontSize: 15, height: 44 }}
               />
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <Label htmlFor="password">Password</Label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <Label htmlFor="password" style={{ fontSize: 15 }}>Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -204,15 +205,28 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                style={{ fontSize: 15, height: 44 }}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading} style={{ height: 42, marginTop: 4 }}>
+
+            {/* Powered by badge */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px 0 2px" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3l7 4v10l-7 4-7-4V7l7-4z" stroke="#006E74" strokeWidth="1.7" strokeLinejoin="round"/>
+                <path d="M12 12l7-4M12 12v9M12 12L5 8" stroke="#006E74" strokeWidth="1.7" strokeLinejoin="round"/>
+              </svg>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "#006E74", letterSpacing: "-.01em" }}>
+                PM Agent Powered By Claude
+              </span>
+            </div>
+
+            <Button type="submit" className="w-full" disabled={loading} style={{ height: 44, fontSize: 15, marginTop: 2 }}>
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Sign In
             </Button>
           </form>
 
-          <p style={{ textAlign: "center", fontSize: 11, color: "#8a909c", marginTop: 34 }}>
+          <p style={{ textAlign: "center", fontSize: 12, color: "#8a909c", marginTop: 32 }}>
             Enterprise edition · Powered by Claude AI
           </p>
         </div>
