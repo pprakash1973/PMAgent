@@ -342,12 +342,12 @@ export function ArtifactPanel({
         onMouseEnter={() => { if (!isGen) setHoveredCard(entry.type); }}
         onMouseLeave={() => setHoveredCard(null)}
       >
-        <span style={{ position: "absolute", top: 6, right: 7, fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: artifact ? "#1a1d24" : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
+        <span style={{ position: "absolute", top: 6, right: 7, fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: artifact ? "#1a1d24" : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
 
         {isMandatory ? (
-          <span title="Required" style={{ position: "absolute", top: 5, left: 7, fontSize: 13, color: "#f59e0b", lineHeight: 1 }}>★</span>
+          <span title="Required" style={{ position: "absolute", top: 5, left: 7, fontSize: 15, color: "#f59e0b", lineHeight: 1 }}>★</span>
         ) : (
-          <button title={isStarred ? "Unpin" : "Pin to recommended"} onClick={togglePin} style={{ position: "absolute", top: 4, left: 6, fontSize: 14, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: isStarred ? "#f59e0b" : "#d1d5db", padding: 0 }}>
+          <button title={isStarred ? "Unpin" : "Pin to recommended"} onClick={togglePin} style={{ position: "absolute", top: 4, left: 6, fontSize: 16, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: isStarred ? "#f59e0b" : "#d1d5db", padding: 0 }}>
             {isStarred ? "★" : "☆"}
           </button>
         )}
@@ -359,20 +359,20 @@ export function ArtifactPanel({
             <div style={{ width: 38, height: 38, borderRadius: 9, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", background: artifact ? "#f0f0f8" : isMandatory ? "#f3f4f6" : "#f9fafb" }}>
               <Icon style={{ width: 18, height: 18, color: artifact ? C.primary : isMandatory ? "#6b7280" : "#9ca3af" }} />
             </div>
-            <div style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.35, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>{entry.label}</div>
+            <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.35, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>{entry.label}</div>
             {artifact ? (
               <>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "#1a1d24", color: "#fff" }}>Generated</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "#1a1d24", color: "#fff" }}>Generated</span>
                 <div style={{ display: "flex", gap: 5, marginTop: 2 }}>
-                  <button onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }} style={{ fontSize: 10, padding: "3px 9px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>View</button>
-                  <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 10, padding: "3px 9px", borderRadius: 5, border: "none", background: "#1a1d24", color: "#fff", cursor: "pointer" }}>↺</button>
+                  <button onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>View</button>
+                  <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: "none", background: "#1a1d24", color: "#fff", cursor: "pointer" }}>↺</button>
                 </div>
               </>
             ) : (
               <>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: isMandatory ? "#1f2937" : "#e5e7eb", color: isMandatory ? "#f9fafb" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
-                {guardrailErrors[entry.type] && <div style={{ fontSize: 9, color: C.red, lineHeight: 1.3 }}>{guardrailErrors[entry.type]}</div>}
-                <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ marginTop: 2, fontSize: 10, padding: "4px 11px", borderRadius: 6, border: isMandatory ? "none" : `1px solid #d1d5db`, background: isMandatory ? "#1a1d24" : "transparent", color: isMandatory ? "#fff" : "#6b7280", cursor: "pointer", fontWeight: 500 }}>Generate</button>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: isMandatory ? "#1f2937" : "#e5e7eb", color: isMandatory ? "#f9fafb" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
+                {guardrailErrors[entry.type] && <div style={{ fontSize: 11, color: C.red, lineHeight: 1.3 }}>{guardrailErrors[entry.type]}</div>}
+                <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ marginTop: 2, fontSize: 12, padding: "4px 11px", borderRadius: 6, border: isMandatory ? "none" : `1px solid #d1d5db`, background: isMandatory ? "#1a1d24" : "transparent", color: isMandatory ? "#fff" : "#6b7280", cursor: "pointer", fontWeight: 500 }}>Generate</button>
               </>
             )}
 
@@ -380,11 +380,11 @@ export function ArtifactPanel({
             {isHovered && (
               <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: -1, left: 0, right: 0, borderRadius: "10px 10px 0 0", background: "rgba(26,29,36,0.88)", display: "flex", justifyContent: "center", gap: 4, padding: "5px 6px" }}>
                 {!isMandatory && (
-                  <button onClick={togglePin} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
+                  <button onClick={togglePin} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
                     {isStarred ? "☆ Unpin" : "★ Pin"}
                   </button>
                 )}
-                <button onClick={openPhasePicker} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
+                <button onClick={openPhasePicker} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
                   ⤴ Phase
                 </button>
               </div>
@@ -408,20 +408,20 @@ export function ArtifactPanel({
             style={{ position: "absolute", left: pickerAnchor.x, top: pickerAnchor.y, zIndex: 100, background: C.surface, border: `0.5px solid ${C.border}`, borderRadius: 10, padding: 6, display: "flex", flexDirection: "column", gap: 3, boxShadow: "0 6px 18px rgba(0,0,0,.14)", minWidth: 158 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ fontSize: 9, fontWeight: 600, color: C.text3, padding: "1px 6px 3px", letterSpacing: "0.06em" }}>MOVE TO PHASE</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.text3, padding: "1px 6px 3px", letterSpacing: "0.06em" }}>MOVE TO PHASE</div>
             {PHASES.map((ph) => (
               <button key={ph.id} onClick={(ev) => {
                 ev.stopPropagation();
                 setPhaseOverrides((prev) => ({ ...prev, [entry.type]: ph.id }));
                 setPromoted((prev) => { const n = new Set(prev); n.add(entry.type); return n; });
                 setPhasePickerFor(null); setPickerAnchor(null); setHoveredCard(null);
-              }} style={{ fontSize: 11, padding: "5px 8px", borderRadius: 6, border: "none", background: cardPhase(entry) === ph.id ? "#f0f0f8" : "transparent", color: C.text, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+              }} style={{ fontSize: 13, padding: "5px 8px", borderRadius: 6, border: "none", background: cardPhase(entry) === ph.id ? "#f0f0f8" : "transparent", color: C.text, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: ph.dot, flexShrink: 0, display: "inline-block" }} />
                 {ph.label}
-                {cardPhase(entry) === ph.id && <span style={{ marginLeft: "auto", fontSize: 10, color: C.primary }}>✓</span>}
+                {cardPhase(entry) === ph.id && <span style={{ marginLeft: "auto", fontSize: 12, color: C.primary }}>✓</span>}
               </button>
             ))}
-            <button onClick={() => { setPhasePickerFor(null); setPickerAnchor(null); }} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `0.5px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer", marginTop: 2 }}>Cancel</button>
+            <button onClick={() => { setPhasePickerFor(null); setPickerAnchor(null); }} style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, border: `0.5px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer", marginTop: 2 }}>Cancel</button>
           </div>
         );
       })()}
