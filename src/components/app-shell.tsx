@@ -129,26 +129,6 @@ function TopBar({ children, role }: { children?: React.ReactNode; role?: string 
     }}>
       {children}
       <div style={{ flex: 1 }} />
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8, height: 36, padding: "0 12px",
-        background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 9, width: 220, color: "#7A7480",
-      }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8"/><path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-        <span style={{ fontSize: "12.5px" }}>Search or ask…</span>
-      </div>
-      {role !== "dh" && role !== "pgm" && (
-        <button
-          onClick={() => router.push("/dashboard/projects/new")}
-          style={{
-            height: 36, padding: "0 15px", background: UST_TEAL, color: "#fff", border: "none",
-            borderRadius: 9, font: "600 12.5px 'Aptos','Calibri',sans-serif", cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 7, boxShadow: "0 2px 6px rgba(0,110,116,.3)",
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="#fff" strokeWidth="2" strokeLinecap="round"/></svg>
-          New Project
-        </button>
-      )}
     </div>
   );
 }
