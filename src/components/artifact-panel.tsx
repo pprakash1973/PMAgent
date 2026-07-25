@@ -7,7 +7,6 @@ import {
   ShieldAlert, MessageSquare, Grid3x3, BadgeCheck, ClipboardList, AlertCircle,
   Gavel, FileBarChart, RefreshCw, GraduationCap, FileCheck, TrendingUp, ScrollText,
   Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Check, Lock,
-  ArrowRight, Square, CheckSquare2,
 } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
@@ -29,11 +28,12 @@ const C = {
   slate: "#475569", slateLight: "#f8fafc", slateBorder: "#cbd5e1",
 };
 
-const MANDATORY_COLS = [
-  { id: "initiation", label: "Initiation",            phases: ["initiation"],             color: "#0F6E56", bg: "#E1F5EE", border: "#5DCAA5" },
-  { id: "planning",   label: "Planning",               phases: ["planning"],               color: "#3C3489", bg: "#EEEDFE", border: "#AFA9EC" },
-  { id: "exec_mon",   label: "Execution & Monitoring", phases: ["execution","monitoring"], color: "#185FA5", bg: "#E6F1FB", border: "#6AABDF" },
-  { id: "closure",    label: "Closure",                phases: ["closure"],                color: "#3B6D11", bg: "#EAF3DE", border: "#7DC053" },
+const PHASES = [
+  { id: "initiation", label: "Initiation", dot: "#f59e0b", pill: { bg: "#fef3c7", color: "#92400e" } },
+  { id: "planning",   label: "Planning",   dot: "#3b82f6", pill: { bg: "#dbeafe", color: "#1d4ed8" } },
+  { id: "execution",  label: "Execution",  dot: "#22c55e", pill: { bg: "#dcfce7", color: "#15803d" } },
+  { id: "monitoring", label: "Monitoring", dot: "#a855f7", pill: { bg: "#f3e8ff", color: "#7e22ce" } },
+  { id: "closure",    label: "Closure",    dot: "#ef4444", pill: { bg: "#fee2e2", color: "#b91c1c" } },
 ];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,6 +74,12 @@ export function ArtifactPanel({
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
   const [selectedOptional, setSelectedOptional] = useState<Set<string>>(new Set());
   const [promoted, setPromoted] = useState<Set<string>>(new Set());
+  const [phaseOverrides, setPhaseOverrides] = useState<Record<string, string>>({});
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null);
+  const [phasePickerFor, setPhasePickerFor] = useState<string | null>(null);
+  // Portal-style picker: anchor position calculated from card bounding rect
+  const [pickerAnchor, setPickerAnchor] = useState<{ x: number; y: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef<string | null>(null);
 
@@ -94,6 +100,33 @@ export function ArtifactPanel({
       return merged;
     });
   }, [artifacts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for Copilot-triggered regeneration events
+  useEffect(() => {
+    function onGenerating(e: Event) {
+      const { artifactType } = (e as CustomEvent).detail;
+      setGenerating((prev) => new Set(prev).add(artifactType));
+      setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
+    }
+    function onGenerated(e: Event) {
+      const { artifactType, artifact } = (e as CustomEvent).detail;
+      setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
+      if (artifact) {
+        setLocalArtifacts((prev) => {
+          const idx = prev.findIndex((a) => a.artifactType === artifactType);
+          if (idx >= 0) { const copy = [...prev]; copy[idx] = artifact; return copy; }
+          return [...prev, artifact];
+        });
+        router.refresh();
+      }
+    }
+    window.addEventListener("copilot:artifact:generating", onGenerating);
+    window.addEventListener("copilot:artifact:generated", onGenerated);
+    return () => {
+      window.removeEventListener("copilot:artifact:generating", onGenerating);
+      window.removeEventListener("copilot:artifact:generated", onGenerated);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generate(artifactType: string) {
     setGenerating((prev) => new Set(prev).add(artifactType));
@@ -192,98 +225,49 @@ export function ArtifactPanel({
     toast({ title: `${count} artifact${count !== 1 ? "s" : ""} moved to phase`, description: "They now appear in the Recommended section" });
   }
 
-  const recommendedTypes = new Set(catalog.filter((c) => c.mandatory).map((c) => c.type));
-  const effectiveRecommended = new Set([...recommendedTypes, ...promoted]);
-  const optionalEntries = catalog.filter((c) => !effectiveRecommended.has(c.type));
   const generatedCount = localArtifacts.length;
   const isUploading = !!uploading;
+  const effectiveRecommended = new Set([
+    ...catalog.filter((c) => c.mandatory).map((c) => c.type),
+    ...promoted,
+    ...Object.keys(phaseOverrides),
+  ]);
+  const optionalEntries = catalog.filter((c) => !effectiveRecommended.has(c.type));
 
-  return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px", position: "relative" }}>
-      <input ref={fileInputRef} type="file" style={{ display: "none" }}
-        accept=".xlsx,.xls,.csv,.pdf,.docx,.pptx,.txt" onChange={handleFileChange} />
+  // Returns the phase to use for a card (override takes precedence)
+  function cardPhase(entry: CatalogEntry) {
+    return phaseOverrides[entry.type] ?? entry.phase;
+  }
 
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Project Artifacts</div>
-          <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>{generatedCount} of {catalog.length} generated</div>
+  // Renders a single phase row of cards (filtered by entryFilter)
+  function PhaseRow({ phase, entries }: { phase: typeof PHASES[0]; entries: CatalogEntry[] }) {
+    if (entries.length === 0) return null;
+    const phaseGenerated = entries.filter((c) => localArtifacts.find((a) => a.artifactType === c.type)).length;
+    const expandedInPhase = expanded && entries.some((e) => e.type === expanded);
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px 8px" }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: phase.dot, flexShrink: 0 }} />
+          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", padding: "3px 10px", borderRadius: 20, background: phase.pill.bg, color: phase.pill.color, whiteSpace: "nowrap" }}>
+            {phase.label}
+          </span>
+          <span style={{ fontSize: 11, color: C.text3, marginLeft: "auto" }}>{phaseGenerated} of {entries.length} generated</span>
         </div>
-      </div>
-
-      {/* Generating banner */}
-      {generating.size > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, padding: "9px 12px", marginBottom: 14 }}>
-          <Loader2 className="animate-spin" style={{ width: 14, height: 14, flexShrink: 0 }} />
-          {generating.size === 1
-            ? <>Generating <span style={{ fontWeight: 600 }}>{[...generating][0].replace(/_/g, " ")}</span> — this takes 20–40 seconds…</>
-            : <><span style={{ fontWeight: 600 }}>{generating.size} sub-agents</span> generating in parallel…</>
-          }
+        <div style={{ display: "flex", gap: 8, padding: "0 18px 14px", overflowX: "auto", scrollbarWidth: "thin" as const }}>
+          {entries.map((entry) => <ArtifactMiniCard key={entry.type} entry={entry} />)}
         </div>
-      )}
-
-      {/* ── RECOMMENDED SECTION ── */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "10px 14px", background: "#0f766e", borderRadius: 10 }}>
-          <Check style={{ width: 16, height: 16, color: "#fff" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.01em" }}>Recommended Artifacts</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginLeft: "auto" }}>Required for all projects</span>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-          {MANDATORY_COLS.map((col) => {
-            const colEntries = catalog.filter((c) =>
-              col.phases.includes(c.phase) && effectiveRecommended.has(c.type)
-            );
-            return (
-              <div key={col.id}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: "#fff", background: col.color, borderRadius: 7, padding: "5px 12px", letterSpacing: "0.02em", display: "block", width: "100%", textAlign: "center" }}>
-                    {col.label}
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {colEntries.map((entry) => (
-                    <ArtifactCard
-                      key={entry.type}
-                      entry={entry}
-                      artifact={localArtifacts.find((a) => a.artifactType === entry.type)}
-                      isGen={generating.has(entry.type)}
-                      isUp={uploading === entry.type}
-                      isDel={deleting === entry.type}
-                      isExpanded={expanded === entry.type}
-                      isUploading={isUploading}
-                      menuFor={menuFor}
-                      guardrailError={guardrailErrors[entry.type]}
-                      phaseMeta={{ color: col.color, bg: col.bg, border: col.border }}
-                      engagementMode={engagementMode}
-                      promoted={promoted.has(entry.type)}
-                      onGenerate={generate}
-                      onUpload={handleUploadClick}
-                      onDelete={deleteArtifact}
-                      onToggleExpand={() => setExpanded(expanded === entry.type ? null : entry.type)}
-                      onToggleMenu={() => setMenuFor(menuFor === entry.type ? null : entry.type)}
-                      onCloseMenu={() => setMenuFor(null)}
-                      onDownload={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Expanded artifact under recommended */}
-        {expanded && effectiveRecommended.has(expanded) && (() => {
+        {expandedInPhase && (() => {
           const art = localArtifacts.find((a) => a.artifactType === expanded);
           const ent = catalog.find((c) => c.type === expanded);
           if (!art?.content || !ent) return null;
-          const col = MANDATORY_COLS.find((c) => c.phases.includes(art.phase)) ?? MANDATORY_COLS[0];
           return (
-            <div style={{ marginTop: 14, background: C.surface, border: `1.5px solid ${col.border}`, borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: `1px solid ${col.border}`, background: col.bg }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: col.color }}>{ent.label}</span>
-                <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
+            <div style={{ margin: "0 18px 14px", border: `1.5px solid #1a1d24`, borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 14px", borderBottom: `1px solid ${C.border}`, background: "#f8f8f6" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{ent.label}</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${ent.type}/export`)} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>Download</button>
+                  <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
+                </div>
               </div>
               <div style={{ padding: 16 }}>
                 <ArtifactDocument artifactType={art.artifactType} content={art.content} projectId={projectId} />
@@ -291,108 +275,296 @@ export function ArtifactPanel({
             </div>
           );
         })()}
+      </div>
+    );
+  }
+
+  // Inline card component (closure over panel state)
+  function ArtifactMiniCard({ entry }: { entry: CatalogEntry }) {
+    const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
+    const isGen = generating.has(entry.type);
+    const isMandatory = entry.mandatory;
+    const isPinned = promoted.has(entry.type) || !!phaseOverrides[entry.type];
+    const isStarred = isMandatory || isPinned;
+    const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
+    const Icon = ARTIFACT_ICON[entry.type] ?? FileText;
+    const isExpandedCard = expanded === entry.type;
+    const isHovered = hoveredCard === entry.type;
+    const cardRef = useRef<HTMLDivElement>(null);
+
+    function togglePin(ev: React.MouseEvent) {
+      ev.stopPropagation();
+      setPhasePickerFor(null);
+      setPickerAnchor(null);
+      if (isPinned) {
+        setPromoted((prev) => { const n = new Set(prev); n.delete(entry.type); return n; });
+        setPhaseOverrides((po) => { const p = { ...po }; delete p[entry.type]; return p; });
+      } else {
+        setPromoted((prev) => { const n = new Set(prev); n.add(entry.type); return n; });
+      }
+    }
+
+    function openPhasePicker(ev: React.MouseEvent) {
+      ev.stopPropagation();
+      if (phasePickerFor === entry.type) { setPhasePickerFor(null); setPickerAnchor(null); return; }
+      // Calculate position relative to panel container so picker escapes overflow:hidden
+      if (cardRef.current && panelRef.current) {
+        const cr = cardRef.current.getBoundingClientRect();
+        const pr = panelRef.current.getBoundingClientRect();
+        setPickerAnchor({ x: cr.left - pr.left, y: cr.bottom - pr.top + 6 });
+      }
+      setPhasePickerFor(entry.type);
+    }
+
+    function assignPhase(ev: React.MouseEvent, phaseId: string) {
+      ev.stopPropagation();
+      setPhaseOverrides((prev) => ({ ...prev, [entry.type]: phaseId }));
+      setPromoted((prev) => { const n = new Set(prev); n.add(entry.type); return n; });
+      setPhasePickerFor(null);
+      setPickerAnchor(null);
+      setHoveredCard(null);
+    }
+
+    return (
+      <div
+        ref={cardRef}
+        style={{
+          // Bug fix 1: flex-grow fills available space; min 160px, max 200px
+          flex: "1 0 160px", maxWidth: 200,
+          borderRadius: 10, padding: "13px 12px 12px",
+          display: "flex", flexDirection: "column", alignItems: "center",
+          textAlign: "center", gap: 6, position: "relative", cursor: "pointer",
+          background: isGen ? "#f5f4ff" : C.surface,
+          border: artifact && !isGen ? `1.5px solid #1a1d24` : isMandatory ? `1.5px dashed #374151` : `1.5px dashed #d1d5db`,
+          outline: isExpandedCard ? `2px solid ${C.primary}` : "none", outlineOffset: 2,
+        }}
+        onClick={() => !isGen && artifact && setExpanded(isExpandedCard ? null : entry.type)}
+        onMouseEnter={() => { if (!isGen) setHoveredCard(entry.type); }}
+        onMouseLeave={() => setHoveredCard(null)}
+      >
+        <span style={{ position: "absolute", top: 6, right: 7, fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 3, background: artifact ? "#1a1d24" : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
+
+        {isMandatory ? (
+          <span title="Required" style={{ position: "absolute", top: 5, left: 7, fontSize: 15, color: "#f59e0b", lineHeight: 1 }}>★</span>
+        ) : (
+          <button title={isStarred ? "Unpin" : "Pin to recommended"} onClick={togglePin} style={{ position: "absolute", top: 4, left: 6, fontSize: 16, lineHeight: 1, background: "none", border: "none", cursor: "pointer", color: isStarred ? "#f59e0b" : "#d1d5db", padding: 0 }}>
+            {isStarred ? "★" : "☆"}
+          </button>
+        )}
+
+        {isGen ? (
+          <GenerationProgress label={entry.label} isRegen={!!artifact} />
+        ) : (
+          <>
+            <div style={{ width: 38, height: 38, borderRadius: 9, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", background: artifact ? "#f0f0f8" : isMandatory ? "#f3f4f6" : "#f9fafb" }}>
+              <Icon style={{ width: 18, height: 18, color: artifact ? C.primary : isMandatory ? "#6b7280" : "#9ca3af" }} />
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.35, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>{entry.label}</div>
+            {artifact ? (
+              <>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "#1a1d24", color: "#fff" }}>Generated</span>
+                <div style={{ display: "flex", gap: 5, marginTop: 2 }}>
+                  <button onClick={(ev) => { ev.stopPropagation(); setExpanded(isExpandedCard ? null : entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>View</button>
+                  <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 12, padding: "3px 9px", borderRadius: 5, border: "none", background: "#1a1d24", color: "#fff", cursor: "pointer" }}>↺</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: isMandatory ? "#1f2937" : "#e5e7eb", color: isMandatory ? "#f9fafb" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
+                {guardrailErrors[entry.type] && <div style={{ fontSize: 11, color: C.red, lineHeight: 1.3 }}>{guardrailErrors[entry.type]}</div>}
+                <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ marginTop: 2, fontSize: 12, padding: "4px 11px", borderRadius: 6, border: isMandatory ? "none" : `1px solid #d1d5db`, background: isMandatory ? "#1a1d24" : "transparent", color: isMandatory ? "#fff" : "#6b7280", cursor: "pointer", fontWeight: 500 }}>Generate</button>
+              </>
+            )}
+
+            {/* Hover action bar — stays inside card, above content */}
+            {isHovered && (
+              <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: -1, left: 0, right: 0, borderRadius: "10px 10px 0 0", background: "rgba(26,29,36,0.88)", display: "flex", justifyContent: "center", gap: 4, padding: "5px 6px" }}>
+                {!isMandatory && (
+                  <button onClick={togglePin} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
+                    {isStarred ? "☆ Unpin" : "★ Pin"}
+                  </button>
+                )}
+                {!isMandatory && !isStarred && (
+                  <button onClick={openPhasePicker} style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "none", background: "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>
+                    ⤴ Phase
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={panelRef} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", position: "relative" }}>
+      <input ref={fileInputRef} type="file" style={{ display: "none" }} accept=".xlsx,.xls,.csv,.pdf,.docx,.pptx,.txt" onChange={handleFileChange} />
+
+      {/* Bug fix 2: Phase picker rendered here at panel root, escapes overflow:hidden on cards row */}
+      {phasePickerFor && pickerAnchor && (() => {
+        const entry = catalog.find((c) => c.type === phasePickerFor);
+        if (!entry) return null;
+        return (
+          <div
+            style={{ position: "absolute", left: pickerAnchor.x, top: pickerAnchor.y, zIndex: 100, background: C.surface, border: `0.5px solid ${C.border}`, borderRadius: 10, padding: 6, display: "flex", flexDirection: "column", gap: 3, boxShadow: "0 6px 18px rgba(0,0,0,.14)", minWidth: 158 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.text3, padding: "1px 6px 3px", letterSpacing: "0.06em" }}>MOVE TO PHASE</div>
+            {PHASES.map((ph) => (
+              <button key={ph.id} onClick={(ev) => {
+                ev.stopPropagation();
+                setPhaseOverrides((prev) => ({ ...prev, [entry.type]: ph.id }));
+                setPromoted((prev) => { const n = new Set(prev); n.add(entry.type); return n; });
+                setPhasePickerFor(null); setPickerAnchor(null); setHoveredCard(null);
+              }} style={{ fontSize: 13, padding: "5px 8px", borderRadius: 6, border: "none", background: cardPhase(entry) === ph.id ? "#f0f0f8" : "transparent", color: C.text, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: ph.dot, flexShrink: 0, display: "inline-block" }} />
+                {ph.label}
+                {cardPhase(entry) === ph.id && <span style={{ marginLeft: "auto", fontSize: 12, color: C.primary }}>✓</span>}
+              </button>
+            ))}
+            <button onClick={() => { setPhasePickerFor(null); setPickerAnchor(null); }} style={{ fontSize: 12, padding: "3px 8px", borderRadius: 5, border: `0.5px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer", marginTop: 2 }}>Cancel</button>
+          </div>
+        );
+      })()}
+
+      {/* Header */}
+      <div style={{ padding: "14px 18px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Project Artifacts</div>
+        <div style={{ fontSize: 12, color: C.text3 }}>{generatedCount} of {catalog.length} generated</div>
+      </div>
+
+      {/* ── RECOMMENDED SECTION ── */}
+      <div style={{ borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", background: "#0f766e" }}>
+          <Check style={{ width: 15, height: 15, color: "#fff" }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Recommended Artifacts</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginLeft: "auto" }}>★ star any optional artifact to add it here</span>
+        </div>
+        {PHASES.map((phase) => (
+          <PhaseRow
+            key={phase.id}
+            phase={phase}
+            entries={catalog.filter((c) => cardPhase(c) === phase.id && effectiveRecommended.has(c.type))}
+          />
+        ))}
       </div>
 
       {/* ── OPTIONAL SECTION ── */}
-      <div style={{ paddingBottom: selectedOptional.size > 0 ? 60 : 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, padding: "10px 14px", background: "#475569", borderRadius: 10 }}>
-          <Square style={{ width: 15, height: 15, color: "#fff" }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.01em" }}>Optional Artifacts</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginLeft: "auto" }}>Select and move to phase as needed</span>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 18px", background: "#475569" }}>
+          <span style={{ fontSize: 14, color: "#fff" }}>☆</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Optional Artifacts</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", marginLeft: "auto" }}>Star to move to recommended</span>
         </div>
-
         {optionalEntries.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "24px 0", fontSize: 13, color: C.textMuted }}>
-            All optional artifacts have been moved to their phases.
-          </div>
+          <div style={{ textAlign: "center", padding: "24px 0", fontSize: 13, color: C.textMuted }}>All optional artifacts have been pinned to recommended.</div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(158px,1fr))", gap: 10 }}>
-            {optionalEntries.map((entry) => (
-              <ArtifactCard
-                key={entry.type}
-                entry={entry}
-                artifact={localArtifacts.find((a) => a.artifactType === entry.type)}
-                isGen={generating.has(entry.type)}
-                isUp={uploading === entry.type}
-                isDel={deleting === entry.type}
-                isExpanded={expanded === entry.type}
-                isUploading={isUploading}
-                menuFor={menuFor}
-                guardrailError={guardrailErrors[entry.type]}
-                phaseMeta={{ color: C.slate, bg: C.slateLight, border: C.slateBorder }}
-                engagementMode={engagementMode}
-                selectable
-                selected={selectedOptional.has(entry.type)}
-                onSelect={() => {
-                  setSelectedOptional((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(entry.type)) next.delete(entry.type); else next.add(entry.type);
-                    return next;
-                  });
-                }}
-                onGenerate={generate}
-                onUpload={handleUploadClick}
-                onDelete={deleteArtifact}
-                onToggleExpand={() => setExpanded(expanded === entry.type ? null : entry.type)}
-                onToggleMenu={() => setMenuFor(menuFor === entry.type ? null : entry.type)}
-                onCloseMenu={() => setMenuFor(null)}
-                onDownload={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)}
-              />
-            ))}
-          </div>
+          PHASES.map((phase) => (
+            <PhaseRow
+              key={phase.id}
+              phase={phase}
+              entries={optionalEntries.filter((c) => cardPhase(c) === phase.id)}
+            />
+          ))
         )}
+      </div>
+    </div>
+  );
 
-        {/* Expanded artifact under optional */}
-        {expanded && !effectiveRecommended.has(expanded) && (() => {
-          const art = localArtifacts.find((a) => a.artifactType === expanded);
-          const ent = catalog.find((c) => c.type === expanded);
-          if (!art?.content || !ent) return null;
-          return (
-            <div style={{ marginTop: 14, background: C.surface, border: `1.5px solid ${C.slateBorder}`, borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderBottom: `1px solid ${C.slateBorder}`, background: C.slateLight }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: C.slate }}>{ent.label}</span>
-                <button onClick={() => setExpanded(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: C.text3, lineHeight: 1 }}>×</button>
-              </div>
-              <div style={{ padding: 16 }}>
-                <ArtifactDocument artifactType={art.artifactType} content={art.content} projectId={projectId} />
-              </div>
-            </div>
-          );
-        })()}
+}
+
+const GEN_STAGES = [
+  { key: "read",       label: "Reading project",     icon: "📂", delay: 400  },
+  { key: "guardrails", label: "Checking guardrails",  icon: "🛡️", delay: 900  },
+  { key: "ai",         label: "AI drafting",          icon: "✨", delay: null }, // stays until done
+  { key: "saving",     label: "Saving",               icon: "💾", delay: 300  },
+  { key: "done",       label: "Done",                 icon: "✓",  delay: null },
+];
+
+function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolean }) {
+  const [stage, setStage] = useState(0); // index into GEN_STAGES
+
+  useEffect(() => {
+    setStage(0);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let acc = 0;
+    for (let i = 1; i < GEN_STAGES.length - 2; i++) { // advance through read → guardrails → ai
+      acc += GEN_STAGES[i - 1].delay ?? 0;
+      const t = setTimeout(() => setStage(i), acc);
+      timers.push(t);
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [label]);
+
+  const currentStage = GEN_STAGES[stage];
+  const stepLabel = `Step ${stage + 1} of ${GEN_STAGES.length}`;
+
+  return (
+    <div style={{
+      border: `1.5px dashed #a5b4fc`,
+      borderRadius: 12, padding: "14px 12px",
+      background: "#f5f4ff",
+      display: "flex", flexDirection: "column", alignItems: "stretch",
+      minHeight: 120,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1d24", marginBottom: 2, textAlign: "center" }}>
+        {isRegen ? "Regenerating" : "Generating"} {label}
+      </div>
+      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 14, textAlign: "center" }}>
+        {currentStage.label}…
       </div>
 
-      {/* ── STICKY ACTION BAR ── */}
-      {selectedOptional.size > 0 && (
+      {/* Stage dots */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0, marginBottom: 12 }}>
+        {GEN_STAGES.map((s, i) => {
+          const isDone = i < stage;
+          const isActive = i === stage;
+          return (
+            <div key={s.key} style={{ display: "flex", alignItems: "center", flex: i < GEN_STAGES.length - 1 ? 1 : undefined }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11,
+                background: isDone ? "#1a1d24" : isActive ? "#4f5bd5" : "#e5e7eb",
+                color: isDone || isActive ? "#fff" : "#9ca3af",
+                boxShadow: isActive ? "0 0 0 4px rgba(79,91,213,0.18)" : "none",
+                transition: "all 0.3s ease",
+                animation: isActive ? "pulse-stage 1.5s ease-in-out infinite" : "none",
+              }}>
+                {isDone ? "✓" : s.icon}
+              </div>
+              {i < GEN_STAGES.length - 1 && (
+                <div style={{
+                  flex: 1, height: 2, background: isDone ? "#1a1d24" : "#e5e7eb",
+                  transition: "background 0.3s ease",
+                }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 4, borderRadius: 99, background: "#e5e7eb", overflow: "hidden", marginBottom: 6 }}>
         <div style={{
-          position: "sticky", bottom: 0,
-          background: "#1e293b", borderRadius: "0 0 14px 14px",
-          padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
-          boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
-          margin: "0 -20px -18px",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <CheckSquare2 style={{ width: 16, height: 16, color: "#94a3b8" }} />
-            <span style={{ fontSize: 13, color: "#e2e8f0" }}>
-              <span style={{ fontWeight: 700, color: "#fff" }}>{selectedOptional.size}</span>{" "}
-              artifact{selectedOptional.size !== 1 ? "s" : ""} selected
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={() => setSelectedOptional(new Set())}
-              style={{ height: 34, padding: "0 14px", background: "transparent", color: "#94a3b8", border: "1px solid #475569", borderRadius: 8, cursor: "pointer", font: `500 12.5px 'IBM Plex Sans',sans-serif` }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleMoveToPhase}
-              style={{ height: 34, padding: "0 16px", background: "#0f766e", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", font: `600 12.5px 'IBM Plex Sans',sans-serif`, display: "flex", alignItems: "center", gap: 6 }}
-            >
-              <ArrowRight style={{ width: 14, height: 14 }} /> Move to Phase
-            </button>
-          </div>
-        </div>
-      )}
+          height: "100%", borderRadius: 99,
+          background: "linear-gradient(90deg, #4f5bd5, #2dd4bf)",
+          width: stage >= GEN_STAGES.length - 2 ? "100%" : "40%",
+          marginLeft: stage >= GEN_STAGES.length - 2 ? 0 : undefined,
+          animation: stage < GEN_STAGES.length - 2 ? "slide-bar 1.6s ease-in-out infinite" : "none",
+          transition: "width 0.4s ease",
+        }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#9ca3af" }}>
+        <span>{currentStage.label}…</span>
+        <span>{stepLabel}</span>
+      </div>
+
+      <style>{`
+        @keyframes pulse-stage { 0%,100%{box-shadow:0 0 0 0 rgba(79,91,213,.3)} 50%{box-shadow:0 0 0 6px rgba(79,91,213,0)} }
+        @keyframes slide-bar { 0%{margin-left:0;width:30%} 50%{margin-left:40%;width:40%} 100%{margin-left:100%;width:0} }
+      `}</style>
     </div>
   );
 }
@@ -445,14 +617,7 @@ function ArtifactCard({
   };
 
   if (!artifact && isGen) {
-    return (
-      <div style={{ ...baseCard, border: `1.5px dashed ${C.primaryBorder}`, background: C.primaryLight }}>
-        {selectable && <SelectBox selected={!!selected} onSelect={onSelect!} />}
-        <Loader2 className="animate-spin" style={{ width: 24, height: 24, color: C.primary, marginTop: 4 }} />
-        <div style={{ fontSize: 14, fontWeight: 500, color: C.primary, marginTop: 7 }}>{entry.label}</div>
-        <div style={{ fontSize: 11, color: C.primary, opacity: 0.7, marginTop: 2 }}>Generating…</div>
-      </div>
-    );
+    return <GenerationProgress label={entry.label} isRegen={false} />;
   }
 
   if (!artifact) {
@@ -492,9 +657,10 @@ function ArtifactCard({
       <span style={{ position: "absolute", top: 7, right: 7, fontSize: 9, fontWeight: 600, color: phaseMeta.color, background: phaseMeta.bg, border: `1px solid ${phaseMeta.border}`, borderRadius: 4, padding: "1px 4px" }}>{format}</span>
       {promoted && <span style={{ position: "absolute", top: 7, left: 7, fontSize: 9, fontWeight: 600, color: "#0f766e", background: "#f0fdf4", borderRadius: 4, padding: "1px 4px" }}>★</span>}
 
-      <Icon style={{ width: 24, height: 24, color: isGen ? C.textMuted : C.primary, marginTop: selectable ? 10 : 4 }} />
-      <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
-      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, marginBottom: 8 }}>{isGen ? "Regenerating…" : "Generated"}</div>
+      {isGen && <div style={{ position: "absolute", inset: 0, borderRadius: 10, zIndex: 2 }}><GenerationProgress label={entry.label} isRegen={true} /></div>}
+      <Icon style={{ width: 24, height: 24, color: isGen ? C.textMuted : C.primary, marginTop: selectable ? 10 : 4, opacity: isGen ? 0 : 1 }} />
+      <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginTop: 7, lineHeight: 1.25, opacity: isGen ? 0 : 1 }}>{entry.label}</div>
+      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, marginBottom: 8, opacity: isGen ? 0 : 1 }}>Generated</div>
 
       <div style={{ marginTop: "auto", display: "flex", justifyContent: "center", gap: 3 }}>
         <IconBtn title={isExpanded ? "Hide" : "View"} onClick={onToggleExpand} active={isExpanded}>

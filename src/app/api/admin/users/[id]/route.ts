@@ -11,6 +11,7 @@ const patchSchema = z.object({
   password: z.string().min(8).optional(),
   programIds: z.array(z.string()).optional(),
   clientIds: z.array(z.string()).optional(),
+  copilotEnabled: z.boolean().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(data.role && { role: data.role }),
       ...(data.fullName && { fullName: data.fullName }),
       ...(passwordHash && { passwordHash }),
+      ...(data.copilotEnabled !== undefined && { copilotEnabled: data.copilotEnabled }),
     },
   });
 

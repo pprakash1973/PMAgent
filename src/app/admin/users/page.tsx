@@ -32,6 +32,7 @@ interface User {
   fullName: string;
   role: string;
   status: string;
+  copilotEnabled: boolean;
   createdAt: string;
   invitations: { expiresAt: string }[];
   programAssignments: { program: { id: string; name: string; client: { name: string; cluster: { name: string } } } }[];
@@ -177,6 +178,18 @@ export default function UsersPage() {
     await fetch(`/api/admin/users/${userId}`, { method: "DELETE" });
     toast({ title: "User deactivated" });
     load();
+  }
+
+  async function toggleCopilot(userId: string, current: boolean) {
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ copilotEnabled: !current }),
+    });
+    if (res.ok) {
+      toast({ title: !current ? "AI Assistant enabled" : "AI Assistant disabled" });
+      load();
+    }
   }
 
   function copyLink(url: string) {
@@ -489,6 +502,7 @@ export default function UsersPage() {
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Role</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Assignments</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-slate-600">AI Assistant</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Joined</th>
                 <th className="px-4 py-3"></th>
               </tr>
@@ -526,6 +540,21 @@ export default function UsersPage() {
                     <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", STATUS_COLORS[u.status] || "bg-slate-100 text-slate-600")}>
                       {u.status}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => toggleCopilot(u.id, u.copilotEnabled ?? true)}
+                      title={u.copilotEnabled ? "Disable AI Assistant" : "Enable AI Assistant"}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+                        u.copilotEnabled !== false ? "bg-[#006E74]" : "bg-slate-200"
+                      )}
+                    >
+                      <span className={cn(
+                        "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200",
+                        u.copilotEnabled !== false ? "translate-x-4" : "translate-x-0"
+                      )} />
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-slate-400 text-xs">{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td className="px-4 py-3">

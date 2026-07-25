@@ -6,6 +6,7 @@ import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusQuestionnaire } from "@/components/status-questionnaire";
 import { BurndownDownloadButton } from "@/components/burndown-download-button";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@/lib/utils";
+import { useCopilot } from "@/components/copilot/CopilotContext";
 
 const C = {
   primary: "#4f5bd5", primaryLight: "#eef0fc", primaryBorder: "#cfd4f5",
@@ -2208,6 +2209,15 @@ const TABS = ["Artifacts", "RAID", "Resources", "Schedule", "Cost", "Scope Contr
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const [tab, setTab] = useState("Artifacts");
   const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
+
+  const { setTabContext } = useCopilot();
+  useEffect(() => {
+    setTabContext({
+      tab: tab.toLowerCase().replace(/ /g, "_"),
+      projectId: project.id,
+      projectName: project.name,
+    });
+  }, [tab, project.id, project.name, setTabContext]);
 
   return (
     <div style={{ padding: "22px 26px 40px" }}>

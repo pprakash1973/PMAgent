@@ -72,6 +72,9 @@ model User {
   escalationsResolved      Escalation[]              @relation("EscalationResolvedBy")
   escalationComments       EscalationComment[]
   notificationPreference   NotificationPreference?
+  copilotEnabled         Boolean                   @default(true)
+  assistantName          String                    @default("Copilot")
+  assistantConversations AssistantConversation[]
 }
 
 model Account {
@@ -259,6 +262,7 @@ model Project {
   escalations        Escalation[]
   requirements       Requirement[]
   gaps               Gap[]
+  assistantConversations AssistantConversation[]
 
   @@unique([orgId, code])
 }
@@ -693,4 +697,43 @@ model NotificationPreference {
   statusReportInApp  Boolean @default(true)
 
   user User @relation(fields: [userId], references: [id])
+}
+
+model AssistantConversation {
+  id           String   @id @default(cuid())
+  userId       String
+  projectId    String?
+  startedAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+  status       String   @default("active")
+
+  user     User               @relation(fields: [userId], references: [id])
+  project  Project?           @relation(fields: [projectId], references: [id])
+  messages AssistantMessage[]
+  actions  AssistantAction[]
+}
+
+model AssistantAction {
+  id             String    @id @default(cuid())
+  conversationId String
+  actionType     String
+  tier           String
+  payload        Json
+  status         String    @default("proposed")
+  confirmedAt    DateTime?
+  undoneAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation AssistantConversation @relation(fields: [conversationId], references: [id])
+}
+
+model AssistantMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  tabContext     String?
+  createdAt      DateTime @default(now())
+
+  conversation AssistantConversation @relation(fields: [conversationId], references: [id])
 }
