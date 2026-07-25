@@ -6,8 +6,8 @@ const { Pool } = require("pg");
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url || url.startsWith("file:")) {
-    console.error("DATABASE_URL must be a postgresql:// connection string");
-    process.exit(1);
+    console.log("Skipping pgm-phase migration — not a postgres URL");
+    return;
   }
   const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
   try {
