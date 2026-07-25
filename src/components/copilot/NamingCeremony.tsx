@@ -7,10 +7,12 @@ interface Props {
 }
 
 const CAPABILITIES = [
-  { icon: "⚡", text: "Close tasks & update progress instantly" },
-  { icon: "🛡️", text: "Log risks and mitigate issues in seconds" },
-  { icon: "📊", text: "Regenerate decks, RAID logs & status reports" },
-  { icon: "🔍", text: "Analyze EVM, SPI, CPI and forecast delivery" },
+  { icon: "✅", text: "Close tasks & update progress" },
+  { icon: "🛡️", text: "Log risks and resolve issues" },
+  { icon: "📄", text: "Regenerate decks & reports" },
+  { icon: "📊", text: "Analyze EVM, SPI & CPI" },
+  { icon: "🏁", text: "Complete milestones & set health" },
+  { icon: "💬", text: "Answer any project question" },
 ];
 
 export function NamingCeremony({ pmName, onComplete }: Props) {
@@ -39,7 +41,7 @@ export function NamingCeremony({ pmName, onComplete }: Props) {
     }
   }
 
-  const greeting = pmName ? `Welcome, ${pmName}.` : "Welcome aboard.";
+  const greeting = pmName ? `Hi ${pmName}, great to meet you!` : "Hi there, great to meet you!";
 
   return (
     <div style={{
@@ -80,12 +82,15 @@ export function NamingCeremony({ pmName, onComplete }: Props) {
             {greeting}
           </h2>
           <p style={{ color: "rgba(255,255,255,0.78)", fontSize: 13.5, margin: 0, lineHeight: 1.55 }}>
-            Your AI-powered PMO assistant is ready. Here's what I can do for you right now:
+            I'm your personal AI assistant, here to work alongside you every step of the way. Just tell me what you need — I'll take care of the rest.
           </p>
         </div>
 
         {/* Capabilities grid */}
-        <div style={{ padding: "20px 32px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+        <p style={{ margin: "16px 32px 0", fontSize: 10.5, fontWeight: 600, color: "#8a909c", letterSpacing: "0.07em", textTransform: "uppercase" }}>
+          Here's what I can do for you (and more 🙂)
+        </p>
+        <div style={{ padding: "10px 32px 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
           {CAPABILITIES.map((c) => (
             <div key={c.text} style={{
               display: "flex", alignItems: "flex-start", gap: 9,

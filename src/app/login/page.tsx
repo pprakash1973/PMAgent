@@ -226,9 +226,6 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <p style={{ textAlign: "center", fontSize: 12, color: "#8a909c", marginTop: 32 }}>
-            Enterprise edition · Powered by Claude AI
-          </p>
         </div>
       </div>
 
