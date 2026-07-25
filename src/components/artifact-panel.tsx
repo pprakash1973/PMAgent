@@ -424,6 +424,101 @@ export function ArtifactPanel({
   );
 }
 
+const GEN_STAGES = [
+  { key: "read",       label: "Reading project",     icon: "📂", delay: 400  },
+  { key: "guardrails", label: "Checking guardrails",  icon: "🛡️", delay: 900  },
+  { key: "ai",         label: "AI drafting",          icon: "✨", delay: null }, // stays until done
+  { key: "saving",     label: "Saving",               icon: "💾", delay: 300  },
+  { key: "done",       label: "Done",                 icon: "✓",  delay: null },
+];
+
+function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolean }) {
+  const [stage, setStage] = useState(0); // index into GEN_STAGES
+
+  useEffect(() => {
+    setStage(0);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let acc = 0;
+    for (let i = 1; i < GEN_STAGES.length - 2; i++) { // advance through read → guardrails → ai
+      acc += GEN_STAGES[i - 1].delay ?? 0;
+      const t = setTimeout(() => setStage(i), acc);
+      timers.push(t);
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [label]);
+
+  const currentStage = GEN_STAGES[stage];
+  const stepLabel = `Step ${stage + 1} of ${GEN_STAGES.length}`;
+
+  return (
+    <div style={{
+      border: `1.5px dashed #a5b4fc`,
+      borderRadius: 12, padding: "14px 12px",
+      background: "#f5f4ff",
+      display: "flex", flexDirection: "column", alignItems: "stretch",
+      minHeight: 120,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1d24", marginBottom: 2, textAlign: "center" }}>
+        {isRegen ? "Regenerating" : "Generating"} {label}
+      </div>
+      <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 14, textAlign: "center" }}>
+        {currentStage.label}…
+      </div>
+
+      {/* Stage dots */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0, marginBottom: 12 }}>
+        {GEN_STAGES.map((s, i) => {
+          const isDone = i < stage;
+          const isActive = i === stage;
+          return (
+            <div key={s.key} style={{ display: "flex", alignItems: "center", flex: i < GEN_STAGES.length - 1 ? 1 : undefined }}>
+              <div style={{
+                width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11,
+                background: isDone ? "#1a1d24" : isActive ? "#4f5bd5" : "#e5e7eb",
+                color: isDone || isActive ? "#fff" : "#9ca3af",
+                boxShadow: isActive ? "0 0 0 4px rgba(79,91,213,0.18)" : "none",
+                transition: "all 0.3s ease",
+                animation: isActive ? "pulse-stage 1.5s ease-in-out infinite" : "none",
+              }}>
+                {isDone ? "✓" : s.icon}
+              </div>
+              {i < GEN_STAGES.length - 1 && (
+                <div style={{
+                  flex: 1, height: 2, background: isDone ? "#1a1d24" : "#e5e7eb",
+                  transition: "background 0.3s ease",
+                }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 4, borderRadius: 99, background: "#e5e7eb", overflow: "hidden", marginBottom: 6 }}>
+        <div style={{
+          height: "100%", borderRadius: 99,
+          background: "linear-gradient(90deg, #4f5bd5, #2dd4bf)",
+          width: stage >= GEN_STAGES.length - 2 ? "100%" : "40%",
+          marginLeft: stage >= GEN_STAGES.length - 2 ? 0 : undefined,
+          animation: stage < GEN_STAGES.length - 2 ? "slide-bar 1.6s ease-in-out infinite" : "none",
+          transition: "width 0.4s ease",
+        }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#9ca3af" }}>
+        <span>{currentStage.label}…</span>
+        <span>{stepLabel}</span>
+      </div>
+
+      <style>{`
+        @keyframes pulse-stage { 0%,100%{box-shadow:0 0 0 0 rgba(79,91,213,.3)} 50%{box-shadow:0 0 0 6px rgba(79,91,213,0)} }
+        @keyframes slide-bar { 0%{margin-left:0;width:30%} 50%{margin-left:40%;width:40%} 100%{margin-left:100%;width:0} }
+      `}</style>
+    </div>
+  );
+}
+
 function ArtifactCard({
   entry, artifact, isGen, isUp, isDel, isExpanded, isUploading,
   menuFor, guardrailError, phaseMeta, engagementMode,
@@ -472,14 +567,7 @@ function ArtifactCard({
   };
 
   if (!artifact && isGen) {
-    return (
-      <div style={{ ...baseCard, border: `1.5px dashed ${C.primaryBorder}`, background: C.primaryLight }}>
-        {selectable && <SelectBox selected={!!selected} onSelect={onSelect!} />}
-        <Loader2 className="animate-spin" style={{ width: 24, height: 24, color: C.primary, marginTop: 4 }} />
-        <div style={{ fontSize: 14, fontWeight: 500, color: C.primary, marginTop: 7 }}>{entry.label}</div>
-        <div style={{ fontSize: 11, color: C.primary, opacity: 0.7, marginTop: 2 }}>Generating…</div>
-      </div>
-    );
+    return <GenerationProgress label={entry.label} isRegen={false} />;
   }
 
   if (!artifact) {
@@ -519,9 +607,10 @@ function ArtifactCard({
       <span style={{ position: "absolute", top: 7, right: 7, fontSize: 9, fontWeight: 600, color: phaseMeta.color, background: phaseMeta.bg, border: `1px solid ${phaseMeta.border}`, borderRadius: 4, padding: "1px 4px" }}>{format}</span>
       {promoted && <span style={{ position: "absolute", top: 7, left: 7, fontSize: 9, fontWeight: 600, color: "#0f766e", background: "#f0fdf4", borderRadius: 4, padding: "1px 4px" }}>★</span>}
 
-      <Icon style={{ width: 24, height: 24, color: isGen ? C.textMuted : C.primary, marginTop: selectable ? 10 : 4 }} />
-      <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginTop: 7, lineHeight: 1.25 }}>{entry.label}</div>
-      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, marginBottom: 8 }}>{isGen ? "Regenerating…" : "Generated"}</div>
+      {isGen && <div style={{ position: "absolute", inset: 0, borderRadius: 10, zIndex: 2 }}><GenerationProgress label={entry.label} isRegen={true} /></div>}
+      <Icon style={{ width: 24, height: 24, color: isGen ? C.textMuted : C.primary, marginTop: selectable ? 10 : 4, opacity: isGen ? 0 : 1 }} />
+      <div style={{ fontSize: 14, fontWeight: 500, color: C.text, marginTop: 7, lineHeight: 1.25, opacity: isGen ? 0 : 1 }}>{entry.label}</div>
+      <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, marginBottom: 8, opacity: isGen ? 0 : 1 }}>Generated</div>
 
       <div style={{ marginTop: "auto", display: "flex", justifyContent: "center", gap: 3 }}>
         <IconBtn title={isExpanded ? "Hide" : "View"} onClick={onToggleExpand} active={isExpanded}>
