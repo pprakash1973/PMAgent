@@ -25,9 +25,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   const { id } = await params;
 
-  const clientCount = await prisma.client.count({ where: { clusterId: id, deletedAt: null } });
+  const clientCount = await prisma.orgAccount.count({ where: { clusterId: id, deletedAt: null } });
   if (clientCount > 0) {
-    return NextResponse.json({ error: { code: "NOT_EMPTY", message: "Remove all clients before deleting this cluster" } }, { status: 409 });
+    return NextResponse.json({ error: { code: "NOT_EMPTY", message: "Remove all accounts before deleting this cluster" } }, { status: 409 });
   }
 
   await prisma.cluster.update({ where: { id }, data: { deletedAt: new Date(), status: "inactive" } });

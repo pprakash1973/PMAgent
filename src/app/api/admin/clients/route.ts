@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const where: any = { orgId: (user as any).orgId, deletedAt: null };
   if (clusterId) where.clusterId = clusterId;
 
-  const clients = await prisma.client.findMany({
+  const clients = await prisma.orgAccount.findMany({
     where,
     include: {
       cluster: { select: { id: true, name: true, type: true } },
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   const code = "CLI-" + data.name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) + "-" + Date.now().toString(36).toUpperCase().slice(-4);
 
-  const client = await prisma.client.create({
+  const client = await prisma.orgAccount.create({
     data: {
       orgId: admin.orgId,
       clusterId: data.clusterId,

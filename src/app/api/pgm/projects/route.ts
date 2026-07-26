@@ -16,7 +16,7 @@ export async function GET() {
     include: {
       program: {
         include: {
-          client: { include: { cluster: true } },
+          account: { include: { cluster: true } },
           projects: {
             where: { deletedAt: null },
             include: {
@@ -76,7 +76,7 @@ export async function GET() {
         name:           p.name,
         code:           (p as any).code ?? "",
         programName:    prog.name,
-        clientName:     (prog.client as any)?.name ?? "—",
+        clientName:     (prog.account as any)?.name ?? "—",
         pmName:         p.pmOwner.fullName,
         pmId:           p.pmOwner.id,
         phase:          (p as any).currentPhase ?? "initiation",

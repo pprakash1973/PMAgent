@@ -70,17 +70,17 @@ export default async function ExecutivePage() {
 
   // ── DH persona: scoped executive dashboard ────────────────────────────────
   if (user.role === "dh") {
-    const assignments = await prisma.clientAssignment.findMany({
+    const assignments = await prisma.clusterAssignment.findMany({
       where: { userId: user.id },
-      include: { client: { include: { cluster: true } } },
+      include: { cluster: true },
     });
-    const clientIds = assignments.map((a) => a.clientId);
+    const clusterIds = assignments.map((a) => a.clusterId);
 
     const rawProjects = await prisma.project.findMany({
-      where: clientIds.length ? { clientId: { in: clientIds }, deletedAt: null } : { id: "none" },
+      where: clusterIds.length ? { clusterId: { in: clusterIds }, deletedAt: null } : { id: "none" },
       include: {
         pmOwner:  { select: { fullName: true } },
-        client:   { include: { cluster: true } },
+        account:  { include: { cluster: true } },
         program:  { select: { name: true } },
         scheduleTasks: { select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true } },
         costEntries:   { select: { amount: true } },
@@ -127,11 +127,11 @@ export default async function ExecutivePage() {
       return {
         id:          p.id,
         name:        p.name,
-        clientId:    p.clientId ?? "",
-        clientName:  (p.client as any)?.name ?? "—",
-        clusterId:   (p.client as any)?.cluster?.id ?? "",
-        clusterName: (p.client as any)?.cluster?.name ?? "—",
-        clusterType: (p.client as any)?.cluster?.type ?? "geography",
+        clientId:    p.accountId ?? "",
+        clientName:  (p.account as any)?.name ?? "—",
+        clusterId:   (p.account as any)?.cluster?.id ?? "",
+        clusterName: (p.account as any)?.cluster?.name ?? "—",
+        clusterType: (p.account as any)?.cluster?.type ?? "geography",
         programName: (p.program as any)?.name ?? "—",
         pmName:      p.pmOwner.fullName,
         rag,
@@ -175,7 +175,7 @@ export default async function ExecutivePage() {
       where: {
         orgId:  user.orgId,
         status: { in: ["open", "acknowledged", "in_progress"] },
-        projectId: clientIds.length
+        projectId: clusterIds.length
           ? { in: rawProjects.map(p => p.id) }
           : undefined,
       },

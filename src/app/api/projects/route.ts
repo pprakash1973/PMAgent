@@ -51,11 +51,11 @@ export async function GET() {
     });
     where.programId = { in: programAssignments.map((a) => a.programId) };
   } else if (user.role === "dh") {
-    const clientAssignments = await prisma.clientAssignment.findMany({
+    const clusterAssignments = await prisma.clusterAssignment.findMany({
       where: { userId: user.id },
-      select: { clientId: true },
+      select: { clusterId: true },
     });
-    where.clientId = { in: clientAssignments.map((a) => a.clientId) };
+    where.clusterId = { in: clusterAssignments.map((a) => a.clusterId) };
   }
 
   const projects = await prisma.project.findMany({
@@ -119,11 +119,11 @@ export async function POST(req: NextRequest) {
     if (user.role === "pm" && !resolvedProgramId) {
       const assignment = await prisma.programAssignment.findFirst({
         where: { userId: user.id },
-        include: { program: { include: { client: true } } },
+        include: { program: { include: { account: true } } },
       });
       if (assignment) {
         resolvedProgramId = assignment.programId;
-        resolvedClientId = resolvedClientId || assignment.program.clientId;
+        resolvedClientId = resolvedClientId || assignment.program.accountId;
       }
     }
 
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
         pmOwnerId,
         name: data.name,
         code,
-        clientId: resolvedClientId,
+        accountId: resolvedClientId,
         programId: resolvedProgramId,
         customer: data.customer,
         projectType: data.projectType,

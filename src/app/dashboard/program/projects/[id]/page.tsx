@@ -16,7 +16,7 @@ export default async function PgmProjectDetailPage({ params }: { params: Promise
     where: { id },
     include: {
       pmOwner:  { select: { id: true, fullName: true, email: true } },
-      program:  { include: { client: { include: { cluster: true } } } },
+      program:  { include: { account: { include: { cluster: true } } } },
       milestones: { orderBy: { dueDate: "asc" } },
       risks:      { orderBy: { createdAt: "desc" } },
       issues:     { orderBy: { createdAt: "desc" } },

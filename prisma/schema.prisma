@@ -16,7 +16,7 @@ model Organization {
   businessUnits BusinessUnit[]
   roles         Role[]
   clusters      Cluster[]
-  clients       Client[]
+  accounts      OrgAccount[]
   programs      Program[]
 }
 
@@ -57,14 +57,15 @@ model User {
   org                    Organization              @relation(fields: [orgId], references: [id])
   roleRef                Role?                     @relation(fields: [roleId], references: [id])
   ownedProjects          Project[]                 @relation("PMOwner")
-  accounts               Account[]
+  oauthAccounts          Account[]
   sessions               Session[]
   artifactVersions       ArtifactVersion[]
   reqDocs                RequirementsDocument[]
   artifactSelections     ArtifactSelection[]
   invitations            Invitation[]
   programAssignments     ProgramAssignment[]
-  clientAssignments      ClientAssignment[]
+  accountAssignments     AccountAssignment[]
+  clusterAssignments     ClusterAssignment[]
   projectPmAssignments   ProjectPmAssignment[]
   escalationsRaised        Escalation[]              @relation("EscalationRaisedBy")
   escalationsOwned         Escalation[]              @relation("EscalationOwner")
@@ -77,6 +78,7 @@ model User {
   assistantConversations AssistantConversation[]
 }
 
+// NextAuth OAuth provider accounts (credentials-based auth uses this table too)
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -112,18 +114,39 @@ model Cluster {
   clusterLead String?
   description String?
   status      String    @default("active")
+  primaryDhId String?   // denormalised — FK to User (role=dh); kept in sync with ClusterAssignment.isPrimary
   createdBy   String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
-  org     Organization @relation(fields: [orgId], references: [id])
-  clients Client[]
+  org                Organization       @relation(fields: [orgId], references: [id])
+  accounts           OrgAccount[]
+  clusterAssignments ClusterAssignment[]
+  projects           Project[]
 
   @@unique([orgId, name])
 }
 
-model Client {
+// DH ↔ Cluster many-to-many; exactly one row per cluster may have isPrimary=true
+model ClusterAssignment {
+  id         String   @id @default(cuid())
+  clusterId  String
+  userId     String
+  isPrimary  Boolean  @default(false)
+  assignedBy String?
+  assignedAt DateTime @default(now())
+
+  cluster Cluster @relation(fields: [clusterId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([clusterId, userId])
+  @@index([clusterId, isPrimary])
+  @@map("cluster_assignments")
+}
+
+// Business Account (UST customer) — formerly "Client"; presented as "Account" in all UI/API
+model OrgAccount {
   id           String    @id @default(cuid())
   orgId        String
   clusterId    String
@@ -133,24 +156,43 @@ model Client {
   region       String    @default("other")
   accountOwner String?
   status       String    @default("active")
+  primaryDmId  String?   // denormalised — FK to User (role=dm); kept in sync with AccountAssignment.isPrimary
   createdBy    String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
-  org             Organization      @relation(fields: [orgId], references: [id])
-  cluster         Cluster           @relation(fields: [clusterId], references: [id])
-  programs        Program[]
-  projects        Project[]
-  userAssignments ClientAssignment[]
+  org               Organization       @relation(fields: [orgId], references: [id])
+  cluster           Cluster            @relation(fields: [clusterId], references: [id])
+  programs          Program[]
+  projects          Project[]
+  dmAssignments     AccountAssignment[]
 
   @@unique([orgId, name])
+  @@map("org_accounts")
+}
+
+// DM ↔ Account many-to-many; exactly one row per account may have isPrimary=true
+model AccountAssignment {
+  id         String   @id @default(cuid())
+  accountId  String
+  userId     String
+  isPrimary  Boolean  @default(false)
+  assignedBy String?
+  assignedAt DateTime @default(now())
+
+  account OrgAccount @relation(fields: [accountId], references: [id])
+  user    User       @relation(fields: [userId], references: [id])
+
+  @@unique([accountId, userId])
+  @@index([accountId, isPrimary])
+  @@map("account_assignments")
 }
 
 model Program {
   id          String    @id @default(cuid())
   orgId       String
-  clientId    String
+  accountId   String    // mandatory — programs always belong to an account (C6)
   name        String
   code        String    @unique
   description String?
@@ -162,7 +204,7 @@ model Program {
   deletedAt   DateTime?
 
   org         Organization        @relation(fields: [orgId], references: [id])
-  client      Client              @relation(fields: [clientId], references: [id])
+  account     OrgAccount          @relation(fields: [accountId], references: [id])
   assignments ProgramAssignment[]
   projects    Project[]
 
@@ -182,18 +224,7 @@ model ProgramAssignment {
   @@unique([programId, userId])
 }
 
-model ClientAssignment {
-  id         String   @id @default(cuid())
-  clientId   String
-  userId     String
-  assignedBy String?
-  assignedAt DateTime @default(now())
-
-  client Client @relation(fields: [clientId], references: [id])
-  user   User   @relation(fields: [userId], references: [id])
-
-  @@unique([clientId, userId])
-}
+// ClientAssignment retired — replaced by AccountAssignment and ClusterAssignment (CR-01)
 
 model Invitation {
   id            String    @id @default(cuid())
@@ -211,8 +242,9 @@ model Project {
   id                    String    @id @default(cuid())
   orgId                 String
   buId                  String?
-  clientId              String?
-  programId             String?
+  clusterId             String?   // denormalised from account.clusterId; mandatory at creation (C8)
+  accountId             String?   // FK to OrgAccount; mandatory at creation (PC-4)
+  programId             String?   // optional (C5) — null means direct-to-account project
   pmOwnerId             String
   name                  String
   code                  String
@@ -242,7 +274,8 @@ model Project {
   evidenceReadinessBand  String?
 
   bu                 BusinessUnit?          @relation(fields: [buId], references: [id])
-  client             Client?                @relation(fields: [clientId], references: [id])
+  cluster            Cluster?               @relation(fields: [clusterId], references: [id])
+  account            OrgAccount?            @relation(fields: [accountId], references: [id])
   program            Program?               @relation(fields: [programId], references: [id])
   pmOwner            User                   @relation("PMOwner", fields: [pmOwnerId], references: [id])
   artifacts          Artifact[]

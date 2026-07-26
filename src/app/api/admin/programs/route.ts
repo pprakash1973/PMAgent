@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/admin-auth";
 import { z } from "zod";
 
 const schema = z.object({
-  clientId: z.string().min(1),
+  accountId: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
   sponsor: z.string().optional(),
@@ -17,19 +17,19 @@ export async function GET(req: NextRequest) {
   if (error) return error;
 
   const { searchParams } = new URL(req.url);
-  const clientId = searchParams.get("clientId");
+  const accountId = searchParams.get("accountId");
 
   const where: any = { orgId: (user as any).orgId, deletedAt: null };
-  if (clientId) where.clientId = clientId;
+  if (accountId) where.accountId = accountId;
 
   const programs = await prisma.program.findMany({
     where,
     include: {
-      client: { include: { cluster: { select: { id: true, name: true } } } },
+      account: { include: { cluster: { select: { id: true, name: true } } } },
       assignments: { include: { user: { select: { id: true, fullName: true, email: true } } } },
       _count: { select: { projects: true } },
     },
-    orderBy: [{ client: { cluster: { name: "asc" } } }, { client: { name: "asc" } }, { name: "asc" }],
+    orderBy: [{ account: { cluster: { name: "asc" } } }, { account: { name: "asc" } }, { name: "asc" }],
   });
 
   return NextResponse.json(programs);
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   const program = await prisma.program.create({
     data: {
       orgId: admin.orgId,
-      clientId: data.clientId,
+      accountId: data.accountId,
       name: data.name,
       code,
       description: data.description,
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
         : undefined,
     },
     include: {
-      client: { include: { cluster: { select: { id: true, name: true } } } },
+      account: { include: { cluster: { select: { id: true, name: true } } } },
       assignments: { include: { user: { select: { id: true, fullName: true, email: true } } } },
     },
   });

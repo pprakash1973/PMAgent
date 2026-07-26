@@ -25,7 +25,7 @@ export default async function ProgramDashboardPage() {
     include: {
       program: {
         include: {
-          client: { include: { cluster: true } },
+          account: { include: { cluster: true } },
           projects: {
             where: { deletedAt: null },
             include: {
@@ -96,7 +96,7 @@ export default async function ProgramDashboardPage() {
         code:         (p as any).code ?? "",
         programId:    prog.id,
         programName:  prog.name,
-        clientName:   (prog.client as any)?.name ?? "—",
+        clientName:   (prog.account as any)?.name ?? "—",
         pmName:       p.pmOwner.fullName,
         pmId:         p.pmOwner.id,
         phase:        (p as any).currentPhase ?? "initiation",
@@ -129,8 +129,8 @@ export default async function ProgramDashboardPage() {
     return {
       id:                prog.id,
       name:              prog.name,
-      clientName:        (prog.client as any)?.name ?? "—",
-      clusterName:       (prog.client as any)?.cluster?.name ?? "—",
+      clientName:        (prog.account as any)?.name ?? "—",
+      clusterName:       (prog.account as any)?.cluster?.name ?? "—",
       ragRollup,
       projectCount:      projs.length,
       budgetConsumedPct: totalBudPct,

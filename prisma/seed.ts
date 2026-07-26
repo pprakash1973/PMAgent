@@ -36,16 +36,16 @@ async function main() {
     update: {},
   });
 
-  await prisma.user.upsert({
+  const dm = await prisma.user.upsert({
     where: { email: "dm@pmAgent.dev" },
-    create: { orgId: org.id, email: "dm@pmAgent.dev", fullName: "Bob Program", passwordHash: hash, role: "pgm" },
-    update: { role: "pgm" },
+    create: { orgId: org.id, email: "dm@pmAgent.dev", fullName: "Bob DM", passwordHash: hash, role: "dm" },
+    update: { role: "dm", fullName: "Bob DM" },
   });
 
-  await prisma.user.upsert({
+  const dh = await prisma.user.upsert({
     where: { email: "head@pmAgent.dev" },
     create: { orgId: org.id, email: "head@pmAgent.dev", fullName: "Carol Head", passwordHash: hash, role: "dh" },
-    update: {},
+    update: { role: "dh" },
   });
 
   await prisma.user.upsert({
@@ -61,6 +61,45 @@ async function main() {
     update: { role: "admin", status: "active" },
   });
 
+  // ── Cluster + Account hierarchy (CR-01) ───────────────────────────────────
+  const cluster = await (prisma as any).cluster.upsert({
+    where: { code: "ANZ" },
+    create: { orgId: org.id, name: "Australia & New Zealand", code: "ANZ", type: "geography", status: "active" },
+    update: {},
+  });
+
+  const account = await (prisma as any).orgAccount.upsert({
+    where: { code: "MEGA-RETAIL" },
+    create: {
+      orgId: org.id, clusterId: cluster.id,
+      name: "Mega Retail Corp", code: "MEGA-RETAIL",
+      industry: "Retail", region: "ANZ", status: "active",
+    },
+    update: {},
+  });
+
+  // ClusterAssignment: Carol Head is Primary DH for ANZ
+  await (prisma as any).clusterAssignment.upsert({
+    where: { clusterId_userId: { clusterId: cluster.id, userId: dh.id } },
+    create: { clusterId: cluster.id, userId: dh.id, isPrimary: true, assignedBy: "seed" },
+    update: { isPrimary: true },
+  });
+  await (prisma as any).cluster.update({
+    where: { id: cluster.id },
+    data: { primaryDhId: dh.id },
+  });
+
+  // AccountAssignment: Bob DM is Primary DM for Mega Retail Corp
+  await (prisma as any).accountAssignment.upsert({
+    where: { accountId_userId: { accountId: account.id, userId: dm.id } },
+    create: { accountId: account.id, userId: dm.id, isPrimary: true, assignedBy: "seed" },
+    update: { isPrimary: true },
+  });
+  await (prisma as any).orgAccount.update({
+    where: { id: account.id },
+    data: { primaryDmId: dm.id },
+  });
+
   const bu = await prisma.businessUnit.upsert({
     where: { id: "seed-bu-1" },
     create: { id: "seed-bu-1", orgId: org.id, name: "Digital Transformation" },
@@ -72,6 +111,8 @@ async function main() {
     create: {
       orgId: org.id,
       buId: bu.id,
+      clusterId: cluster.id,
+      accountId: account.id,
       pmOwnerId: pm.id,
       name: "ERP Implementation — Retail",
       code: "ERP-RETAIL-001",

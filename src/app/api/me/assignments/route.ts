@@ -14,7 +14,7 @@ export async function GET() {
       include: {
         program: {
           include: {
-            client: {
+            account: {
               include: { cluster: { select: { id: true, name: true } } },
             },
           },
@@ -25,15 +25,13 @@ export async function GET() {
   }
 
   if (user.role === "dh") {
-    const assignments = await prisma.clientAssignment.findMany({
+    const assignments = await prisma.clusterAssignment.findMany({
       where: { userId: user.id },
       include: {
-        client: {
-          include: { cluster: { select: { id: true, name: true } } },
-        },
+        cluster: { select: { id: true, name: true, type: true } },
       },
     });
-    return NextResponse.json({ role: user.role, programs: [], clients: assignments.map((a) => a.client) });
+    return NextResponse.json({ role: user.role, programs: [], clients: assignments.map((a) => a.cluster) });
   }
 
   // admin — return nothing (unrestricted)

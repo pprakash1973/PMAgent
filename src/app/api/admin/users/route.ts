@@ -1,4 +1,4 @@
-﻿export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
@@ -12,7 +12,7 @@ const createSchema = z.object({
   role: z.enum(["pm", "pgm", "dh", "admin"]),
   // PM: single program; DM: multiple programs
   programIds: z.array(z.string()).optional(),
-  // DH: multiple clients
+  // DH: cluster IDs (field kept as clientIds for API compat)
   clientIds: z.array(z.string()).optional(),
 });
 
@@ -36,12 +36,12 @@ export async function GET(req: NextRequest) {
       programAssignments: {
         include: {
           program: {
-            include: { client: { include: { cluster: { select: { id: true, name: true } } } } },
+            include: { account: { include: { cluster: { select: { id: true, name: true } } } } },
           },
         },
       },
-      clientAssignments: {
-        include: { client: { include: { cluster: { select: { id: true, name: true } } } } },
+      accountAssignments: {
+        include: { account: { include: { cluster: { select: { id: true, name: true } } } } },
       },
       invitations: { orderBy: { createdAt: "desc" }, take: 1 },
     },
@@ -64,23 +64,22 @@ export async function POST(req: NextRequest) {
       where: { email: data.email },
       include: {
         programAssignments: {
-          include: { program: { include: { client: { include: { cluster: true } } } } },
+          include: { program: { include: { account: { include: { cluster: true } } } } },
         },
-        clientAssignments: {
-          include: { client: { include: { cluster: true } } },
+        accountAssignments: {
+          include: { account: { include: { cluster: true } } },
         },
       },
     });
     if (existing) {
-      // Build a human-readable mapping summary
       let mapping = "";
       if (existing.programAssignments.length) {
         mapping = existing.programAssignments
-          .map((a) => `${a.program.client.cluster.name} â€º ${a.program.client.name} â€º ${a.program.name}`)
+          .map((a) => `${a.program.account?.cluster?.name ?? "—"} › ${a.program.account?.name ?? "—"} › ${a.program.name}`)
           .join(", ");
-      } else if (existing.clientAssignments.length) {
-        mapping = existing.clientAssignments
-          .map((a) => `${a.client.cluster.name} â€º ${a.client.name}`)
+      } else if (existing.accountAssignments.length) {
+        mapping = existing.accountAssignments
+          .map((a) => `${a.account?.cluster?.name ?? "—"} › ${a.account?.name ?? "—"}`)
           .join(", ");
       }
       return NextResponse.json(
@@ -138,10 +137,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // DH: multiple client assignments
+    // DH: cluster assignments (clientIds contains cluster IDs)
     if (data.role === "dh" && data.clientIds?.length) {
-      await prisma.clientAssignment.createMany({
-        data: data.clientIds.map((cid) => ({ clientId: cid, userId: newUser.id, assignedBy: admin.id })),
+      await prisma.clusterAssignment.createMany({
+        data: data.clientIds.map((cid) => ({ clusterId: cid, userId: newUser.id, assignedBy: admin.id })),
         skipDuplicates: true,
       });
     }
@@ -156,4 +155,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: { code: "SERVER_ERROR" } }, { status: 500 });
   }
 }
-

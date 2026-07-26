@@ -9,7 +9,7 @@ export async function GET() {
 
   const user = session.user as any;
 
-  const clients = await prisma.client.findMany({
+  const clients = await prisma.orgAccount.findMany({
     where: { orgId: user.orgId, status: "active", deletedAt: null },
     include: { cluster: { select: { id: true, name: true, type: true } } },
     orderBy: [{ cluster: { name: "asc" } }, { name: "asc" }],

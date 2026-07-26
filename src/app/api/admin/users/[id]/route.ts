@@ -50,12 +50,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  // DH → cluster assignments (clientIds contains cluster IDs for DH)
   if (data.clientIds !== undefined && role === "dh") {
-    await prisma.clientAssignment.deleteMany({ where: { userId: id } });
+    await prisma.clusterAssignment.deleteMany({ where: { userId: id } });
     if (data.clientIds.length) {
-      await prisma.clientAssignment.createMany({
+      await prisma.clusterAssignment.createMany({
         data: data.clientIds.map((cid) => ({
-          clientId: cid,
+          clusterId: cid,
           userId: id,
           assignedBy: (admin as any).id,
         })),
