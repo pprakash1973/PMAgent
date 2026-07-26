@@ -20,6 +20,13 @@ function parseNumOrNull(val: any): number | null {
   return isNaN(n) ? null : n;
 }
 
+/** Parse a date safely — returns null for missing, empty, or unparseable values (e.g. "TBD", "Q4 2025"). */
+function safeDate(val: any): Date | null {
+  if (!val) return null;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 /**
  * Find a team/resource array in content regardless of where the AI put it.
  * Tries known top-level keys first, then scans one level deep for any array
@@ -77,8 +84,8 @@ export async function syncArtifactToTables(
           role: String(m.role ?? m.title ?? m.position ?? m.jobTitle ?? "Team Member"),
           email: m.email ? String(m.email) : null,
           allocationPct: Math.round(parseNum(m.allocationPercent ?? m.allocationPct ?? m.allocation, 100)),
-          startDate: m.startDate ? new Date(m.startDate) : null,
-          endDate: m.endDate ? new Date(m.endDate) : null,
+          startDate: safeDate(m.startDate),
+          endDate: safeDate(m.endDate),
           ratePerDay: parseNumOrNull(m.dailyRate ?? m.ratePerDay ?? m.rate ?? m.dayRate),
           skills: Array.isArray(m.skills) ? m.skills.join(", ") : (m.skills ? String(m.skills) : null),
           notes: m.notes ?? m.comments ?? m.remarks ?? null,
@@ -104,7 +111,7 @@ export async function syncArtifactToTables(
           mitigation: Array.isArray(r.responseActions)
             ? r.responseActions.join("; ")
             : (r.mitigation ?? r.strategy ?? null),
-          dueDate: r.dueDate ? new Date(r.dueDate) : null,
+          dueDate: safeDate(r.dueDate),
         })),
       });
       break;
@@ -123,7 +130,7 @@ export async function syncArtifactToTables(
           status: normaliseStatus(iss.status),
           owner: iss.owner ?? null,
           resolution: iss.resolutionPlan ?? iss.resolution ?? iss.action ?? null,
-          dueDate: iss.dueDate ?? iss.targetResolutionDate ? new Date(iss.dueDate ?? iss.targetResolutionDate) : null,
+          dueDate: safeDate(iss.dueDate ?? iss.targetResolutionDate),
         })),
       });
       break;
@@ -145,7 +152,7 @@ export async function syncArtifactToTables(
             status: normaliseStatus(r.status),
             owner: r.owner ?? null,
             mitigation: r.mitigation ?? r.responseActions ?? null,
-            dueDate: r.dueDate ? new Date(r.dueDate) : null,
+            dueDate: safeDate(r.dueDate),
           })),
         });
       }
@@ -162,7 +169,7 @@ export async function syncArtifactToTables(
             status: normaliseStatus(iss.status),
             owner: iss.owner ?? null,
             resolution: iss.resolutionPlan ?? iss.resolution ?? null,
-            dueDate: iss.targetResolutionDate ? new Date(iss.targetResolutionDate) : null,
+            dueDate: safeDate(iss.targetResolutionDate),
           })),
         });
       }
@@ -177,7 +184,7 @@ export async function syncArtifactToTables(
         data: milestones.map((m: any) => ({
           projectId,
           name: String(m.name ?? "Milestone"),
-          dueDate: new Date(m.plannedDate ?? m.forecastDate ?? m.targetDate ?? new Date()),
+          dueDate: safeDate(m.plannedDate ?? m.forecastDate ?? m.targetDate) ?? new Date(),
           status: normaliseMilestoneStatus(m.status),
           notes: m.description ?? m.notes ?? null,
         })),

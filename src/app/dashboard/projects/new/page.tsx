@@ -64,7 +64,7 @@ const emptyForm = {
   programId: "",
   clusterId: "",
   pmOwnerId: "",
-  projectType: "fixed_price",
+  projectType: "fixed_bid",
   methodology: "milestone_based",
   engagementMode: "detailed",
   industry: "",
@@ -211,7 +211,7 @@ export default function NewProjectPage() {
         ...f,
         name: f.name || (pf.name as string) || "",
         customer: myAssignments?.role === "pm" ? f.customer : f.customer || (pf.customer as string) || "",
-        projectType: f.projectType || (pf.projectType as string) || "fixed_price",
+        projectType: f.projectType || (pf.projectType as string) || "fixed_bid",
         methodology: f.methodology || (pf.methodology as string) || "milestone_based",
         industry: f.industry || (pf.industry as string) || "",
         budget: f.budget || (pf.budget ? String(pf.budget) : ""),
@@ -684,8 +684,8 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
             <Select value={form.methodology} onValueChange={(v) => update("methodology", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="milestone_based">Milestone Based</SelectItem>
-                <SelectItem value="time_and_material">Time and Material</SelectItem>
+                <SelectItem value="milestone_based">Waterfall (Milestone Based)</SelectItem>
+                <SelectItem value="agile_scrum">Agile (Scrum)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -694,8 +694,8 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
             <Select value={form.projectType} onValueChange={(v) => update("projectType", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="fixed_price">Fixed Price</SelectItem>
-                <SelectItem value="time_and_material">Time &amp; Material</SelectItem>
+                <SelectItem value="fixed_bid">Fixed Bid</SelectItem>
+                <SelectItem value="time_and_material">Time and Material</SelectItem>
               </SelectContent>
             </Select>
           </div>

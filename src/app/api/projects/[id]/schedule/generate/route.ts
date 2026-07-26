@@ -150,19 +150,28 @@ export async function POST(
 
   // Fetch resource roster for assignment matching
   const roster = await prisma.projectResource.findMany({ where: { projectId: id } });
-  // Build a lookup: lowercase name/role → resource id
+
   function matchResource(owner: string): string | null {
     if (!owner || roster.length === 0) return null;
     const needle = owner.toLowerCase().trim();
-    // Exact name match first
+    // 1. Exact name match
     const exact = roster.find(r => r.name.toLowerCase() === needle);
     if (exact) return exact.id;
-    // Partial name match
-    const partial = roster.find(r => needle.includes(r.name.toLowerCase()) || r.name.toLowerCase().includes(needle));
-    if (partial) return partial.id;
-    // Role match
+    // 2. Substring match on name (bidirectional)
+    const partialName = roster.find(r => needle.includes(r.name.toLowerCase()) || r.name.toLowerCase().includes(needle));
+    if (partialName) return partialName.id;
+    // 3. Substring match on role (bidirectional)
     const byRole = roster.find(r => r.role.toLowerCase().includes(needle) || needle.includes(r.role.toLowerCase()));
     if (byRole) return byRole.id;
+    // 4. Word-level overlap on role: any meaningful word (>2 chars) in needle appears in role or vice versa
+    const needleWords = needle.split(/\s+/).filter(w => w.length > 2);
+    if (needleWords.length > 0) {
+      const byWordOverlap = roster.find(r => {
+        const roleWords = r.role.toLowerCase().split(/\s+/).filter((w: string) => w.length > 2);
+        return needleWords.some(nw => roleWords.some((rw: string) => rw.includes(nw) || nw.includes(rw)));
+      });
+      if (byWordOverlap) return byWordOverlap.id;
+    }
     return null;
   }
 
@@ -231,6 +240,7 @@ export async function POST(
       const dt = m.plannedDate ?? m.forecastDate ?? m.targetDate;
       if (!dt) continue;
       const d = new Date(dt);
+      if (isNaN(d.getTime())) continue; // skip milestones with non-ISO dates like "TBD"
       rows.push({
         projectId: id,
         wbsCode: `MS-${i + 1}`,
