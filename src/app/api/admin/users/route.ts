@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   const role = searchParams.get("role");
   const status = searchParams.get("status");
 
-  const where: any = { orgId: (user as any).orgId, deletedAt: null };
+  const where: any = { deletedAt: null };
   if (role) where.role = role;
   if (status) where.status = status;
 
