@@ -677,7 +677,7 @@ export async function buildChangeLogXlsx(content: any): Promise<Buffer> {
 // ═══════════════════════════════════════════════════════════════════════════════
 export async function buildLessonsLearnedXlsx(content: any): Promise<Buffer> {
   const wb = newWb();
-  const lessons = content.lessonsLearned ?? [];
+  const lessons = content.lessons ?? content.lessonsLearned ?? [];
 
   const typeColors: Record<string, { bg: string; fg: string }> = {
     success:     { bg: UST.greenBg, fg: UST.darkFg },
@@ -787,13 +787,23 @@ export async function buildLessonsLearnedXlsx(content: any): Promise<Buffer> {
 export async function buildStakeholderRegisterXlsx(content: any): Promise<Buffer> {
   const wb = newWb();
 
+  // Resolve stakeholders from the most common key names the AI may use
+  const stakeholders: any[] =
+    content.stakeholders ??
+    content.stakeholderList ??
+    content.stakeholderRegister ??
+    (Object.values(content as object).find(
+      (v) => Array.isArray(v) && (v as any[]).length > 0 && typeof (v as any[])[0] === "object"
+    ) as any[]) ??
+    [];
+
   // Sheet 1: Stakeholder Register
   {
     const ws = wb.addWorksheet("Stakeholder Register");
     tableSheet(ws,
       ["ID", "Name", "Title", "Organization", "Email", "Influence", "Interest", "Quadrant",
         "Current Engagement", "Desired Engagement", "Influence Strategy", "Communication Needs", "Notes"],
-      (content.stakeholders ?? []).map((s: any) => [
+      stakeholders.map((s: any) => [
         safeStr(s.id), safeStr(s.name), safeStr(s.title ?? s.role), safeStr(s.organization),
         safeStr(s.contact ?? s.email ?? ""), safeStr(s.power ?? s.influence), safeStr(s.interest),
         safeStr(s.quadrant ?? ""), safeStr(s.currentEngagement ?? s.engagementLevel ?? ""),
@@ -844,7 +854,7 @@ export async function buildStakeholderRegisterXlsx(content: any): Promise<Buffer
     // Stakeholder placement list
     const listH = ws.addRow(["Stakeholder", "Quadrant", ""]);
     applyHeader(listH);
-    (content.stakeholders ?? []).forEach((s: any, i: number) => {
+    stakeholders.forEach((s: any, i: number) => {
       const q = safeStr(s.quadrant ?? "Monitor");
       const row = ws.addRow([safeStr(s.name), q, ""]);
       applyBody(row, bg(i));

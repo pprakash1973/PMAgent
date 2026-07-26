@@ -331,6 +331,7 @@ export function ArtifactPanel({
                 <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: C.primary, color: "#fff" }}>Generated</span>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => setExpanded(isExpandedCard ? null : entry.type)} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, border: `1px solid ${C.primary}`, background: "transparent", color: C.primary, cursor: "pointer" }}>View</button>
+                  <button onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>↓</button>
                   <button onClick={() => generate(entry.type)} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, border: "none", background: C.primaryAlt, color: "#fff", cursor: "pointer" }}>↺</button>
                   <button onClick={(ev) => { setMenuFor(menuFor === entry.type ? null : entry.type); }} style={{ fontSize: 13, padding: "1px 4px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer", lineHeight: 1 }}>⋯</button>
                 </div>
