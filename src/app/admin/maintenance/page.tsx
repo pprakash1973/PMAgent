@@ -1,13 +1,18 @@
 "use client";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Database, Wrench } from "lucide-react";
+import { Loader2, Database, Wrench, UserCheck } from "lucide-react";
+
+interface DeletedUser { id: string; fullName: string; email: string; role: string }
 
 export default function MaintenancePage() {
   const [migrating, setMigrating] = useState(false);
   const [fixingDh, setFixingDh] = useState(false);
   const [migrateLog, setMigrateLog] = useState<string[]>([]);
   const [dhLog, setDhLog] = useState<string[]>([]);
+  const [deletedUsers, setDeletedUsers] = useState<DeletedUser[]>([]);
+  const [loadingDeleted, setLoadingDeleted] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   async function runMigration() {
     setMigrating(true);
@@ -37,10 +42,70 @@ export default function MaintenancePage() {
     }
   }
 
+  async function loadDeletedUsers() {
+    setLoadingDeleted(true);
+    try {
+      const res = await fetch("/api/admin/users?showDeleted=true");
+      const all = await res.json();
+      setDeletedUsers((all as any[]).filter((u: any) => u.deletedAt !== null && u.deletedAt !== undefined));
+    } finally {
+      setLoadingDeleted(false);
+    }
+  }
+
+  async function restoreUser(id: string) {
+    setRestoringId(id);
+    try {
+      await fetch(`/api/admin/users/${id}/undelete`, { method: "POST" });
+      setDeletedUsers((prev) => prev.filter((u) => u.id !== id));
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
   return (
     <div className="p-8 max-w-2xl">
       <h1 className="text-2xl font-bold text-slate-800 mb-1">Maintenance</h1>
       <p className="text-sm text-slate-500 mb-8">One-time database operations. All steps are idempotent — safe to run multiple times.</p>
+
+      {/* Restore soft-deleted users */}
+      <div className="bg-white border border-slate-200 rounded-xl p-6 mb-4">
+        <div className="flex items-start gap-4">
+          <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center font-bold text-sm shrink-0">↩</div>
+          <div className="flex-1">
+            <h2 className="font-semibold text-slate-800 mb-1">Restore Soft-Deleted Users</h2>
+            <p className="text-sm text-slate-500 mb-4">
+              Deactivating a user sets <code className="bg-slate-100 px-1 rounded text-xs">deletedAt</code> which hides them permanently.
+              Use this to recover users who were deactivated and re-invited but still don't appear in the Users list.
+            </p>
+            <Button onClick={loadDeletedUsers} disabled={loadingDeleted} variant="outline" className="border-orange-400 text-orange-700 hover:bg-orange-50 mb-4">
+              {loadingDeleted ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Loading…</> : <><UserCheck className="w-4 h-4 mr-2" />Find Hidden Users</>}
+            </Button>
+            {deletedUsers.length > 0 && (
+              <div className="space-y-2">
+                {deletedUsers.map((u) => (
+                  <div key={u.id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2">
+                    <div>
+                      <span className="text-sm font-medium text-slate-800">{u.fullName}</span>
+                      <span className="text-xs text-slate-500 ml-2">{u.email} · {u.role}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs border-teal-500 text-teal-700 hover:bg-teal-50"
+                      disabled={restoringId === u.id}
+                      onClick={() => restoreUser(u.id)}
+                    >
+                      {restoringId === u.id ? <Loader2 className="w-3 h-3 animate-spin" /> : "Restore"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {deletedUsers.length === 0 && !loadingDeleted && <p className="text-xs text-slate-400">Click "Find Hidden Users" to check.</p>}
+          </div>
+        </div>
+      </div>
 
       {/* Step 1 */}
       <div className="bg-white border border-slate-200 rounded-xl p-6 mb-4">

@@ -24,7 +24,8 @@ export async function GET(req: NextRequest) {
   const role = searchParams.get("role");
   const status = searchParams.get("status");
 
-  const where: any = { deletedAt: null };
+  const showDeleted = searchParams.get("showDeleted") === "true";
+  const where: any = showDeleted ? {} : { deletedAt: null };
   if (role) where.role = role;
   if (status) where.status = status;
 
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
     where,
     select: {
       id: true, email: true, fullName: true, role: true, status: true, copilotEnabled: true,
-      createdAt: true, updatedAt: true,
+      createdAt: true, updatedAt: true, deletedAt: true,
       programAssignments: {
         include: {
           program: {

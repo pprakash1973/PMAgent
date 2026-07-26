@@ -36,7 +36,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       role: role || existing.role,
       fullName: fullName || existing.fullName,
       status: "invited",
-      orgId: (admin as any).orgId,  // ensure user belongs to admin's org
+      orgId: (admin as any).orgId,
+      deletedAt: null,
     },
   });
 
