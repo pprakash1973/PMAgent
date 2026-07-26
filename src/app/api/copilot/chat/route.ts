@@ -167,6 +167,79 @@ Request: "${message}"`,
   } catch { return { name: "", id: "" }; }
 }
 
+// ── Document tools ────────────────────────────────────────────────────────────
+
+const DOCUMENT_TOOLS = [
+  {
+    name: "list_project_documents",
+    description: "Lists all documents available for this project: AI-generated artifacts (Change Log, Risk Register, WBS, etc.) and uploaded source documents (RFPs, change logs, contracts, etc.). Call this first to discover what is available before calling read_document.",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "read_document",
+    description: "Reads the full content of a specific project document by its ID. Use list_project_documents first to get IDs. Returns structured content for artifacts or extracted text for uploaded documents.",
+    input_schema: {
+      type: "object",
+      properties: {
+        document_id: { type: "string", description: "The ID of the document to read (from list_project_documents output)" },
+      },
+      required: ["document_id"],
+    },
+  },
+];
+
+async function executeProjectTool(toolName: string, toolInput: any, projectId: string): Promise<any> {
+  if (toolName === "list_project_documents") {
+    const [artifacts, reqDocs] = await Promise.all([
+      prisma.artifact.findMany({
+        where: { projectId },
+        select: { id: true, artifactType: true, status: true, createdAt: true },
+      }),
+      (prisma as any).requirementsDocument.findMany({
+        where: { projectId, deletedAt: null },
+        select: { id: true, fileName: true, fileFormat: true, docClass: true, createdAt: true },
+      }),
+    ]);
+    return {
+      generated_artifacts: artifacts.map((a: any) => ({ id: a.id, type: a.artifactType, status: a.status })),
+      uploaded_documents: reqDocs.map((d: any) => ({ id: d.id, name: d.fileName, format: d.fileFormat, class: d.docClass })),
+    };
+  }
+
+  if (toolName === "read_document") {
+    const { document_id } = toolInput as { document_id: string };
+
+    // Try generated artifact first
+    const artifact = await prisma.artifact.findFirst({ where: { id: document_id, projectId } });
+    if (artifact) {
+      const raw = artifact.content;
+      const text = raw ? JSON.stringify(raw, null, 2).slice(0, 10000) : "No content";
+      return { type: "artifact", artifactType: artifact.artifactType, content: text };
+    }
+
+    // Try uploaded requirements document — use chunks if available, else extractedContent
+    const reqDoc = await (prisma as any).requirementsDocument.findFirst({
+      where: { id: document_id, projectId, deletedAt: null },
+      include: { chunks: { orderBy: { id: "asc" }, take: 20 } },
+    });
+    if (reqDoc) {
+      let text: string;
+      if (reqDoc.chunks?.length > 0) {
+        text = (reqDoc.chunks as any[]).map((c: any) => c.content).join("\n\n").slice(0, 10000);
+      } else if (reqDoc.extractedContent) {
+        text = JSON.stringify(reqDoc.extractedContent, null, 2).slice(0, 10000);
+      } else {
+        text = "Document has been uploaded but content has not been extracted yet.";
+      }
+      return { type: "uploaded_document", fileName: reqDoc.fileName, format: reqDoc.fileFormat, content: text };
+    }
+
+    return { error: `Document ${document_id} not found in project ${projectId}` };
+  }
+
+  return { error: `Unknown tool: ${toolName}` };
+}
+
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(assistantName: string, tab: string, project: any, kpiSnapshot: any) {
@@ -469,7 +542,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Stream AI response ────────────────────────────────────────────────────────
+  // ── Stream AI response (agentic tool loop) ───────────────────────────────────
   const recentHistory = history.slice(-6).map((m) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
@@ -481,20 +554,46 @@ export async function POST(req: NextRequest) {
     async start(controller) {
       try {
         let fullResponse = "";
+        const messages: any[] = [...recentHistory, { role: "user", content: message }];
+        const MAX_TOOL_ROUNDS = 4;
 
-        const anthropicStream = anthropic.messages.stream({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1024,
-          system: systemPrompt,
-          messages: [...recentHistory, { role: "user", content: message }],
-        });
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          const anthropicStream = anthropic.messages.stream({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1500,
+            system: systemPrompt,
+            tools: projectId ? (DOCUMENT_TOOLS as any) : [],
+            messages,
+          });
 
-        for await (const event of anthropicStream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            const chunk = event.delta.text;
-            fullResponse += chunk;
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ chunk })}\n\n`));
+          for await (const event of anthropicStream) {
+            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              const chunk = event.delta.text;
+              fullResponse += chunk;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ chunk })}\n\n`));
+            }
           }
+
+          const finalMsg = await anthropicStream.finalMessage();
+
+          if (finalMsg.stop_reason !== "tool_use") break; // done — no more tools
+
+          // Execute each tool call and collect results
+          const toolUseBlocks = finalMsg.content.filter((b: any) => b.type === "tool_use");
+          const toolResults = await Promise.all(
+            toolUseBlocks.map(async (b: any) => ({
+              type: "tool_result" as const,
+              tool_use_id: b.id,
+              content: JSON.stringify(
+                projectId
+                  ? await executeProjectTool(b.name, b.input, projectId)
+                  : { error: "No project context" }
+              ),
+            }))
+          );
+
+          messages.push({ role: "assistant", content: finalMsg.content });
+          messages.push({ role: "user", content: toolResults });
         }
 
         // Persist assistant reply

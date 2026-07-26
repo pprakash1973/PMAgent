@@ -296,6 +296,7 @@ export function ArtifactPanel({
             : isMandatory ? `1.5px dashed #374151`
             : isSelected ? `1.5px solid ${C.primary}`
             : `1.5px dashed #d1d5db`,
+          borderLeft: `3px solid ${artifact && !isGen ? C.primaryAlt : isSelected ? C.primary : "#cbd5e1"}`,
           outline: isExpandedCard ? `2px solid ${C.primary}` : "none", outlineOffset: 2,
         }}
         onClick={(ev) => { if (isGen) return; if (mode === "opt") toggleSelect(ev); else if (artifact) setExpanded(isExpandedCard ? null : entry.type); }}
@@ -322,7 +323,7 @@ export function ArtifactPanel({
             <div style={{ width: 34, height: 34, borderRadius: 8, marginTop: 6, display: "flex", alignItems: "center", justifyContent: "center", background: artifact ? "#e8f4f4" : "#f3f4f6" }}>
               <Icon style={{ width: 17, height: 17, color: artifact ? C.primary : isMandatory ? "#6b7280" : "#9ca3af" }} />
             </div>
-            <div style={{ fontSize: 11.5, fontWeight: 500, lineHeight: 1.3, color: artifact ? C.text : isMandatory ? "#4b5563" : "#9ca3af" }}>{entry.label}</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, lineHeight: 1.3, color: artifact ? C.text : isMandatory ? "#374151" : "#6b7280" }}>{entry.label}</div>
             {phasePill(entry.phase)}
             {artifact ? (
               <>
