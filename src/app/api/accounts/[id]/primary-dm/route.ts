@@ -17,17 +17,40 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!account) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
 
-  if (!account.primaryDmId) {
-    return NextResponse.json({ error: { code: "NO_PRIMARY_DM", message: "This account has no Primary Delivery Manager assigned. Contact your administrator." } }, { status: 422 });
+  // Try primaryDmId first
+  let dm = account.primaryDmId
+    ? await prisma.user.findUnique({
+        where: { id: account.primaryDmId },
+        select: { id: true, fullName: true, email: true, role: true, status: true },
+      })
+    : null;
+
+  // Fallback: find any active DM assigned to a program under this account
+  if (!dm || dm.status === "deactivated") {
+    const programAssignment = await (prisma as any).programAssignment.findFirst({
+      where: {
+        program: { accountId: id },
+        user: { role: { in: ["pgm", "dm"] }, status: "active", deletedAt: null },
+      },
+      include: { user: { select: { id: true, fullName: true, email: true, role: true, status: true } } },
+    });
+    if (programAssignment?.user) dm = programAssignment.user;
   }
 
-  const dm = await prisma.user.findUnique({
-    where: { id: account.primaryDmId },
-    select: { id: true, fullName: true, email: true, role: true, status: true },
-  });
+  // Fallback: find any active DM with an accountAssignment to this account
+  if (!dm || dm.status === "deactivated") {
+    const accountAssignment = await (prisma as any).accountAssignment.findFirst({
+      where: {
+        accountId: id,
+        user: { role: { in: ["pgm", "dm"] }, status: "active", deletedAt: null },
+      },
+      include: { user: { select: { id: true, fullName: true, email: true, role: true, status: true } } },
+    });
+    if (accountAssignment?.user) dm = accountAssignment.user;
+  }
 
   if (!dm || dm.status === "deactivated") {
-    return NextResponse.json({ error: { code: "NO_PRIMARY_DM", message: "The Primary Delivery Manager for this account is inactive. Contact your administrator." } }, { status: 422 });
+    return NextResponse.json({ error: { code: "NO_PRIMARY_DM", message: "This account has no Primary Delivery Manager assigned. Contact your administrator." } }, { status: 422 });
   }
 
   return NextResponse.json({ account: { id: account.id, name: account.name }, dm });

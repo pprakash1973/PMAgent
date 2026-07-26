@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
 
 const ROLE_LABELS: Record<string, string> = {
   pm: "Project Manager",
-  pgm: "Program Manager",
-  dm: "Program Manager",
+  pgm: "Delivery Manager",
+  dm: "Delivery Manager",
   dh: "Delivery Head",
   admin: "Admin",
 };
@@ -358,7 +358,7 @@ export default function UsersPage() {
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { v: "pm", label: "Project Manager", desc: "Manages individual projects in a program" },
-                        { v: "pgm", label: "Program Manager", desc: "Oversees multiple programs for a client" },
+                        { v: "pgm", label: "Delivery Manager", desc: "Oversees multiple accounts" },
                         { v: "dh", label: "Delivery Head", desc: "Accountable for one or more clients" },
                         { v: "admin", label: "Admin", desc: "Full platform access, no hierarchy restriction" },
                       ].map(({ v, label, desc }) => (

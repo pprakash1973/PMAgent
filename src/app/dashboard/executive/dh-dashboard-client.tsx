@@ -1,5 +1,6 @@
 "use client";
 import { useState, useMemo } from "react";
+import { useCopilot } from "@/components/copilot/CopilotContext";
 
 export interface DhProject {
   id: string;
@@ -296,6 +297,7 @@ export default function DhDashboardClient({
   userName: string;
   escalations?: DhEscalation[];
 }) {
+  const { openPanel } = useCopilot();
   const [tab,      setTab]      = useState<"projects" | "clusters">("projects");
   const [filterCluster, setFilterCluster] = useState("");
   const [filterClient,  setFilterClient]  = useState("");
@@ -465,6 +467,15 @@ export default function DhDashboardClient({
       <div style={{ background: "#fff", borderBottom: "1.5px solid #e2e5ea", padding: "0 24px", display: "flex", alignItems: "center", gap: 24, flexShrink: 0 }}>
         <button style={tabBtn(tab === "projects")}  onClick={() => setTab("projects")}>Project Information</button>
         <button style={tabBtn(tab === "clusters")} onClick={() => setTab("clusters")}>Cluster Delivery Metrics</button>
+        <div style={{ marginLeft: "auto" }}>
+          <button
+            onClick={() => openPanel("I'm the Delivery Head. Give me a summary of my portfolio health and flag any at-risk projects.")}
+            style={{ display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 14px", background: "#006E74", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="currentColor"/><path d="M9 8h6v8H9z" fill="none"/><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" fill="none"/><path d="M8 12h8M12 8l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            AI Copilot
+          </button>
+        </div>
       </div>
 
       {/* ── Scrollable content ─────────────────────────────────────────── */}

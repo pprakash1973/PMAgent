@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useCopilot } from "@/components/copilot/CopilotContext";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ export default function PgmDashboardClient({
   trends: TrendPoint[];
   userName: string;
 }) {
+  const { openPanel } = useCopilot();
   const [activeProgram, setActiveProgram] = useState<string>("all");
 
   const visibleProjects = useMemo(() =>
@@ -162,11 +164,20 @@ export default function PgmDashboardClient({
       <div style={{ maxWidth:1380, margin:"0 auto", padding:"28px 32px 48px" }}>
 
         {/* ── Header ── */}
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontSize:20, fontWeight:700, color: T.petrol }}>Program Dashboard</div>
-          <div style={{ fontSize:13, color: T.muted, marginTop:3 }}>
-            Welcome back, {userName.split(" ")[0]} · {programs.length} program{programs.length!==1?"s":""} · {projects.length} project{projects.length!==1?"s":""}
+        <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
+          <div>
+            <div style={{ fontSize:20, fontWeight:700, color: T.petrol }}>Delivery Manager Dashboard</div>
+            <div style={{ fontSize:13, color: T.muted, marginTop:3 }}>
+              Welcome back, {userName.split(" ")[0]} · {programs.length} program{programs.length!==1?"s":""} · {projects.length} project{projects.length!==1?"s":""}
+            </div>
           </div>
+          <button
+            onClick={() => openPanel("I'm a Delivery Manager. Summarise the health of my programs and flag any at-risk projects.")}
+            style={{ display:"flex", alignItems:"center", gap:6, height:34, padding:"0 14px", background: T.teal, border:"none", borderRadius:8, fontSize:12, fontWeight:600, color:"#fff", cursor:"pointer", flexShrink:0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/><path d="M8 12h8M12 8l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            AI Copilot
+          </button>
         </div>
 
         {/* ── Program switcher ── */}
