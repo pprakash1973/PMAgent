@@ -93,14 +93,14 @@ export async function generateArtifact(
   requirements?: string,
   evidenceContext?: EvidenceContext
 ): Promise<Record<string, unknown>> {
-  const prompt = buildArtifactPrompt(artifactType, projectContext, requirements, evidenceContext);
+  const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext);
   const { model } = await resolveModel("artifact");
 
   const stream = anthropic.messages.stream({
     model,
     max_tokens: ARTIFACT_MAX_TOKENS,
-    system: PMI_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: prompt }],
+    system: [{ type: "text", text: PMI_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content }],
   });
   const message = await stream.finalMessage();
 
@@ -112,7 +112,7 @@ export async function generateProjectFromNL(description: string): Promise<Record
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: `You are a senior PMO AI. Extract structured project fields from a natural language description or requirements document.
+    system: [{ type: "text", text: `You are a senior PMO AI. Extract structured project fields from a natural language description or requirements document.
 Return JSON with these fields (infer from context; leave null if not found):
 - name (string): project name
 - customer (string): client or customer organization
@@ -133,7 +133,7 @@ Return JSON with these fields (infer from context; leave null if not found):
 - constraints (array of strings): budget/schedule/regulatory constraints
 - assumptions (array of strings): key assumptions
 - sponsor (string): executive sponsor name/role if mentioned
-- clarifyingQuestions (array of strings): questions if critical info is missing`,
+- clarifyingQuestions (array of strings): questions if critical info is missing`, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -164,7 +164,7 @@ export async function generateStatusQuestions(
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
+    system: [{ type: "text", text: `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
 Generate exactly 10 targeted questions based on the project's current context.
 
 Rules:
@@ -178,7 +178,7 @@ Rules:
   - "select": dropdown for simple categorical choices (RAG, yes/no, methodology-specific)
   - "number": numeric input for percentages, counts, days
 - Set allowCustom: true when the PM might have an answer not in the list (narrative, unique situations)
-- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "chips|multi-chips|select|number", "suggestedAnswers": ["...", "..."], "allowCustom": true|false, "required": true, "placeholder": "..." } ] }`,
+- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "chips|multi-chips|select|number", "suggestedAnswers": ["...", "..."], "allowCustom": true|false, "required": true, "placeholder": "..." } ] }`, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -209,7 +209,7 @@ export async function generateStatusSummary(
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
+    system: [{ type: "text", text: `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
 Apply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.
 When live EVM data is provided, use those exact numbers in metricsNarrative and spi field — do not override them.
 
@@ -222,7 +222,7 @@ Return JSON with:
 - nextWeekPlan (array of strings): bulleted plan for next week extracted from answers
 - metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status; include SPI and SV if EVM data is provided
 - cpi (number | null): cost performance index if derivable from answers, else null
-- spi (number | null): use the live SPI value if provided, else derive from PM answers, else null`,
+- spi (number | null): use the live SPI value if provided, else derive from PM answers, else null`, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -243,12 +243,12 @@ export async function generateScheduleRecovery(
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: `You are a PMO recovery specialist. A project is behind schedule (SPI < 0.8) and the PM needs a concrete recovery plan.
+    system: [{ type: "text", text: `You are a PMO recovery specialist. A project is behind schedule (SPI < 0.8) and the PM needs a concrete recovery plan.
 Apply PMBOK schedule compression techniques: fast-tracking, crashing, scope reduction, resource reallocation.
 Return JSON with:
 - headline (string): 1-sentence diagnosis of the delay root cause based on the data
 - steps (array of 4–6 objects): each has title (short action name), action (specific what-to-do in 2 sentences), effort ("Low"|"Medium"|"High"), impact ("Low"|"Medium"|"High")
-- estimatedRecovery (string): realistic estimate of how many days/weeks recovery will take if steps are followed`,
+- estimatedRecovery (string): realistic estimate of how many days/weeks recovery will take if steps are followed`, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -265,7 +265,7 @@ export async function extractRequirements(text: string): Promise<Record<string, 
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
+    system: [{ type: "text", text: `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
 Return JSON with:
 - goals (array of strings): business/project goals
 - scopeItems (array of strings): in-scope deliverables
@@ -277,7 +277,7 @@ Return JSON with:
 - budgetSignals (string): any budget figures or signals
 - methodology (string): delivery approach if mentioned
 - risks (array of strings): any risks or concerns mentioned
-- confidence (number 0-1): confidence in extraction quality`,
+- confidence (number 0-1): confidence in extraction quality`, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -297,10 +297,10 @@ export async function chatCommand(
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: `You are a senior PMO AI copilot with PMBOK 6th/7th edition expertise.
+    system: [{ type: "text", text: `You are a senior PMO AI copilot with PMBOK 6th/7th edition expertise.
 Help the user with project management tasks, artifact generation, and PMI best practices.
 You have access to the current project context. Respond concisely and helpfully.
-Reference PMBOK processes, knowledge areas, and principles where relevant.`,
+Reference PMBOK processes, knowledge areas, and principles where relevant.`, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -330,13 +330,13 @@ export async function askPortfolio(
   const message = await anthropic.messages.create({
     model,
     max_tokens: maxTokens,
-    system: `You are the PM Agent portfolio copilot — a senior PMO AI with PMBOK 6th/7th edition expertise, embedded across a portfolio delivery platform.
+    system: [{ type: "text", text: `You are the PM Agent portfolio copilot — a senior PMO AI with PMBOK 6th/7th edition expertise, embedded across a portfolio delivery platform.
 ${roleGuidance[role] ?? roleGuidance.pm}
 You have access to live portfolio data (projects, health, budget, risks, issues, milestones) provided as context below.
 Answer directly and concisely using only the data provided — never fabricate figures, names, or dates not present in context.
 If asked to draft something (an email, a message, a summary), produce it ready to send/use.
 If the answer requires data not present in context, say what's missing rather than guessing.
-Use markdown formatting (bold, bullet lists) sparingly for readability in a chat UI.`,
+Use markdown formatting (bold, bullet lists) sparingly for readability in a chat UI.`, cache_control: { type: "ephemeral" } }],
     messages: [
       {
         role: "user",
@@ -350,12 +350,12 @@ Use markdown formatting (bold, bullet lists) sparingly for readability in a chat
   return content.text;
 }
 
-function buildArtifactPrompt(
+function buildArtifactContent(
   artifactType: string,
   projectContext: Record<string, unknown>,
   requirements?: string,
   evidenceContext?: EvidenceContext
-): string {
+): Anthropic.TextBlockParam[] {
   const templates: Record<string, string> = {
 
     // ── INITIATING ────────────────────────────────────────────────────────────
@@ -1115,12 +1115,17 @@ Return JSON with:
     ? formatEvidenceForPrompt(evidenceContext)
     : "";
 
-  return `Project Context:
-${JSON.stringify(projectContext, null, 2)}
+  const dynamicContext = `Project Context:\n${JSON.stringify(projectContext, null, 2)}\n\n${evidenceBlock}${requirements && !evidenceContext?.hasEvidence ? `Requirements / Source Document Content:\n${requirements}\n\n` : ""}`;
 
-${evidenceBlock}
-${requirements && !evidenceContext?.hasEvidence ? `Requirements / Source Document Content:\n${requirements}\n\n` : ""}
-Task: ${schema}
-
-Return the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`;
+  return [
+    {
+      type: "text",
+      text: `Task: ${schema}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`,
+      cache_control: { type: "ephemeral" },
+    },
+    {
+      type: "text",
+      text: dynamicContext,
+    },
+  ];
 }
