@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, Wand2, ArrowLeft, Upload, FileText, CheckCircle2, X, Lock, File, Sheet } from "lucide-react";
+import { Loader2, Wand2, ArrowLeft, Upload, CheckCircle2, X, Lock, AlertTriangle, User } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -36,21 +36,33 @@ function fileIcon(name: string) {
   return <span className="text-slate-500 font-bold text-xs bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">FILE</span>;
 }
 
-interface ProgramItem { id: string; name: string; clientId: string; client: { name: string; cluster: { name: string } } }
-interface ClientItem { id: string; name: string; cluster: { name: string } }
+// Program from /api/me/assignments — has account (not client)
+interface ProgramItem {
+  id: string; name: string; accountId: string;
+  account: { id: string; name: string; cluster: { id: string; name: string } };
+}
+// Cluster item (DH's myAssignments.clients are clusters)
+interface ClusterItem { id: string; name: string; type?: string }
+// Account item loaded on-demand for DH cascade
+interface AccountItem { id: string; name: string; cluster: { name: string } }
+// Program item for DH cascade
+interface CascadeProgram { id: string; name: string }
 interface PMUser { id: string; fullName: string; email: string }
+
+interface ResolvedUser { id: string; fullName: string; email: string }
 
 interface MyAssignments {
   role: string;
   programs: ProgramItem[];
-  clients: (ClientItem & { id: string })[];
+  clients: ClusterItem[]; // for DH: these are clusters
 }
 
 const emptyForm = {
   name: "",
   customer: "",
-  clientId: "",
+  accountId: "",
   programId: "",
+  clusterId: "",
   pmOwnerId: "",
   projectType: "fixed_price",
   methodology: "milestone_based",
@@ -71,69 +83,137 @@ export default function NewProjectPage() {
   const [form, setForm] = useState(emptyForm);
 
   const [myAssignments, setMyAssignments] = useState<MyAssignments | null>(null);
-  const [availablePrograms, setAvailablePrograms] = useState<ProgramItem[]>([]);
+
+  // DH cascade state
+  const [dhAccounts, setDhAccounts] = useState<AccountItem[]>([]);
+  const [dhPrograms, setDhPrograms] = useState<CascadeProgram[]>([]);
+
+  // PGM cascade state
   const [availablePMs, setAvailablePMs] = useState<PMUser[]>([]);
+
+  // Primary DH/DM resolution
+  const [resolvedDh, setResolvedDh] = useState<ResolvedUser | null>(null);
+  const [resolvedDm, setResolvedDm] = useState<ResolvedUser | null>(null);
+  const [dhAlert, setDhAlert] = useState<string | null>(null);
+  const [dmAlert, setDmAlert] = useState<string | null>(null);
+  const [resolving, setResolving] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<UploadedDoc[]>([]);
 
+  // Load my assignments on mount
   useEffect(() => {
     fetch("/api/me/assignments")
       .then((r) => r.json())
       .then((data: MyAssignments) => {
         setMyAssignments(data);
+        // PM: auto-select their single program
         if (data.role === "pm" && data.programs.length === 1) {
           const prog = data.programs[0];
-          setForm((f) => ({ ...f, programId: prog.id, clientId: prog.clientId, customer: prog.client.name }));
+          setForm((f) => ({
+            ...f,
+            programId: prog.id,
+            accountId: prog.accountId,
+            clusterId: prog.account.cluster.id,
+            customer: prog.account.name,
+          }));
+          // Auto-resolve DH and DM for PM
+          resolveHierarchy(prog.account.cluster.id, prog.accountId);
         }
       })
       .catch(() => {});
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // DH: load accounts when cluster selected
   useEffect(() => {
-    if (!form.programId || !myAssignments) return;
-    if (myAssignments.role === "pm") return;
+    if (!form.clusterId || myAssignments?.role !== "dh") return;
+    setDhAccounts([]);
+    setDhPrograms([]);
+    setForm((f) => ({ ...f, accountId: "", programId: "", customer: "" }));
+    setResolvedDh(null); setResolvedDm(null); setDhAlert(null); setDmAlert(null);
+    fetch(`/api/accounts?clusterId=${form.clusterId}`)
+      .then((r) => r.json())
+      .then((d) => setDhAccounts(Array.isArray(d) ? d : []))
+      .catch(() => {});
+    // Resolve Primary DH for this cluster
+    resolveDH(form.clusterId);
+  }, [form.clusterId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // DH: load programs when account selected
+  useEffect(() => {
+    if (!form.accountId || myAssignments?.role !== "dh") return;
+    setDhPrograms([]);
+    setForm((f) => ({ ...f, programId: "" }));
+    setResolvedDm(null); setDmAlert(null);
+    const acc = dhAccounts.find((a) => a.id === form.accountId);
+    if (acc) setForm((f) => ({ ...f, customer: acc.name }));
+    fetch(`/api/accounts/${form.accountId}/programs`)
+      .then((r) => r.json())
+      .then((d) => setDhPrograms(Array.isArray(d) ? d : []))
+      .catch(() => {});
+    // Resolve Primary DM for this account
+    resolveDM(form.accountId);
+  }, [form.accountId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PGM: resolve DH/DM when program selected
+  useEffect(() => {
+    if (!form.programId || myAssignments?.role !== "pgm") return;
+    const prog = myAssignments.programs.find((p) => p.id === form.programId);
+    if (!prog) return;
+    setForm((f) => ({ ...f, accountId: prog.accountId, clusterId: prog.account.cluster.id, customer: prog.account.name }));
+    resolveHierarchy(prog.account.cluster.id, prog.accountId);
+    // Load PMs
     fetch(`/api/users/pms?programId=${form.programId}`)
       .then((r) => r.json())
       .then((d) => setAvailablePMs(Array.isArray(d) ? d : []))
       .catch(() => {});
-  }, [form.programId, myAssignments]);
+  }, [form.programId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!form.clientId || !myAssignments || myAssignments.role !== "dh") return;
-    fetch(`/api/admin/programs?clientId=${form.clientId}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setAvailablePrograms(Array.isArray(d) ? d : []);
-        setForm((f) => ({ ...f, programId: "", pmOwnerId: "" }));
-        setAvailablePMs([]);
-      })
-      .catch(() => {});
-  }, [form.clientId, myAssignments]);
+  async function resolveDH(clusterId: string) {
+    setResolving(true);
+    setDhAlert(null); setResolvedDh(null);
+    try {
+      const res = await fetch(`/api/clusters/${clusterId}/primary-dh`);
+      const data = await res.json();
+      if (res.status === 422) { setDhAlert(data.error?.message || "No Primary DH assigned for this cluster."); }
+      else if (res.ok) { setResolvedDh(data.dh); }
+    } catch { setDhAlert("Could not verify Primary Delivery Head."); }
+    finally { setResolving(false); }
+  }
+
+  async function resolveDM(accountId: string) {
+    setResolving(true);
+    setDmAlert(null); setResolvedDm(null);
+    try {
+      const res = await fetch(`/api/accounts/${accountId}/primary-dm`);
+      const data = await res.json();
+      if (res.status === 422) { setDmAlert(data.error?.message || "No Primary DM assigned for this account."); }
+      else if (res.ok) { setResolvedDm(data.dm); }
+    } catch { setDmAlert("Could not verify Primary Delivery Manager."); }
+    finally { setResolving(false); }
+  }
+
+  async function resolveHierarchy(clusterId: string, accountId: string) {
+    await Promise.all([resolveDH(clusterId), resolveDM(accountId)]);
+  }
 
   function update(field: string, value: string) {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
   async function handleFilePick(file: File) {
-    // Prevent duplicates
     if (docs.some((d) => d.file.name === file.name && d.file.size === file.size)) {
-      toast({ title: "Already added", description: file.name });
-      return;
+      toast({ title: "Already added", description: file.name }); return;
     }
-
     const idx = docs.length;
     setDocs((prev) => [...prev, { file, status: "parsing", summary: [] }]);
-
     try {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/parse-requirements", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || "Failed to parse file");
-
       const pf = data.projectFields as Record<string, unknown>;
-      // Merge extracted fields into form — first doc wins on name/customer; later docs fill blanks
       setForm((f) => ({
         ...f,
         name: f.name || (pf.name as string) || "",
@@ -146,7 +226,6 @@ export default function NewProjectPage() {
         endDate: f.endDate || (pf.endDate ? String(pf.endDate).slice(0, 10) : ""),
         description: f.description || (pf.description as string) || "",
       }));
-
       const req = data.requirements as Record<string, unknown>;
       const bullets: string[] = [`From: ${file.name}`];
       if (Array.isArray(req.goals) && req.goals.length) bullets.push(`${req.goals.length} goal(s) identified`);
@@ -155,22 +234,12 @@ export default function NewProjectPage() {
       if (Array.isArray(req.scopeItems) && req.scopeItems.length) bullets.push(`${req.scopeItems.length} scope item(s) extracted`);
       if (req.timeline) bullets.push(`Timeline: ${req.timeline}`);
       if (bullets.length === 1) bullets.push("Requirements extracted successfully");
-
       setDocs((prev) =>
         prev.map((d, i) =>
-          i === idx
-            ? {
-                ...d,
-                status: "done",
-                summary: bullets,
-                parsed: {
-                  requirementsText: data.extractedText,
-                  requirementsFileName: data.fileName,
-                  requirementsFileFormat: data.fileFormat,
-                  requirementsExtracted: req,
-                },
-              }
-            : d
+          i === idx ? { ...d, status: "done", summary: bullets, parsed: {
+            requirementsText: data.extractedText, requirementsFileName: data.fileName,
+            requirementsFileFormat: data.fileFormat, requirementsExtracted: req,
+          } } : d
         )
       );
     } catch (err: any) {
@@ -184,48 +253,43 @@ export default function NewProjectPage() {
     Array.from(e.dataTransfer.files).forEach((f) => handleFilePick(f));
   }
 
-  function removeDoc(idx: number) {
-    setDocs((prev) => prev.filter((_, i) => i !== idx));
-  }
+  function removeDoc(idx: number) { setDocs((prev) => prev.filter((_, i) => i !== idx)); }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (dhAlert || dmAlert) {
+      toast({ title: "Cannot create project", description: "Resolve the DH/DM assignment issues first.", variant: "destructive" });
+      return;
+    }
     setLoading(true);
-
     let payload: Record<string, unknown>;
-
     if (mode === "nl") {
       payload = {
-        naturalLanguage: nlText,
-        engagementMode: "detailed",
-        ...(form.clientId ? { clientId: form.clientId } : {}),
+        naturalLanguage: nlText, engagementMode: "detailed",
+        ...(form.accountId ? { accountId: form.accountId } : {}),
         ...(form.programId ? { programId: form.programId } : {}),
         ...(form.pmOwnerId ? { pmOwnerId: form.pmOwnerId } : {}),
       };
     } else {
-      const { clientId, programId, pmOwnerId, ...rest } = form;
+      const { accountId, programId, pmOwnerId, clusterId, ...rest } = form;
       payload = {
-        ...rest,
-        engagementMode: "detailed",
+        ...rest, engagementMode: "detailed",
         budget: form.budget ? parseFloat(form.budget) : undefined,
-        ...(clientId ? { clientId } : {}),
+        ...(accountId ? { accountId } : {}),
         ...(programId ? { programId } : {}),
         ...(pmOwnerId ? { pmOwnerId } : {}),
       };
       const doneDocs = docs.filter((d) => d.status === "done" && d.parsed);
       if (doneDocs.length > 0) {
-        // Concatenate all extracted texts; use first doc's metadata for format reference
         payload.requirementsText = doneDocs.map((d) => d.parsed!.requirementsText).join("\n\n---\n\n");
         payload.requirementsFileName = doneDocs.map((d) => d.parsed!.requirementsFileName).join(", ");
         payload.requirementsFileFormat = doneDocs[0].parsed!.requirementsFileFormat;
         payload.requirementsExtracted = doneDocs.reduce((acc, d) => ({ ...acc, ...d.parsed!.requirementsExtracted }), {});
       }
     }
-
     try {
       const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -239,6 +303,7 @@ export default function NewProjectPage() {
   }
 
   const role = myAssignments?.role;
+  const blocked = !!(dhAlert || dmAlert);
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-6">
@@ -252,24 +317,16 @@ export default function NewProjectPage() {
         </div>
       </div>
 
-      {/* Mode toggle — Upload first, then AI */}
+      {/* Mode toggle */}
       <div className="flex gap-2">
         {([
           { id: "upload" as const, icon: Upload, label: "Upload Documents" },
           { id: "nl" as const, icon: Wand2, label: "Use AI" },
         ]).map(({ id, icon: Icon, label }) => (
-          <button
-            key={id}
-            onClick={() => setMode(id)}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all",
-              mode === id
-                ? "bg-[#4f5bd5] text-white border-[#4f5bd5]"
-                : "bg-white text-slate-600 border-slate-200 hover:border-[#cfd4f5]"
-            )}
-          >
-            <Icon className="w-4 h-4" />
-            {label}
+          <button key={id} onClick={() => setMode(id)}
+            className={cn("flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-all",
+              mode === id ? "bg-[#4f5bd5] text-white border-[#4f5bd5]" : "bg-white text-slate-600 border-slate-200 hover:border-[#cfd4f5]")}>
+            <Icon className="w-4 h-4" />{label}
           </button>
         ))}
       </div>
@@ -283,19 +340,59 @@ export default function NewProjectPage() {
               <CardHeader>
                 <CardTitle className="text-base">Hierarchy</CardTitle>
                 <CardDescription>
-                  {role === "pm"
-                    ? "Your project will be created under your assigned program."
-                    : role === "pgm"
-                    ? "Select the program and assign a PM."
-                    : "Select the client, program, and PM for this project."}
+                  {role === "pm" ? "Your project will be created under your assigned program."
+                    : role === "pgm" ? "Select the program and assign a PM."
+                    : "Select the cluster, account, and optional program for this project."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+
+                {/* DH/DM alert banners */}
+                {(dhAlert || dmAlert) && (
+                  <div className="space-y-2">
+                    {dhAlert && (
+                      <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-3">
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-red-800">Cannot create project — no Primary Delivery Head</p>
+                          <p className="text-sm text-red-700 mt-0.5">{dhAlert}</p>
+                        </div>
+                      </div>
+                    )}
+                    {dmAlert && (
+                      <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-3">
+                        <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-red-800">Cannot create project — no Primary Delivery Manager</p>
+                          <p className="text-sm text-red-700 mt-0.5">{dmAlert}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Resolved DH/DM chips */}
+                {(resolvedDh || resolvedDm) && (
+                  <div className="flex flex-wrap gap-2">
+                    {resolvedDh && (
+                      <span className="flex items-center gap-1.5 text-xs bg-[#E1F5EE] border border-[#9FE1CB] text-[#0F6E56] px-2.5 py-1 rounded-full font-medium">
+                        <User className="w-3 h-3" /> DH: {resolvedDh.fullName}
+                      </span>
+                    )}
+                    {resolvedDm && (
+                      <span className="flex items-center gap-1.5 text-xs bg-[#E1F5EE] border border-[#9FE1CB] text-[#0F6E56] px-2.5 py-1 rounded-full font-medium">
+                        <User className="w-3 h-3" /> DM: {resolvedDm.fullName}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* PM — locked hierarchy */}
                 {role === "pm" && myAssignments?.programs[0] && (
                   <div className="flex flex-col gap-2">
                     {[
-                      { label: "Cluster", value: myAssignments.programs[0].client.cluster.name },
-                      { label: "Client", value: myAssignments.programs[0].client.name },
+                      { label: "Cluster", value: myAssignments.programs[0].account.cluster.name },
+                      { label: "Account", value: myAssignments.programs[0].account.name },
                       { label: "Program", value: myAssignments.programs[0].name },
                     ].map(({ label, value }) => (
                       <div key={label} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200">
@@ -309,6 +406,7 @@ export default function NewProjectPage() {
                   </div>
                 )}
 
+                {/* PGM — pick program */}
                 {role === "pgm" && (
                   <>
                     <div className="space-y-1.5">
@@ -316,16 +414,12 @@ export default function NewProjectPage() {
                       <select
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
                         value={form.programId}
-                        onChange={(e) => {
-                          const prog = myAssignments?.programs.find((p) => p.id === e.target.value);
-                          update("programId", e.target.value);
-                          if (prog) { update("clientId", prog.clientId); update("customer", prog.client.name); }
-                        }}
+                        onChange={(e) => update("programId", e.target.value)}
                         required
                       >
                         <option value="">Select program…</option>
                         {myAssignments?.programs.map((p) => (
-                          <option key={p.id} value={p.id}>{p.client.cluster.name} › {p.client.name} › {p.name}</option>
+                          <option key={p.id} value={p.id}>{p.account.cluster.name} › {p.account.name} › {p.name}</option>
                         ))}
                       </select>
                     </div>
@@ -347,42 +441,62 @@ export default function NewProjectPage() {
                   </>
                 )}
 
+                {/* DH — cascade: cluster → account → program */}
                 {role === "dh" && (
-                  <>
+                  <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <Label>Client</Label>
+                      <Label>Cluster</Label>
                       <select
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
-                        value={form.clientId}
-                        onChange={(e) => {
-                          const c = myAssignments?.clients.find((x) => x.id === e.target.value);
-                          update("clientId", e.target.value);
-                          update("customer", c?.name || "");
-                        }}
+                        value={form.clusterId}
+                        onChange={(e) => update("clusterId", e.target.value)}
                         required
                       >
-                        <option value="">Select client…</option>
+                        <option value="">Select cluster…</option>
                         {myAssignments?.clients.map((c) => (
-                          <option key={c.id} value={c.id}>{c.cluster.name} › {c.name}</option>
+                          <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
                       </select>
                     </div>
-                    {form.clientId && (
+
+                    {form.clusterId && dhAccounts.length > 0 && (
                       <div className="space-y-1.5">
-                        <Label>Program</Label>
+                        <Label>Account</Label>
+                        <select
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                          value={form.accountId}
+                          onChange={(e) => update("accountId", e.target.value)}
+                          required
+                        >
+                          <option value="">Select account…</option>
+                          {dhAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {form.clusterId && dhAccounts.length === 0 && (
+                      <p className="text-xs text-amber-600">No active accounts in this cluster.</p>
+                    )}
+
+                    {form.accountId && (
+                      <div className="space-y-1.5">
+                        <Label>Program <span className="text-slate-400 font-normal">(optional)</span></Label>
                         <select
                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
                           value={form.programId}
                           onChange={(e) => update("programId", e.target.value)}
                         >
-                          <option value="">Select program…</option>
-                          {availablePrograms.map((p) => (
+                          <option value="">No program (direct account project)</option>
+                          {dhPrograms.map((p) => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
                         </select>
                       </div>
                     )}
-                    {form.programId && (
+
+                    {form.accountId && (
                       <div className="space-y-1.5">
                         <Label>Assign PM (optional)</Label>
                         <select
@@ -397,7 +511,13 @@ export default function NewProjectPage() {
                         </select>
                       </div>
                     )}
-                  </>
+                  </div>
+                )}
+
+                {resolving && (
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />Verifying DH &amp; DM assignments…
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -408,88 +528,55 @@ export default function NewProjectPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Upload Requirements Documents</CardTitle>
-                <CardDescription>
-                  Add one or more files — AI will extract project fields and requirements from each.
-                  Supports PDF, Word, Excel, PowerPoint, and text files.
-                </CardDescription>
+                <CardDescription>Add one or more files — AI will extract project fields and requirements from each. Supports PDF, Word, Excel, PowerPoint, and text files.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-
-                {/* Drop zone — always visible */}
                 <div
-                  onDrop={handleDrop}
-                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
                   onClick={() => fileRef.current?.click()}
                   className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-[#4f5bd5] hover:bg-[#eef0fc] transition-all"
                 >
                   <Upload className="w-7 h-7 text-slate-400 mx-auto mb-2" />
                   <p className="text-sm font-medium text-slate-700">Drop files here or click to browse</p>
                   <p className="text-xs text-slate-400 mt-1">PDF · DOCX · XLSX · PPTX · TXT</p>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => { Array.from(e.target.files ?? []).forEach(handleFilePick); e.target.value = ""; }}
-                  />
+                  <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md" multiple className="hidden"
+                    onChange={(e) => { Array.from(e.target.files ?? []).forEach(handleFilePick); e.target.value = ""; }} />
                 </div>
-
-                {/* Uploaded files list + extraction summaries */}
                 {docs.length > 0 && (
                   <div className="space-y-2">
                     {docs.map((doc, i) => (
                       <div key={i} className="rounded-lg border border-slate-200 overflow-hidden">
-                        {/* File row */}
                         <div className="flex items-center gap-3 px-3 py-2.5 bg-slate-50">
                           {fileIcon(doc.file.name)}
                           <span className="text-sm font-medium text-slate-800 flex-1 truncate">{doc.file.name}</span>
                           {doc.status === "parsing" && <Loader2 className="w-4 h-4 animate-spin text-[#4f5bd5] shrink-0" />}
                           {doc.status === "done" && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
                           {doc.status === "error" && <span className="text-xs text-red-500 shrink-0">Failed</span>}
-                          <button
-                            type="button"
-                            onClick={() => removeDoc(i)}
-                            className="text-slate-400 hover:text-slate-700 shrink-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                          <button type="button" onClick={() => removeDoc(i)} className="text-slate-400 hover:text-slate-700 shrink-0"><X className="w-4 h-4" /></button>
                         </div>
-
-                        {/* Extraction summary */}
                         {doc.status === "parsing" && (
                           <div className="px-3 py-2 flex items-center gap-2 text-xs text-[#4f5bd5] animate-pulse bg-white">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Analysing with AI…
+                            <Loader2 className="w-3 h-3 animate-spin" />Analysing with AI…
                           </div>
                         )}
                         {doc.status === "done" && doc.summary.length > 0 && (
                           <div className="px-3 py-2 bg-green-50 space-y-0.5">
                             {doc.summary.map((b, j) => (
-                              <p key={j} className={cn(
-                                "text-xs flex items-start gap-1.5",
-                                j === 0 ? "font-semibold text-green-800" : "text-green-700"
-                              )}>
-                                {j > 0 && <CheckCircle2 className="w-3 h-3 shrink-0 mt-0.5" />}
-                                {b}
+                              <p key={j} className={cn("text-xs flex items-start gap-1.5", j === 0 ? "font-semibold text-green-800" : "text-green-700")}>
+                                {j > 0 && <CheckCircle2 className="w-3 h-3 shrink-0 mt-0.5" />}{b}
                               </p>
                             ))}
                           </div>
                         )}
                         {doc.status === "error" && (
-                          <div className="px-3 py-2 bg-red-50 text-xs text-red-600">
-                            Could not extract content from this file.
-                          </div>
+                          <div className="px-3 py-2 bg-red-50 text-xs text-red-600">Could not extract content from this file.</div>
                         )}
                       </div>
                     ))}
                   </div>
                 )}
-
                 {docs.some((d) => d.status === "done") && (
-                  <p className="text-xs text-slate-400">
-                    Review and edit the pre-filled fields below before creating the project.
-                  </p>
+                  <p className="text-xs text-slate-400">Review and edit the pre-filled fields below before creating the project.</p>
                 )}
               </CardContent>
             </Card>
@@ -500,29 +587,30 @@ export default function NewProjectPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Describe your project</CardTitle>
-                <CardDescription>
-                  Write naturally — AI will infer structured fields and generate your artifact workspace.
-                </CardDescription>
+                <CardDescription>Write naturally — AI will infer structured fields and generate your artifact workspace.</CardDescription>
               </CardHeader>
               <CardContent>
                 <Textarea
                   placeholder='e.g. "Build an ERP implementation for a retail company lasting 12 months, budget $2M. Milestone-based delivery, financial services industry."'
-                  value={nlText}
-                  onChange={(e) => setNlText(e.target.value)}
-                  rows={5}
-                  required
-                />
+                  value={nlText} onChange={(e) => setNlText(e.target.value)} rows={5} required />
               </CardContent>
             </Card>
           )}
 
-          {/* Project Details — shown in both modes */}
+          {/* Project Details */}
           <ProjectFormFields form={form} update={update} role={role} />
+
+          {blocked && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Project creation is blocked until the DH/DM assignment issues above are resolved by an administrator.
+            </div>
+          )}
 
           <Button
             type="submit"
-            className="w-full"
-            disabled={loading || (mode === "upload" && (docs.length === 0 || docs.some((d) => d.status === "parsing") || docs.every((d) => d.status !== "done")))}
+            className={cn("w-full", blocked ? "opacity-50 cursor-not-allowed" : "")}
+            disabled={loading || blocked || (mode === "upload" && (docs.length === 0 || docs.some((d) => d.status === "parsing") || docs.every((d) => d.status !== "done")))}
             size="lg"
           >
             {loading ? (
@@ -539,53 +627,27 @@ export default function NewProjectPage() {
   );
 }
 
-function ProjectFormFields({
-  form,
-  update,
-  role,
-}: {
-  form: typeof emptyForm;
-  update: (f: string, v: string) => void;
-  role?: string;
-}) {
+function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; update: (f: string, v: string) => void; role?: string }) {
   return (
     <>
-      {/* Project Details */}
       <Card>
         <CardHeader><CardTitle className="text-base">Project Details</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
           <div className="col-span-2 space-y-2">
             <Label>Project Name *</Label>
-            <Input
-              placeholder="ERP Implementation — Retail"
-              value={form.name}
-              onChange={(e) => update("name", e.target.value)}
-              required
-            />
+            <Input placeholder="ERP Implementation — Retail" value={form.name} onChange={(e) => update("name", e.target.value)} required />
           </div>
-
           {(!role || role === "admin" || role === "pgm" || role === "dh") && (
             <div className="space-y-2">
-              <Label>Customer / Client</Label>
-              <Input
-                placeholder="Acme Retail"
-                value={form.customer}
-                onChange={(e) => update("customer", e.target.value)}
-                readOnly={role === "pgm" || role === "dh"}
-                className={role === "pgm" || role === "dh" ? "bg-slate-50 text-slate-600" : ""}
-              />
+              <Label>Customer / Account</Label>
+              <Input placeholder="Acme Retail" value={form.customer} onChange={(e) => update("customer", e.target.value)}
+                readOnly={role === "pgm" || role === "dh"} className={role === "pgm" || role === "dh" ? "bg-slate-50 text-slate-600" : ""} />
             </div>
           )}
-
           <div className="space-y-2">
             <Label>Industry</Label>
-            <Input
-              placeholder="Retail, Financial Services, Healthcare..."
-              value={form.industry}
-              onChange={(e) => update("industry", e.target.value)}
-            />
+            <Input placeholder="Retail, Financial Services, Healthcare..." value={form.industry} onChange={(e) => update("industry", e.target.value)} />
           </div>
-
           <div className="space-y-2">
             <Label>Methodology</Label>
             <Select value={form.methodology} onValueChange={(v) => update("methodology", v)}>
@@ -596,7 +658,6 @@ function ProjectFormFields({
               </SelectContent>
             </Select>
           </div>
-
           <div className="space-y-2">
             <Label>Billing Type</Label>
             <Select value={form.projectType} onValueChange={(v) => update("projectType", v)}>
@@ -610,7 +671,6 @@ function ProjectFormFields({
         </CardContent>
       </Card>
 
-      {/* Timeline & Budget */}
       <Card>
         <CardHeader><CardTitle className="text-base">Timeline &amp; Budget</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4">
@@ -641,12 +701,7 @@ function ProjectFormFields({
           </div>
           <div className="col-span-2 space-y-2">
             <Label>Description</Label>
-            <Textarea
-              placeholder="Brief project description..."
-              value={form.description}
-              onChange={(e) => update("description", e.target.value)}
-              rows={3}
-            />
+            <Textarea placeholder="Brief project description..." value={form.description} onChange={(e) => update("description", e.target.value)} rows={3} />
           </div>
         </CardContent>
       </Card>

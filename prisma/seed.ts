@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 
 const url = process.env.DATABASE_URL ?? "file:./dev.db";
 console.log("Connecting to:", url.startsWith("postgresql") ? url.split("@")[1] : url);
@@ -19,8 +20,65 @@ function createClient() {
 }
 const prisma = createClient();
 
+/**
+ * Migrate DH users whose old ClientAssignment rows were moved into
+ * account_assignments by the CR-01 migration. DH must live in
+ * cluster_assignments instead.  Safe to run multiple times.
+ */
+async function fixDhAssignments() {
+  const dhUsers = await prisma.user.findMany({ where: { role: "dh" } });
+  if (dhUsers.length === 0) return;
+
+  for (const user of dhUsers) {
+    const accountAssignments = await (prisma as any).accountAssignment.findMany({
+      where: { userId: user.id },
+      include: { account: { select: { id: true, clusterId: true } } },
+    });
+    if (accountAssignments.length === 0) continue;
+
+    const clusterIds = [...new Set(
+      accountAssignments.map((a: any) => a.account?.clusterId).filter(Boolean) as string[]
+    )];
+
+    for (const clusterId of clusterIds) {
+      await (prisma as any).clusterAssignment.upsert({
+        where: { clusterId_userId: { clusterId, userId: user.id } },
+        create: { id: randomUUID(), clusterId, userId: user.id, isPrimary: false, assignedBy: "migration-fix" },
+        update: {},
+      }).catch(() => {});
+    }
+
+    await (prisma as any).accountAssignment.deleteMany({ where: { userId: user.id } });
+    console.log(`  Fixed DH "${user.fullName}": moved to ${clusterIds.length} cluster assignment(s)`);
+  }
+
+  // Auto-promote primary DH per cluster if none set
+  const clusters = await (prisma as any).cluster.findMany({
+    where: { deletedAt: null },
+    include: { clusterAssignments: { orderBy: { assignedAt: "asc" } } },
+  });
+  for (const cluster of clusters) {
+    if (!cluster.clusterAssignments.length) continue;
+    const hasPrimary = cluster.clusterAssignments.some((a: any) => a.isPrimary);
+    if (!hasPrimary) {
+      const first = cluster.clusterAssignments[0];
+      await (prisma as any).clusterAssignment.update({
+        where: { clusterId_userId: { clusterId: cluster.id, userId: first.userId } },
+        data: { isPrimary: true },
+      });
+      await (prisma as any).cluster.update({
+        where: { id: cluster.id },
+        data: { primaryDhId: first.userId },
+      });
+    }
+  }
+}
+
 async function main() {
   console.log("Seeding database...");
+
+  // Fix DH assignments before seeding seed data
+  await fixDhAssignments();
 
   const org = await prisma.organization.upsert({
     where: { id: "seed-org-1" },

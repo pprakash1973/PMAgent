@@ -11,7 +11,7 @@ const nav = [
   { href: "/admin", icon: LayoutDashboard, label: "Overview" },
   { href: "/admin/users", icon: Users, label: "Users" },
   { href: "/admin/clusters", icon: Building2, label: "Clusters" },
-  { href: "/admin/clients", icon: Briefcase, label: "Clients" },
+  { href: "/admin/accounts", icon: Briefcase, label: "Accounts" },
   { href: "/admin/programs", icon: FolderKanban, label: "Programs" },
   { href: "/admin/model-config", icon: Cpu, label: "Model Router" },
 ];
