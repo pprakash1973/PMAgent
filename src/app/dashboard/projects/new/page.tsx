@@ -84,7 +84,8 @@ export default function NewProjectPage() {
 
   const [myAssignments, setMyAssignments] = useState<MyAssignments | null>(null);
 
-  // DH cascade state
+  // Cascade state (shared by PM and DH)
+  const [allClusters, setAllClusters] = useState<(ClusterItem & { clusterAssignments?: { user: { fullName: string } }[] })[]>([]);
   const [dhAccounts, setDhAccounts] = useState<AccountItem[]>([]);
   const [dhPrograms, setDhPrograms] = useState<CascadeProgram[]>([]);
 
@@ -101,32 +102,26 @@ export default function NewProjectPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<UploadedDoc[]>([]);
 
-  // Load my assignments on mount
+  // Load my assignments + all clusters (for PM/DH cascade) on mount
   useEffect(() => {
     fetch("/api/me/assignments")
       .then((r) => r.json())
       .then((data: MyAssignments) => {
         setMyAssignments(data);
-        // PM: auto-select their single program
-        if (data.role === "pm" && data.programs.length === 1) {
-          const prog = data.programs[0];
-          setForm((f) => ({
-            ...f,
-            programId: prog.id,
-            accountId: prog.accountId,
-            clusterId: prog.account.cluster.id,
-            customer: prog.account.name,
-          }));
-          // Auto-resolve DH and DM for PM
-          resolveHierarchy(prog.account.cluster.id, prog.accountId);
+        // Load all clusters for PM cascade
+        if (data.role === "pm") {
+          fetch("/api/clusters/active")
+            .then((r) => r.json())
+            .then((d) => setAllClusters(Array.isArray(d) ? d : []))
+            .catch(() => {});
         }
       })
       .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // DH: load accounts when cluster selected
+  // PM/DH: load accounts when cluster selected
   useEffect(() => {
-    if (!form.clusterId || myAssignments?.role !== "dh") return;
+    if (!form.clusterId || !["pm", "dh"].includes(myAssignments?.role ?? "")) return;
     setDhAccounts([]);
     setDhPrograms([]);
     setForm((f) => ({ ...f, accountId: "", programId: "", customer: "" }));
@@ -135,13 +130,12 @@ export default function NewProjectPage() {
       .then((r) => r.json())
       .then((d) => setDhAccounts(Array.isArray(d) ? d : []))
       .catch(() => {});
-    // Resolve Primary DH for this cluster
     resolveDH(form.clusterId);
   }, [form.clusterId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // DH: load programs when account selected
+  // PM/DH: load programs when account selected
   useEffect(() => {
-    if (!form.accountId || myAssignments?.role !== "dh") return;
+    if (!form.accountId || !["pm", "dh"].includes(myAssignments?.role ?? "")) return;
     setDhPrograms([]);
     setForm((f) => ({ ...f, programId: "" }));
     setResolvedDm(null); setDmAlert(null);
@@ -151,7 +145,6 @@ export default function NewProjectPage() {
       .then((r) => r.json())
       .then((d) => setDhPrograms(Array.isArray(d) ? d : []))
       .catch(() => {});
-    // Resolve Primary DM for this account
     resolveDM(form.accountId);
   }, [form.accountId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -387,22 +380,60 @@ export default function NewProjectPage() {
                   </div>
                 )}
 
-                {/* PM — locked hierarchy */}
-                {role === "pm" && myAssignments?.programs[0] && (
-                  <div className="flex flex-col gap-2">
-                    {[
-                      { label: "Cluster", value: myAssignments.programs[0].account.cluster.name },
-                      { label: "Account", value: myAssignments.programs[0].account.name },
-                      { label: "Program", value: myAssignments.programs[0].name },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200">
-                        <span className="text-sm text-slate-500">{label}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-slate-800">{value}</span>
-                          <Lock className="w-3 h-3 text-slate-400" />
-                        </div>
+                {/* PM — cascade: cluster → account → program (optional) */}
+                {role === "pm" && (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label>Cluster</Label>
+                      <select
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                        value={form.clusterId}
+                        onChange={(e) => update("clusterId", e.target.value)}
+                        required
+                      >
+                        <option value="">Select cluster…</option>
+                        {allClusters.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {form.clusterId && dhAccounts.length > 0 && (
+                      <div className="space-y-1.5">
+                        <Label>Account</Label>
+                        <select
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                          value={form.accountId}
+                          onChange={(e) => update("accountId", e.target.value)}
+                          required
+                        >
+                          <option value="">Select account…</option>
+                          {dhAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>{a.name}</option>
+                          ))}
+                        </select>
                       </div>
-                    ))}
+                    )}
+
+                    {form.clusterId && dhAccounts.length === 0 && (
+                      <p className="text-xs text-amber-600">No active accounts in this cluster.</p>
+                    )}
+
+                    {form.accountId && (
+                      <div className="space-y-1.5">
+                        <Label>Program <span className="text-slate-400 font-normal">(optional)</span></Label>
+                        <select
+                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#4f5bd5]"
+                          value={form.programId}
+                          onChange={(e) => update("programId", e.target.value)}
+                        >
+                          <option value="">No program (direct account project)</option>
+                          {dhPrograms.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
 
