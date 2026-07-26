@@ -78,7 +78,9 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   change_log:            "changes (array of {id, title, description, requestedBy, dateSubmitted, impact, status, approvedBy, implementationDate})",
   lessons_learned:       "lessons (array of {id, phase, category, description, impact, recommendation, owner, status})",
   closure_report:        "projectName, closureDate, sponsor, pm, objectivesAchievement (array), deliverablesStatus (array), budgetSummary, scheduleSummary, lessonsLearned (array), openItems (array), approvalSignatures (array)",
-  traceability_matrix:   "requirements (array of {id, description, source, wbsRef, milestone, deliverable, acceptanceCriteria, validationMethod, owner, status})",
+  traceability_matrix:       "requirements (array of {id, description, source, wbsRef, milestone, deliverable, acceptanceCriteria, validationMethod, owner, status})",
+  dependencies_register:     "dependencies (array of {id, description, type (internal|external|technical|commercial), dependentOn, owner, expectedDate, status (open|resolved|at-risk), impact, mitigationAction})",
+  quarterly_business_review: "quarter, projectName, executiveSummary, ragStatus, milestoneReview (array of {milestone, planned, forecast, status}), budgetSummary {budget, actualToDate, forecastAtCompletion, variance}, schedulePerformance {spi, spiTrend}, costPerformance {cpi, cpiTrend}, keyRisks (array), keyIssues (array), decisions (array), nextQuarterPlan (array), clientActions (array)",
 };
 
 // Streaming bypasses the SDK guard that fires on high max_tokens with messages.create().
@@ -1033,6 +1035,39 @@ Return JSON with:
     applicableProjectTypes (array of strings)
   })
 - overallSummary (object): {topSuccesses (array of strings), topImprovements (array of strings), processRecommendations (array of strings)}`,
+
+    dependencies_register: `Generate a Dependencies Register per PMBOK 6th Ed best practices.
+Track all project dependencies — internal deliverables, external third parties, technical integrations, and commercial obligations.
+Return JSON with:
+- dependencies (array of {
+    id (string): e.g. DEP-001
+    description (string): what this project depends on
+    type (string): internal | external | technical | commercial
+    dependentOn (string): name of team, system, or party
+    owner (string): who manages this dependency
+    expectedDate (string): YYYY-MM-DD or milestone name
+    status (string): open | resolved | at-risk
+    impact (string): what is blocked if this is not met
+    mitigationAction (string): fallback or contingency
+  })`,
+
+    quarterly_business_review: `Generate a Quarterly Business Review (QBR) presentation per PMBOK and delivery governance best practices.
+This is a structured executive review delivered to the client each quarter.
+Return JSON with:
+- quarter (string): e.g. Q3 2025
+- projectName (string)
+- executiveSummary (string): one-paragraph health narrative
+- ragStatus (string): Green | Amber | Red
+- milestoneReview (array of {milestone, planned (date), forecast (date), status (On Track|At Risk|Delayed|Complete)})
+- budgetSummary (object): {budget, actualToDate, forecastAtCompletion, variance, variancePercent}
+- schedulePerformance (object): {spi, cumulativeSpi, trend (Improving|Stable|Declining), commentary}
+- costPerformance (object): {cpi, cumulativeCpi, trend, commentary}
+- keyRisks (array of {id, description, severity, owner, mitigation})
+- keyIssues (array of {id, description, severity, owner, resolutionPlan})
+- decisions (array of {description, owner, dueDate})
+- nextQuarterPlan (array of {milestone, targetDate, owner})
+- clientActions (array of {action, owner, dueDate})
+- closingNotes (string)`,
 
     closure_report: `Generate a Project Closure Report per PMBOK 6th Ed Process 4.7 (Close Project or Phase).
 Confirm benefits against the business case, not just on-time/on-budget.

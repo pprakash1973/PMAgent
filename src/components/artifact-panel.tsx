@@ -49,6 +49,7 @@ const ARTIFACT_ICON: Record<string, any> = {
   weekly_status: FileBarChart, monthly_status: FileBarChart, change_log: RefreshCw,
   lessons_learned: GraduationCap, closure_report: FileCheck,
   traceability_matrix: FileText, evm_analysis: TrendingUp,
+  dependencies_register: Network, quarterly_business_review: Presentation,
 };
 
 const GOVERNANCE_LOCKED = new Set(["wbs", "resource_plan", "cost_plan", "raci_matrix", "traceability_matrix"]);

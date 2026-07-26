@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusQuestionnaire } from "@/components/status-questionnaire";
-import { BurndownDownloadButton } from "@/components/burndown-download-button";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@/lib/utils";
 import { useCopilot } from "@/components/copilot/CopilotContext";
 
@@ -351,7 +350,6 @@ function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 17px" }}>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 11 }}>Quick Actions</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <BurndownDownloadButton projectId={project.id} />
             <Link href={`/dashboard/projects/${project.id}/settings`} style={{
               display: "flex", alignItems: "center", gap: 8, height: 34, padding: "0 12px",
               background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8,
@@ -1085,7 +1083,7 @@ function fmt(d: Date | string | null | undefined) {
 function spiColor(spi: number | null) {
   if (spi === null) return C.text3;
   if (spi >= 1) return C.green;
-  if (spi >= 0.85) return C.amber;
+  if (spi >= 0.9) return C.amber;
   return C.red;
 }
 
@@ -1461,11 +1459,17 @@ function ScheduleTab({ project }: { project: any }) {
         <>
           {/* ── EVM KPI strip ── */}
           <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
-            {[
-              { label: "EV", value: kpi?.ev != null ? `${kpi.ev.toFixed(1)}d` : "—", sub: "Earned Value — budgeted cost of work performed", color: C.primary, bg: C.primaryLight },
-              { label: "PV", value: kpi?.pv != null ? `${kpi.pv.toFixed(1)}d` : "—", sub: "Planned Value — budgeted cost of work scheduled", color: C.text2, bg: C.surface2 },
-              { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "Ahead of schedule ✓" : kpi.spi >= 0.85 ? "Slightly behind schedule" : "Behind schedule", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.85 ? C.amberLight : C.redLight },
-            ].map(k => (
+            {(() => {
+              const sv = kpi?.ev != null && kpi?.pv != null ? kpi.ev - kpi.pv : null;
+              const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
+              const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
+              return [
+                { label: "PV",  value: kpi?.pv  != null ? `${kpi.pv.toFixed(1)}d`  : "—", sub: "Planned Value — budgeted cost of work scheduled",   color: C.text2,       bg: C.surface2   },
+                { label: "EV",  value: kpi?.ev  != null ? `${kpi.ev.toFixed(1)}d`  : "—", sub: "Earned Value — budgeted cost of work performed",     color: C.primary,     bg: C.primaryLight },
+                { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${sv.toFixed(1)}d` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead of schedule ✓" : "Behind schedule", color: svColor, bg: svBg },
+                { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "Ahead of schedule ✓" : kpi.spi >= 0.9 ? "Slightly behind schedule" : "Behind schedule", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.9 ? C.amberLight : C.redLight },
+              ];
+            })().map(k => (
               <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 12, padding: "13px 15px" }}>
                 <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 24, fontWeight: 700, color: k.color }}>{k.value}</div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: k.color, marginTop: 2 }}>{k.label}</div>
@@ -2679,12 +2683,20 @@ function CostTab({ project }: { project: any }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* ── KPI strip ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-          {[
-            { label: "EV",  value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value — budgeted cost of work performed", color: TEAL, bg: TEAL_BG },
-            { label: "AC",  value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost — actual cost of work performed to date", color: C.text, bg: C.surface2 },
-            { label: "CPI", value: s ? (s.cpi != null ? s.cpi.toFixed(2) : "—") : "—", sub: s?.cpi != null ? (s.cpi >= 1 ? "Under budget ✓  (CPI = EV ÷ AC)" : "Over budget  (CPI = EV ÷ AC)") : "CPI = EV ÷ AC  (log costs to calculate)", color: cpiColor, bg: !s || s.cpi == null ? C.surface2 : s.cpi >= 1 ? C.greenLight : s.cpi >= 0.9 ? C.amberLight : C.redLight },
-          ].map((k) => (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
+          {(() => {
+            const cv  = s ? s.totalEV - s.totalAC : null;
+            const eac = s?.cpi != null && s.cpi > 0 && project.budget ? project.budget / s.cpi : null;
+            const cvColor = cv == null ? C.text : cv >= 0 ? C.green : C.red;
+            const cvBg    = cv == null ? C.surface2 : cv >= 0 ? C.greenLight : C.redLight;
+            return [
+              { label: "EV",  value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value — budgeted cost of work performed",       color: TEAL,     bg: TEAL_BG  },
+              { label: "AC",  value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost — actual cost of work performed to date",   color: C.text,   bg: C.surface2 },
+              { label: "CV",  value: cv != null ? fmt$(cv, currency) : "—", sub: cv == null ? "CV = EV − AC" : cv >= 0 ? "Under budget ✓" : "Over budget", color: cvColor, bg: cvBg },
+              { label: "CPI", value: s ? (s.cpi != null ? s.cpi.toFixed(2) : "—") : "—", sub: s?.cpi != null ? (s.cpi >= 1 ? "Under budget ✓  (CPI = EV ÷ AC)" : "Over budget  (CPI = EV ÷ AC)") : "CPI = EV ÷ AC  (log costs to calculate)", color: cpiColor, bg: !s || s.cpi == null ? C.surface2 : s.cpi >= 1 ? C.greenLight : s.cpi >= 0.9 ? C.amberLight : C.redLight },
+              { label: "EAC", value: eac != null ? fmt$(eac, currency) : "—", sub: "Estimate at Completion = Budget ÷ CPI", color: C.text2, bg: C.surface2 },
+            ];
+          })().map((k) => (
             <div key={k.label} style={{ background: k.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: k.color, lineHeight: 1.1 }}>{loading ? "…" : k.value}</div>
               <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text3, marginTop: 3, letterSpacing: ".04em" }}>{k.label}</div>
