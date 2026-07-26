@@ -168,6 +168,32 @@ export default function UsersPage() {
     }
   }
 
+  async function reinviteDeactivated() {
+    if (!duplicateInfo) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/users/${duplicateInfo.id}/reinvite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: form.role,
+          fullName: form.fullName,
+          programIds: selPrograms,
+          clientIds: selClients,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || "Failed");
+      setDuplicateInfo(null);
+      setInviteUrl(data.inviteUrl);
+      await load();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function resendInvite(userId: string) {
     const res = await fetch(`/api/admin/users/${userId}/resend-invite`, { method: "POST" });
     const data = await res.json();
@@ -258,8 +284,8 @@ export default function UsersPage() {
                       </p>
                     </div>
                   </div>
-                  {duplicateInfo.status !== "deactivated" && (
-                    <div className="flex gap-2">
+                  <div className="flex gap-2">
+                      {duplicateInfo.status !== "deactivated" ? (
                       <Button
                         type="button"
                         size="sm"
@@ -271,6 +297,19 @@ export default function UsersPage() {
                         {submitting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <UserX className="w-3 h-3 mr-1" />}
                         Deactivate existing account
                       </Button>
+                      ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="border-teal-500 text-teal-700 hover:bg-teal-50 text-xs"
+                        disabled={submitting}
+                        onClick={reinviteDeactivated}
+                      >
+                        {submitting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                        Re-invite with new mapping
+                      </Button>
+                      )}
                       <Button
                         type="button"
                         size="sm"
@@ -281,7 +320,6 @@ export default function UsersPage() {
                         Dismiss
                       </Button>
                     </div>
-                  )}
                 </div>
               )}
               {/* Step indicator */}
@@ -365,8 +403,15 @@ export default function UsersPage() {
                     <span className="font-medium text-[#006E74]">{ROLE_LABELS[form.role]}</span>
                   </div>
 
-                  {/* PM and PGM: cluster → client → program(s) */}
-                  {(form.role === "pm" || form.role === "pgm") && (
+                  {/* PM: no mapping required */}
+                  {form.role === "pm" && (
+                    <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                      Project Managers are assigned to projects directly — no cluster or program mapping needed at registration.
+                    </p>
+                  )}
+
+                  {/* PGM: cluster → account → program(s) */}
+                  {form.role === "pgm" && (
                     <div className="space-y-4">
                       <div className="space-y-1.5">
                         <Label>Cluster</Label>
@@ -382,13 +427,13 @@ export default function UsersPage() {
 
                       {selCluster && (
                         <div className="space-y-1.5">
-                          <Label>Client</Label>
+                          <Label>Account</Label>
                           <select
                             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#006E74]"
                             value={selClient}
                             onChange={(e) => setSelClient(e.target.value)}
                           >
-                            <option value="">Select client…</option>
+                            <option value="">Select account…</option>
                             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                           </select>
                         </div>
@@ -396,9 +441,7 @@ export default function UsersPage() {
 
                       {selClient && programs.length > 0 && (
                         <div className="space-y-1.5">
-                          <Label>
-                            {form.role === "pm" ? "Program (select one)" : "Programs (select all that apply for this Program Manager)"}
-                          </Label>
+                          <Label>Programs (select all that apply)</Label>
                           <div className="flex flex-wrap gap-2">
                             {programs.map((p) => (
                               <button
@@ -418,7 +461,7 @@ export default function UsersPage() {
                             ))}
                           </div>
                           {selClient && programs.length === 0 && (
-                            <p className="text-xs text-slate-400">No programs found for this client. Create programs first.</p>
+                            <p className="text-xs text-slate-400">No programs found for this account. Create programs first.</p>
                           )}
                         </div>
                       )}
