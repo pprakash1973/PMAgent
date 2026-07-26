@@ -26,6 +26,9 @@ export async function GET(req: NextRequest) {
     where,
     include: {
       cluster: { select: { id: true, name: true, type: true } },
+      dmAssignments: {
+        include: { user: { select: { id: true, fullName: true, email: true } } },
+      },
       _count: { select: { programs: true, projects: true } },
     },
     orderBy: [{ cluster: { name: "asc" } }, { name: "asc" }],

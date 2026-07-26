@@ -8,35 +8,35 @@ import { toast } from "@/components/ui/toaster";
 import { Plus, Pencil, Trash2, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface Client { id: string; name: string; cluster: { name: string }; }
+interface Account { id: string; name: string; cluster: { name: string }; }
 interface DM { id: string; fullName: string; email: string; }
 interface Program {
   id: string; name: string; code: string; description: string | null;
   sponsor: string | null; status: string; createdAt: string;
-  client: Client & { cluster: { name: string } };
+  account: Account & { cluster: { name: string } };
   assignments: { user: DM }[];
   _count: { projects: number };
 }
 
 export default function ProgramsPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [dms, setDms] = useState<DM[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Program | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ clientId: "", name: "", description: "", sponsor: "", dmIds: [] as string[] });
+  const [form, setForm] = useState({ accountId: "", name: "", description: "", sponsor: "", dmIds: [] as string[] });
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [pr, cl, us] = await Promise.all([
+    const [pr, ac, us] = await Promise.all([
       fetch("/api/admin/programs").then((r) => r.json()),
-      fetch("/api/admin/clients").then((r) => r.json()),
+      fetch("/api/admin/accounts").then((r) => r.json()),
       fetch("/api/admin/users?role=pgm").then((r) => r.json()),
     ]);
     setPrograms(Array.isArray(pr) ? pr : []);
-    setClients(Array.isArray(cl) ? cl : []);
+    setAccounts(Array.isArray(ac) ? ac : []);
     setDms(Array.isArray(us) ? us : []);
     setLoading(false);
   }, []);
@@ -45,7 +45,7 @@ export default function ProgramsPage() {
 
   function startEdit(p: Program) {
     setEditing(p);
-    setForm({ clientId: p.client.id, name: p.name, description: p.description || "", sponsor: p.sponsor || "", dmIds: p.assignments.map((a) => a.user.id) });
+    setForm({ accountId: p.account.id, name: p.name, description: p.description || "", sponsor: p.sponsor || "", dmIds: p.assignments.map((a) => a.user.id) });
     setShowForm(true);
   }
 
@@ -63,7 +63,7 @@ export default function ProgramsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || "Failed");
       toast({ title: editing ? "Program updated" : "Program created" });
-      setShowForm(false); setEditing(null); setForm({ clientId: "", name: "", description: "", sponsor: "", dmIds: [] });
+      setShowForm(false); setEditing(null); setForm({ accountId: "", name: "", description: "", sponsor: "", dmIds: [] });
       await load();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -89,27 +89,27 @@ export default function ProgramsPage() {
           <h1 className="text-xl font-bold text-slate-900">Programs</h1>
           <p className="text-slate-500 text-sm">Group projects under programs; assign Delivery Managers</p>
         </div>
-        <Button onClick={() => { setShowForm(!showForm); setEditing(null); setForm({ clientId: "", name: "", description: "", sponsor: "", dmIds: [] }); }} className="bg-[#006E74] hover:bg-[#004f54]">
+        <Button onClick={() => { setShowForm(!showForm); setEditing(null); setForm({ accountId: "", name: "", description: "", sponsor: "", dmIds: [] }); }} className="bg-[#006E74] hover:bg-[#004f54]">
           {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
           {showForm ? "Cancel" : "New Program"}
         </Button>
       </div>
 
-      {clients.length === 0 && !loading && (
+      {accounts.length === 0 && !loading && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-800">
-          You need to create at least one Client before adding Programs.
+          You need to create at least one Account before adding Programs.
         </div>
       )}
 
-      {showForm && clients.length > 0 && (
+      {showForm && accounts.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6">
           <h2 className="font-semibold text-slate-800 mb-4">{editing ? "Edit Program" : "Create Program"}</h2>
           <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Client *</Label>
-              <Select value={form.clientId} onValueChange={(v) => setForm({ ...form, clientId: v })} required>
-                <SelectTrigger><SelectValue placeholder="Select client" /></SelectTrigger>
-                <SelectContent>{clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.cluster.name} › {c.name}</SelectItem>)}</SelectContent>
+              <Label>Account *</Label>
+              <Select value={form.accountId} onValueChange={(v) => setForm({ ...form, accountId: v })} required>
+                <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                <SelectContent>{accounts.map((a) => <SelectItem key={a.id} value={a.id}>{a.cluster.name} › {a.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
@@ -160,7 +160,7 @@ export default function ProgramsPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Program</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Client › Cluster</th>
+                <th className="text-left px-4 py-3 font-medium text-slate-600">Account › Cluster</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Delivery Manager(s)</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Projects</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Status</th>
@@ -174,7 +174,7 @@ export default function ProgramsPage() {
                     <p className="font-medium text-slate-900">{p.name}</p>
                     <p className="text-xs font-mono text-slate-400">{p.code}</p>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{p.client.name} › {p.client.cluster.name}</td>
+                  <td className="px-4 py-3 text-slate-600">{p.account.name} › {p.account.cluster.name}</td>
                   <td className="px-4 py-3 text-slate-600">
                     {p.assignments.length === 0 ? <span className="text-slate-400 text-xs">Unassigned</span> : p.assignments.map((a) => a.user.fullName).join(", ")}
                   </td>

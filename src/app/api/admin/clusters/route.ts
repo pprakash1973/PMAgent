@@ -17,7 +17,12 @@ export async function GET() {
 
   const clusters = await prisma.cluster.findMany({
     where: { orgId: (user as any).orgId, deletedAt: null },
-    include: { _count: { select: { accounts: true } } },
+    include: {
+      _count: { select: { accounts: true } },
+      clusterAssignments: {
+        include: { user: { select: { id: true, fullName: true, email: true } } },
+      },
+    },
     orderBy: { name: "asc" },
   });
 

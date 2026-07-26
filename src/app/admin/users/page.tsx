@@ -35,8 +35,8 @@ interface User {
   copilotEnabled: boolean;
   createdAt: string;
   invitations: { expiresAt: string }[];
-  programAssignments: { program: { id: string; name: string; client: { name: string; cluster: { name: string } } } }[];
-  clientAssignments: { client: { id: string; name: string; cluster: { name: string } } }[];
+  programAssignments: { program: { id: string; name: string; account: { name: string; cluster: { name: string } } } }[];
+  clusterAssignments: { cluster: { id: string; name: string } }[];
 }
 
 const emptyForm = { fullName: "", email: "", role: "pm" };
@@ -200,9 +200,6 @@ export default function UsersPage() {
   const filtered = users.filter(
     (u) => u.fullName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
   );
-
-  // All clients from clusters (for DH picker — no cluster filter needed since DH picks across clients)
-  const allClients = clients; // populated from cluster selection in DH mode
 
   return (
     <div className="p-8">
@@ -423,28 +420,16 @@ export default function UsersPage() {
                     </div>
                   )}
 
-                  {/* DH: pick clients across all clusters */}
+                  {/* DH: pick clusters directly */}
                   {form.role === "dh" && (
                     <div className="space-y-4">
                       <div className="space-y-1.5">
-                        <Label>Filter by cluster (optional)</Label>
-                        <select
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#006E74]"
-                          value={selCluster}
-                          onChange={(e) => setSelCluster(e.target.value)}
-                        >
-                          <option value="">All clusters</option>
-                          {clusters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label>Clients (all programs under each client are accessible)</Label>
-                        {clients.length === 0 && !selCluster && (
-                          <p className="text-xs text-slate-400">Select a cluster to filter, or clients will appear once loaded.</p>
+                        <Label>Clusters (DH is accountable for all accounts within each selected cluster)</Label>
+                        {clusters.length === 0 && (
+                          <p className="text-xs text-slate-400">No clusters available. Create clusters first.</p>
                         )}
                         <div className="flex flex-wrap gap-2">
-                          {clients.map((c) => (
+                          {clusters.map((c) => (
                             <button
                               key={c.id}
                               type="button"
@@ -463,8 +448,8 @@ export default function UsersPage() {
                         </div>
                         <p className="text-xs text-slate-400 mt-1">
                           {selClients.length === 0
-                            ? "No clients selected — DH will have no project access."
-                            : `${selClients.length} client${selClients.length > 1 ? "s" : ""} selected`}
+                            ? "No clusters selected — DH will have no project access."
+                            : `${selClients.length} cluster${selClients.length > 1 ? "s" : ""} selected`}
                         </p>
                       </div>
                     </div>
@@ -518,16 +503,16 @@ export default function UsersPage() {
                       <div className="flex flex-wrap gap-1">
                         {u.programAssignments.map((a) => (
                           <span key={a.program.id} className="text-xs bg-[#E1F5EE] text-[#0F6E56] px-2 py-0.5 rounded-full">
-                            {a.program.client.cluster.name} › {a.program.client.name} › {a.program.name}
+                            {a.program.account?.cluster?.name} › {a.program.account?.name} › {a.program.name}
                           </span>
                         ))}
                       </div>
                     )}
-                    {u.role === "dh" && u.clientAssignments?.length > 0 && (
+                    {u.role === "dh" && u.clusterAssignments?.length > 0 && (
                       <div className="flex flex-wrap gap-1">
-                        {u.clientAssignments.map((a) => (
-                          <span key={a.client.id} className="text-xs bg-[#EEEDFE] text-[#3C3489] px-2 py-0.5 rounded-full">
-                            {a.client.cluster.name} › {a.client.name}
+                        {u.clusterAssignments.map((a) => (
+                          <span key={a.cluster.id} className="text-xs bg-[#EEEDFE] text-[#3C3489] px-2 py-0.5 rounded-full">
+                            {a.cluster.name}
                           </span>
                         ))}
                       </div>

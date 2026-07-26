@@ -40,8 +40,8 @@ export async function GET(req: NextRequest) {
           },
         },
       },
-      accountAssignments: {
-        include: { account: { include: { cluster: { select: { id: true, name: true } } } } },
+      clusterAssignments: {
+        include: { cluster: { select: { id: true, name: true } } },
       },
       invitations: { orderBy: { createdAt: "desc" }, take: 1 },
     },
@@ -66,8 +66,8 @@ export async function POST(req: NextRequest) {
         programAssignments: {
           include: { program: { include: { account: { include: { cluster: true } } } } },
         },
-        accountAssignments: {
-          include: { account: { include: { cluster: true } } },
+        clusterAssignments: {
+          include: { cluster: true },
         },
       },
     });
@@ -77,9 +77,9 @@ export async function POST(req: NextRequest) {
         mapping = existing.programAssignments
           .map((a) => `${a.program.account?.cluster?.name ?? "—"} › ${a.program.account?.name ?? "—"} › ${a.program.name}`)
           .join(", ");
-      } else if (existing.accountAssignments.length) {
-        mapping = existing.accountAssignments
-          .map((a) => `${a.account?.cluster?.name ?? "—"} › ${a.account?.name ?? "—"}`)
+      } else if (existing.clusterAssignments.length) {
+        mapping = existing.clusterAssignments
+          .map((a) => a.cluster?.name ?? "—")
           .join(", ");
       }
       return NextResponse.json(
