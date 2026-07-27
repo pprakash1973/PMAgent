@@ -40,20 +40,22 @@ export default async function DmTriagePage() {
 
   if (!["dm", "pgm", "admin"].includes(user.role)) redirect("/dashboard");
 
-  // Resolve account scope
+  // Resolve account + program scope
   let accountIds: string[] = [];
+  let programIds: string[] = [];
+
   if (user.role === "admin") {
     const accounts = await prisma.orgAccount.findMany({ where: { orgId: user.orgId, deletedAt: null }, select: { id: true } });
     accountIds = accounts.map((a) => a.id);
   } else if (user.role === "pgm") {
-    // pgm scope: derive accounts from their program assignments
     const pgmAssignments = await prisma.programAssignment.findMany({
       where: { userId: user.id },
-      include: { program: { select: { accountId: true } } },
+      include: { program: { select: { id: true, accountId: true } } },
     });
-    accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId))];
-    // fall back to AccountAssignment if any exist
-    if (accountIds.length === 0) {
+    programIds = pgmAssignments.map((a) => a.program.id);
+    accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId).filter(Boolean))] as string[];
+    // fall back to AccountAssignment if no programs
+    if (accountIds.length === 0 && programIds.length === 0) {
       const acctAssignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
       accountIds = acctAssignments.map((a) => a.accountId);
     }
@@ -64,16 +66,24 @@ export default async function DmTriagePage() {
     if (accountIds.length === 0) {
       const pgmAssignments = await prisma.programAssignment.findMany({
         where: { userId: user.id },
-        include: { program: { select: { accountId: true } } },
+        include: { program: { select: { id: true, accountId: true } } },
       });
+      programIds = pgmAssignments.map((a) => a.program.id);
       accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId).filter(Boolean))] as string[];
     }
   }
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-  const projects = accountIds.length === 0 ? [] : await prisma.project.findMany({
-    where: { orgId: user.orgId, deletedAt: null, status: { not: "closed" }, accountId: { in: accountIds } },
+  const hasScope = accountIds.length > 0 || programIds.length > 0;
+  const projects = !hasScope ? [] : await prisma.project.findMany({
+    where: {
+      orgId: user.orgId, deletedAt: null, status: { not: "closed" },
+      OR: [
+        ...(accountIds.length > 0 ? [{ accountId: { in: accountIds } }] : []),
+        ...(programIds.length > 0 ? [{ programId: { in: programIds } }] : []),
+      ],
+    },
     include: {
       pmOwner: { select: { id: true, fullName: true } },
       account: { select: { id: true, name: true } },
@@ -102,9 +112,15 @@ export default async function DmTriagePage() {
       });
       aiCounts.forEach((r) => { actionItemCountMap[r.projectId] = r._count.id; });
 
-      overdueActionItems = await prisma.actionItem.count({
-        where: { project: { accountId: { in: accountIds } }, status: { in: ["open", "acknowledged", "in_progress", "blocked"] }, dueDate: { lt: new Date() } },
-      });
+      const overdueWhere: any = {
+        status: { in: ["open", "acknowledged", "in_progress", "blocked"] },
+        dueDate: { lt: new Date() },
+        project: { OR: [
+          ...(accountIds.length > 0 ? [{ accountId: { in: accountIds } }] : []),
+          ...(programIds.length > 0 ? [{ programId: { in: programIds } }] : []),
+        ]},
+      };
+      overdueActionItems = await prisma.actionItem.count({ where: overdueWhere });
     } catch {
       // action_items table not yet migrated — counts default to 0
     }
