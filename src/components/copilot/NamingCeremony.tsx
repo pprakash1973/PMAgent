@@ -31,6 +31,13 @@ export function NamingCeremony({ pmName, onComplete, onSkip }: { pmName?: string
   const ff = "'Aptos','Calibri',system-ui,sans-serif";
   const displayName = name.trim() || "Advisor";
 
+  const FEATURES = [
+    { label: "Proactive review", note: "20 PMI checks on every project, automatic" },
+    { label: "EVM analysis", note: "SPI, CPI, EAC, TCPI in plain language" },
+    { label: "Risk & issue gaps", note: "flags missing owners and stale registers" },
+    { label: "One-click actions", note: "accept a finding to auto-log a risk or issue" },
+  ];
+
   return (
     /* Floating card above the FAB — no full-screen backdrop */
     <div style={{
@@ -71,6 +78,30 @@ export function NamingCeremony({ pmName, onComplete, onSkip }: { pmName?: string
         <p style={{ color: "rgba(255,255,255,.75)", fontSize: 11, margin: 0, lineHeight: 1.5 }}>
           Your AI copilot reviews every project automatically — always on, never surprised.
         </p>
+      </div>
+
+      {/* What I do for you — 2×2 bullet grid */}
+      <div style={{ padding: "10px 16px 0", borderBottom: "1px solid #eef0f3" }}>
+        <div style={{ fontSize: 9.5, fontWeight: 700, color: "#9ca3af", letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 8 }}>
+          What I do for you
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, marginBottom: 10 }}>
+          {FEATURES.map((f, i) => (
+            <div key={f.label} style={{
+              display: "flex", gap: 7, alignItems: "flex-start",
+              padding: "5px 8px 5px 0",
+              borderRight: i % 2 === 0 ? "1px solid #eef0f3" : "none",
+              paddingRight: i % 2 === 0 ? 8 : 0,
+              paddingLeft: i % 2 === 1 ? 8 : 0,
+            }}>
+              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#0F6E56", flexShrink: 0, marginTop: 5 }} />
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#1a1d24", lineHeight: 1.3 }}>{f.label}</div>
+                <div style={{ fontSize: 10, color: "#6b7280", lineHeight: 1.35 }}>{f.note}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Naming */}
