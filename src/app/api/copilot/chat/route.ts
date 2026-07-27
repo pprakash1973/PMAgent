@@ -190,19 +190,29 @@ const DOCUMENT_TOOLS = [
 
 async function executeProjectTool(toolName: string, toolInput: any, projectId: string): Promise<any> {
   if (toolName === "list_project_documents") {
-    const [artifacts, reqDocs] = await Promise.all([
+    const [artifacts, reqDocs, requirements] = await Promise.all([
       prisma.artifact.findMany({
         where: { projectId },
         select: { id: true, artifactType: true, status: true, createdAt: true },
       }),
       (prisma as any).requirementsDocument.findMany({
         where: { projectId, deletedAt: null },
-        select: { id: true, fileName: true, fileFormat: true, docClass: true, createdAt: true },
+        select: { id: true, fileName: true, fileFormat: true, docClass: true, createdAt: true, ingestionState: true },
+      }),
+      prisma.requirement.findMany({
+        where: { projectId, status: { not: "rejected" } },
+        select: { requirementKey: true, statement: true, type: true, category: true, status: true },
+        take: 100,
       }),
     ]);
     return {
       generated_artifacts: artifacts.map((a: any) => ({ id: a.id, type: a.artifactType, status: a.status })),
-      uploaded_documents: reqDocs.map((d: any) => ({ id: d.id, name: d.fileName, format: d.fileFormat, class: d.docClass })),
+      uploaded_documents: reqDocs.map((d: any) => ({
+        id: d.id, name: d.fileName, format: d.fileFormat, class: d.docClass, ready: d.ingestionState === "ready",
+      })),
+      extracted_requirements: requirements.map((r: any) => ({
+        key: r.requirementKey, statement: r.statement, type: r.type, category: r.category, status: r.status,
+      })),
     };
   }
 
@@ -213,25 +223,41 @@ async function executeProjectTool(toolName: string, toolInput: any, projectId: s
     const artifact = await prisma.artifact.findFirst({ where: { id: document_id, projectId } });
     if (artifact) {
       const raw = artifact.content;
-      const text = raw ? JSON.stringify(raw, null, 2).slice(0, 10000) : "No content";
+      const text = raw ? JSON.stringify(raw, null, 2).slice(0, 12000) : "No content generated yet";
       return { type: "artifact", artifactType: artifact.artifactType, content: text };
     }
 
-    // Try uploaded requirements document — use chunks if available, else extractedContent
+    // Try uploaded requirements document — query chunks directly (correct field is `text`, not `content`)
     const reqDoc = await (prisma as any).requirementsDocument.findFirst({
       where: { id: document_id, projectId, deletedAt: null },
-      include: { chunks: { orderBy: { id: "asc" }, take: 20 } },
     });
     if (reqDoc) {
+      const dbChunks = await prisma.documentChunk.findMany({
+        where: { documentId: document_id },
+        orderBy: [{ chunkIndex: "asc" } as any],
+        take: 60,
+        select: { text: true, sectionTitle: true } as any,
+      });
+
       let text: string;
-      if (reqDoc.chunks?.length > 0) {
-        text = (reqDoc.chunks as any[]).map((c: any) => c.content).join("\n\n").slice(0, 10000);
-      } else if (reqDoc.extractedContent) {
+      if ((dbChunks as any[]).length > 0) {
+        text = (dbChunks as any[])
+          .map((c: any) => c.sectionTitle ? `[${c.sectionTitle}]\n${c.text}` : c.text)
+          .join("\n\n")
+          .slice(0, 12000);
+      } else if (reqDoc.extractedContent && Object.keys(reqDoc.extractedContent).length > 0) {
+        // Fall back to structured extraction (useful when chunks not yet created)
         text = JSON.stringify(reqDoc.extractedContent, null, 2).slice(0, 10000);
       } else {
-        text = "Document has been uploaded but content has not been extracted yet.";
+        text = "Document content is not available. The file may still be processing.";
       }
-      return { type: "uploaded_document", fileName: reqDoc.fileName, format: reqDoc.fileFormat, content: text };
+      return {
+        type: "uploaded_document",
+        fileName: reqDoc.fileName,
+        format: reqDoc.fileFormat,
+        docClass: reqDoc.docClass,
+        content: text,
+      };
     }
 
     return { error: `Document ${document_id} not found in project ${projectId}` };
@@ -248,7 +274,6 @@ function buildSystemPrompt(assistantName: string, tab: string, project: any, kpi
 Today is ${today}.
 
 Your role is to help the Project Manager (PM) understand their project data, answer questions, and perform actions.
-You operate in READ/ANALYZE mode (Tier A) for analysis plus ACTION mode (Tier B/C) for writes.
 
 ## Active Context
 - Tab: ${tab}
@@ -258,16 +283,37 @@ You operate in READ/ANALYZE mode (Tier A) for analysis plus ACTION mode (Tier B/
 ${kpiSnapshot ? `- EVM: SPI=${kpiSnapshot.spi ?? "N/A"}, CPI=${kpiSnapshot.cpi ?? "N/A"}` : ""}
 ${project?.budget ? `- Budget: ${project.currency ?? "USD"} ${project.budget.toLocaleString()}` : ""}
 
-## What I can do
-- Tier A (Instant): Summarize, analyze, forecast, explain any artifact
-- Tier B (Auto-write + Undo): Log a risk, log an issue
-- Tier C (Confirm required): Regenerate the Initiation Deck, Regenerate the EWSR/Weekly Status Report, regenerate any artifact
+## Capabilities
+- Tier A (Analysis): Summarize, impact assessment, gap analysis, forecast, explain any artifact or document
+- Tier B (Auto-write): Log a risk, log an issue
+- Tier C (Confirm first): Regenerate any artifact
 
-## Guidelines
-- Be concise and PM-focused. Use PM terminology (SPI, EVM, RAG, milestone, risk).
-- When an action card is being shown separately, keep your text brief and confirmatory.
-- Cite specific numbers when data is available.
-- Keep responses under 150 words unless detail is requested.`;
+## Document Tools — MANDATORY USE FOR ANALYSIS
+You have two tools: list_project_documents and read_document.
+
+**You MUST use these tools whenever the user asks for:**
+- Impact analysis / impact assessment
+- Gap analysis / scope gap
+- Change analysis (change log, change request, CR)
+- Document review or summary
+- Schedule or cost implications of a change
+- Comparison of baseline vs current state
+
+**Protocol for analysis requests:**
+1. Call list_project_documents to see all available artifacts and uploaded files
+2. Call read_document for EVERY relevant document (the change log, scope baseline, schedule, etc.) — read them in parallel, not one at a time
+3. Synthesize a structured analysis from the actual content you read — never ask the user to paste content
+
+**CSV and spreadsheet files:** These contain the raw data rows. Read them directly — the content field will contain the full CSV text with all rows and columns.
+
+**Extracted requirements:** list_project_documents also returns extracted_requirements — use these for scope baseline comparisons.
+
+## Response Guidelines
+- For analysis tasks: be thorough, structured, and cite specific data from documents you read
+- For quick questions: be concise (2–4 sentences)
+- Always use PM terminology (SPI, EVM, RAG, scope baseline, milestone, critical path)
+- When referencing document content: quote the relevant row or clause verbatim
+- Never say you cannot access documents — use the tools`;
 }
 
 // ── POST handler ──────────────────────────────────────────────────────────────
@@ -555,12 +601,12 @@ export async function POST(req: NextRequest) {
       try {
         let fullResponse = "";
         const messages: any[] = [...recentHistory, { role: "user", content: message }];
-        const MAX_TOOL_ROUNDS = 4;
+        const MAX_TOOL_ROUNDS = 6;
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const anthropicStream = anthropic.messages.stream({
             model: "claude-sonnet-4-6",
-            max_tokens: 1500,
+            max_tokens: 4096,
             system: systemPrompt,
             tools: projectId ? (DOCUMENT_TOOLS as any) : [],
             messages,
