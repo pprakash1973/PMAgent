@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const user = session.user as any;
-  if (!["dm", "admin"].includes(user.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  if (!["dm", "pgm", "admin"].includes(user.role)) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
 
   const url = new URL(req.url);
   const statusFilter = url.searchParams.get("status");

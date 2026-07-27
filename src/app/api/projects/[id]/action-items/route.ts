@@ -54,7 +54,7 @@ export async function POST(
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
   const user = session.user as any;
-  if (!["dm", "admin", "dh"].includes(user.role)) {
+  if (!["dm", "pgm", "admin", "dh"].includes(user.role)) {
     return NextResponse.json({ error: "FORBIDDEN — only DM/DH/Admin can create action items" }, { status: 403 });
   }
 

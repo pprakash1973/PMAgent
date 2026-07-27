@@ -18,7 +18,7 @@ export async function POST(
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
   const user = session.user as any;
-  if (!["dm", "admin"].includes(user.role)) {
+  if (!["dm", "pgm", "admin"].includes(user.role)) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 

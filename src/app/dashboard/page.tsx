@@ -14,7 +14,7 @@ export default async function DashboardPage() {
 
   if (user.role === "dh") redirect("/dashboard/executive");
   if (user.role === "pgm") redirect("/dashboard/program");
-  if (user.role === "dm") redirect("/dashboard/dm");
+  if (user.role === "dm" || user.role === "pgm") redirect("/dashboard/dm");
 
   const projects = await prisma.project.findMany({
     where: {

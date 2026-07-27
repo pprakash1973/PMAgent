@@ -38,13 +38,25 @@ export default async function DmTriagePage() {
   const session = await auth();
   const user = session!.user as any;
 
-  if (!["dm", "admin"].includes(user.role)) redirect("/dashboard");
+  if (!["dm", "pgm", "admin"].includes(user.role)) redirect("/dashboard");
 
   // Resolve account scope
   let accountIds: string[] = [];
   if (user.role === "admin") {
     const accounts = await prisma.orgAccount.findMany({ where: { orgId: user.orgId, deletedAt: null }, select: { id: true } });
     accountIds = accounts.map((a) => a.id);
+  } else if (user.role === "pgm") {
+    // pgm scope: derive accounts from their program assignments
+    const pgmAssignments = await prisma.programAssignment.findMany({
+      where: { userId: user.id },
+      include: { program: { select: { accountId: true } } },
+    });
+    accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId))];
+    // fall back to AccountAssignment if any exist
+    if (accountIds.length === 0) {
+      const acctAssignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
+      accountIds = acctAssignments.map((a) => a.accountId);
+    }
   } else {
     const assignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
     accountIds = assignments.map((a) => a.accountId);

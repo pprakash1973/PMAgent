@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
   const user = session.user as any;
-  if (!["dm", "admin"].includes(user.role)) {
+  if (!["dm", "pgm", "admin"].includes(user.role)) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
@@ -82,6 +82,16 @@ export async function GET(req: NextRequest) {
       select: { id: true },
     });
     accountIds = accounts.map((a) => a.id);
+  } else if (user.role === "pgm") {
+    const pgmAssignments = await prisma.programAssignment.findMany({
+      where: { userId: user.id },
+      include: { program: { select: { accountId: true } } },
+    });
+    accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId))];
+    if (accountIds.length === 0) {
+      const acctAssignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
+      accountIds = acctAssignments.map((a) => a.accountId);
+    }
   } else {
     const assignments = await prisma.accountAssignment.findMany({
       where: { userId: user.id },

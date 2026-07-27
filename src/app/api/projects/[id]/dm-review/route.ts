@@ -12,7 +12,7 @@ export async function GET(
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
   const user = session.user as any;
-  if (!["dm", "admin", "dh"].includes(user.role)) {
+  if (!["dm", "pgm", "admin", "dh"].includes(user.role)) {
     return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
@@ -30,11 +30,19 @@ export async function GET(
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   // Scope check: DM must be assigned to this project's account
-  if (user.role === "dm") {
+  if (user.role === "dm" || user.role === "pgm") {
     const assignment = await prisma.accountAssignment.findFirst({
       where: { userId: user.id, accountId: project.accountId ?? "" },
     });
-    if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    // pgm fallback: check via program assignment if no direct account assignment
+    if (!assignment && user.role === "pgm") {
+      const pgmAssignment = await prisma.programAssignment.findFirst({
+        where: { userId: user.id, program: { accountId: project.accountId ?? "" } },
+      });
+      if (!pgmAssignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    } else if (!assignment) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
   }
 
   const [latestReport, risks, issues, milestones, artifacts] = await Promise.all([

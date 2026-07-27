@@ -6,8 +6,7 @@ import { useState } from "react";
 
 const CAN_PORTFOLIO = ["dh", "admin"];
 const CAN_EXECUTIVE = ["dh", "admin"];
-const CAN_PROGRAM   = ["pgm"];
-const CAN_DM        = ["dm"];
+const CAN_DM        = ["dm", "pgm"];
 
 // UST brand tokens
 const UST_PETROL    = "#003C51";
@@ -33,7 +32,6 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
   const isDmActions = path.includes("/dashboard/dm/action-items");
   const showPortfolio = CAN_PORTFOLIO.includes(role);
   const showExecutive = CAN_EXECUTIVE.includes(role);
-  const showProgram   = CAN_PROGRAM.includes(role);
   const showDm        = CAN_DM.includes(role);
 
   function railBtn(active: boolean, href: string, icon: React.ReactNode, label: string) {
@@ -78,19 +76,11 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
         "Actions"
       )}
-      {role !== "dh" && role !== "pgm" && role !== "dm" && railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
+      {!showDm && role !== "dh" && railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/></svg>,
         "Projects"
       )}
-      {showProgram && railBtn(path.includes("/program") && !path.includes("/escalations"), "/dashboard/program",
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 5h18M3 12h18M3 19h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
-        "Program"
-      )}
-      {showProgram && railBtn(path.includes("/escalations"), "/dashboard/program/escalations",
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/><path d="M12 9v4M12 17h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
-        "Escalations"
-      )}
-      {role !== "dh" && role !== "pgm" && showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
+      {role !== "dh" && !showDm && showPortfolio && railBtn(isPortfolio, "/dashboard/portfolio",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 13h5v8H3zM10 8h5v13h-5zM17 3h4v18h-4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round"/></svg>,
         "Portfolio"
       )}
@@ -149,7 +139,7 @@ type AskTurn = { question: string; answer: string; loading: boolean };
 
 const PORTFOLIO_SUGGESTIONS: Record<string, string[]> = {
   pm: ["Summarize the top risks across my projects", "Which of my projects need attention this week?", "Draft a status update email to my sponsor"],
-  pgm: ["Which projects are trending red and why?", "Where are we over budget across my programs?", "Summarize open risks needing escalation"],
+  pgm: ["Which of my projects need attention right now?", "Summarize overdue action items across all my accounts", "Which PMs have the most open issues this week?"],
   dh: ["Give me the portfolio health summary in 3 bullets", "What decisions need my sign-off this week?", "Which projects are the biggest cost risk?"],
   admin: ["Give me a portfolio-wide health and budget summary", "Which projects have the most open risks?", "Summarize this week's biggest delivery concerns"],
   dm: ["Which of my projects need attention right now?", "Summarize overdue action items across all my accounts", "Which PMs have the most open issues this week?"],

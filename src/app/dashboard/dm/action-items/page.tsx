@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function DmActionItemsPage() {
   const session = await auth();
   const user = session!.user as any;
-  if (!["dm", "admin"].includes(user.role)) redirect("/dashboard");
+  if (!["dm", "pgm", "admin"].includes(user.role)) redirect("/dashboard");
 
   let accountIds: string[] = [];
   if (user.role === "admin") {
