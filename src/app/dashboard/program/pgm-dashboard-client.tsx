@@ -166,7 +166,7 @@ export default function PgmDashboardClient({
         {/* ── Header ── */}
         <div style={{ marginBottom:20, display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
           <div>
-            <div style={{ fontSize:20, fontWeight:700, color: T.petrol }}>Delivery Manager Dashboard</div>
+            <div style={{ fontSize:20, fontWeight:700, color: T.petrol }}>Program Manager Dashboard</div>
             <div style={{ fontSize:13, color: T.muted, marginTop:3 }}>
               Welcome back, {userName.split(" ")[0]} · {programs.length} program{programs.length!==1?"s":""} · {projects.length} project{projects.length!==1?"s":""}
             </div>

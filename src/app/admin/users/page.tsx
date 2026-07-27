@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 const ROLE_LABELS: Record<string, string> = {
   pm: "Project Manager",
-  pgm: "Delivery Manager",
+  pgm: "Program Manager",
   dm: "Delivery Manager",
   dh: "Delivery Head",
   admin: "Admin",
@@ -355,11 +355,12 @@ export default function UsersPage() {
 
                   <div className="space-y-2">
                     <Label>Role</Label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       {[
-                        { v: "pm", label: "Project Manager", desc: "Manages individual projects in a program" },
-                        { v: "pgm", label: "Delivery Manager", desc: "Oversees multiple accounts" },
-                        { v: "dh", label: "Delivery Head", desc: "Accountable for one or more clients" },
+                        { v: "pm", label: "Project Manager", desc: "Manages individual projects within a program" },
+                        { v: "pgm", label: "Program Manager", desc: "Oversees projects across one or more programs" },
+                        { v: "dm", label: "Delivery Manager", desc: "Account-level oversight; raises action items for PMs" },
+                        { v: "dh", label: "Delivery Head", desc: "Accountable for one or more clusters" },
                         { v: "admin", label: "Admin", desc: "Full platform access, no hierarchy restriction" },
                       ].map(({ v, label, desc }) => (
                         <button
@@ -385,9 +386,9 @@ export default function UsersPage() {
                       type="button"
                       className="bg-[#006E74] hover:bg-[#004f54]"
                       disabled={!form.fullName || !form.email}
-                      onClick={() => form.role === "admin" ? createUser({ preventDefault: () => {} } as any) : setStep(2)}
+                      onClick={() => (form.role === "admin" || form.role === "dm") ? createUser({ preventDefault: () => {} } as any) : setStep(2)}
                     >
-                      {form.role === "admin" ? (submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send invitation") : <>Next <ChevronRight className="w-4 h-4 ml-1" /></>}
+                      {(form.role === "admin" || form.role === "dm") ? (submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send invitation") : <>Next <ChevronRight className="w-4 h-4 ml-1" /></>}
                     </Button>
                   </div>
                 </div>
@@ -407,6 +408,13 @@ export default function UsersPage() {
                   {form.role === "pm" && (
                     <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
                       Project Managers are assigned to projects directly — no cluster or program mapping needed at registration.
+                    </p>
+                  )}
+
+                  {/* DM: accounts assigned separately on Accounts page */}
+                  {form.role === "dm" && (
+                    <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                      Delivery Managers are assigned to accounts on the <strong>Accounts</strong> admin page — send the invitation first, then map accounts there.
                     </p>
                   )}
 

@@ -9,10 +9,8 @@ import crypto from "crypto";
 const createSchema = z.object({
   fullName: z.string().min(1),
   email: z.string().email(),
-  role: z.enum(["pm", "pgm", "dh", "admin"]),
-  // PM: single program; DM: multiple programs
+  role: z.enum(["pm", "pgm", "dm", "dh", "admin"]),
   programIds: z.array(z.string()).optional(),
-  // DH: cluster IDs (field kept as clientIds for API compat)
   clientIds: z.array(z.string()).optional(),
 });
 
