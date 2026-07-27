@@ -268,6 +268,7 @@ export default function NewProjectPage() {
       payload = {
         ...rest, engagementMode: "detailed",
         budget: form.budget ? parseFloat(form.budget) : undefined,
+        ...(clusterId ? { clusterId } : {}),
         ...(accountId ? { accountId } : {}),
         ...(programId ? { programId } : {}),
         ...(pmOwnerId ? { pmOwnerId } : {}),

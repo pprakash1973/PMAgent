@@ -18,8 +18,16 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "No issue register artifact found. Generate or upload one in the Artifacts tab first." }, { status: 404 });
   }
 
-  await syncArtifactToTables(id, artifact.artifactType, artifact.content);
+  try {
+    await syncArtifactToTables(id, artifact.artifactType, artifact.content);
+  } catch (err: any) {
+    console.error("[issues/import] syncArtifactToTables failed:", err);
+    return NextResponse.json({ error: `Sync failed: ${err?.message ?? "unknown error"}` }, { status: 500 });
+  }
 
   const issues = await prisma.issue.findMany({ where: { projectId: id }, orderBy: { createdAt: "asc" } });
+  if (issues.length === 0) {
+    return NextResponse.json({ error: "Artifact was found but contained no issues. Check the Issue Register artifact content." }, { status: 422 });
+  }
   return NextResponse.json({ imported: issues.length, issues });
 }

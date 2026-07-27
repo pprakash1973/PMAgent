@@ -118,19 +118,21 @@ export async function syncArtifactToTables(
     }
 
     case "issue_register": {
-      const issues: any[] = (content.issues ?? content.issueRegister ?? content.issueItems ?? content.issueLog ?? []) as any[];
+      // AI generates: { issues: [{id, title, description, severity, status, owner, resolutionPlan, targetResolutionDate, ...}] }
+      const raw = content.issues ?? content.issueRegister ?? content.issueItems ?? content.issueLog;
+      const issues: any[] = Array.isArray(raw) ? raw : [];
       if (issues.length === 0) return;
       await prisma.issue.deleteMany({ where: { projectId } });
       await prisma.issue.createMany({
         data: issues.map((iss: any) => ({
           projectId,
           issueId: iss.id ?? null,
-          description: String(iss.description ?? iss.title ?? iss.issue ?? ""),
+          description: String(iss.title ?? iss.description ?? iss.issue ?? ""),
           severity: normaliseSeverity(iss.severity ?? iss.priority),
           status: normaliseStatus(iss.status),
           owner: iss.owner ?? null,
           resolution: iss.resolutionPlan ?? iss.resolution ?? iss.action ?? null,
-          dueDate: safeDate(iss.dueDate ?? iss.targetResolutionDate),
+          dueDate: safeDate(iss.targetResolutionDate ?? iss.dueDate),
         })),
       });
       break;

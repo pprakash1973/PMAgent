@@ -77,7 +77,13 @@ export default async function ExecutivePage() {
     const clusterIds = assignments.map((a) => a.clusterId);
 
     const rawProjects = await prisma.project.findMany({
-      where: clusterIds.length ? { clusterId: { in: clusterIds }, deletedAt: null } : { id: "none" },
+      where: {
+        deletedAt: null,
+        OR: [
+          ...(clusterIds.length ? [{ clusterId: { in: clusterIds } }] : []),
+          { clusterId: null, orgId: user.orgId }, // unassigned projects visible to any DH in the org
+        ],
+      },
       include: {
         pmOwner:  { select: { fullName: true } },
         account:  { include: { cluster: true } },
