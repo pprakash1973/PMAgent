@@ -26,18 +26,18 @@ export async function transition(
   }
 
   // Role guards
-  const pmTransitions = ["acknowledged", "in_progress", "blocked", "submitted"];
-  const dmTransitions = ["closed", "cancelled"];
+  // PM (assignee) can move through all states on their own items — including closing/cancelling.
+  // DM/DH/Admin can close or cancel any item in their scope.
+  const isAssignedPm = item.assignedToId === actorId && ["pm", "pgm"].includes(actorRole);
+  const isDmOrAdmin = ["dm", "pgm", "dh", "admin"].includes(actorRole);
 
-  if (pmTransitions.includes(toStatus) && !["pm", "admin"].includes(actorRole)) {
-    // Only the assigned PM (or admin) can advance
-    if (item.assignedToId !== actorId && actorRole !== "admin") {
-      return { ok: false, response: NextResponse.json({ error: "FORBIDDEN" }, { status: 403 }) };
-    }
+  const pmOnlyTransitions = ["acknowledged", "in_progress", "blocked", "submitted"];
+  if (pmOnlyTransitions.includes(toStatus) && !isAssignedPm && actorRole !== "admin") {
+    return { ok: false, response: NextResponse.json({ error: "FORBIDDEN" }, { status: 403 }) };
   }
 
-  if (dmTransitions.includes(toStatus) && !["dm", "dh", "admin"].includes(actorRole)) {
-    return { ok: false, response: NextResponse.json({ error: "FORBIDDEN — only DM/DH/Admin can close or cancel" }, { status: 403 }) };
+  if (["closed", "cancelled"].includes(toStatus) && !isAssignedPm && !isDmOrAdmin) {
+    return { ok: false, response: NextResponse.json({ error: "FORBIDDEN — only the assigned PM, DM, or Admin can close or cancel" }, { status: 403 }) };
   }
 
   // Reject (DM closes back to in_progress) — special case

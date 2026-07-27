@@ -10,7 +10,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
   const user = session.user as any;
   const { actionId } = await params;
   const body = await req.json().catch(() => ({}));
-  if (!body.reason?.trim()) return NextResponse.json({ error: "reason is required to cancel" }, { status: 422 });
-  const result = await transition(actionId, user.id, user.role, "cancelled", { reason: body.reason });
+  const reason = body.reason?.trim() || "Not applicable";
+  const result = await transition(actionId, user.id, user.role, "cancelled", { reason });
   return result.response!;
 }

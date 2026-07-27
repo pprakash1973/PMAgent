@@ -155,6 +155,9 @@ export async function GET(
       dueDate: ai.dueDate?.toISOString() ?? null,
       raisedByName: ai.raisedBy.fullName,
       assignedToName: ai.assignedTo.fullName,
+      pmResponse: (ai as any).pmResponse ?? null,
+      closureNote: (ai as any).closureNote ?? null,
+      closedAt: (ai as any).closedAt?.toISOString() ?? null,
     })),
     reviewNotes: reviewNotes.map((n) => ({
       id: n.id,

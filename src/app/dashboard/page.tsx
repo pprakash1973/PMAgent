@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { FolderKanban, Plus, Clock, CheckSquare, AlertCircle } from "lucide-react";
+import { ActionItemsClient } from "./action-items-client";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -160,52 +161,19 @@ export default async function DashboardPage() {
               </span>
             )}
           </div>
-
-          {myActionItems.length === 0 ? (
-            <Card>
-              <CardContent className="py-10 text-center">
-                <CheckSquare className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-                <p className="text-sm text-slate-400">No open action items from your Delivery Manager</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {myActionItems.map((item) => {
-                const isOverdue = item.dueDate && item.dueDate < now;
-                const priorityColors: Record<string, string> = { p1: "text-red-600 bg-red-50 border-red-200", p2: "text-amber-700 bg-amber-50 border-amber-200", p3: "text-slate-600 bg-slate-50 border-slate-200" };
-                const statusColors: Record<string, string> = { open: "text-amber-700 bg-amber-50 border-amber-200", acknowledged: "text-teal-700 bg-teal-50 border-teal-200", in_progress: "text-indigo-700 bg-indigo-50 border-indigo-200", blocked: "text-red-600 bg-red-50 border-red-200" };
-                return (
-                  <Card key={item.id} className={`${isOverdue ? "border-red-300 bg-red-50/30" : ""}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            {isOverdue && <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
-                            <span className={`text-xs font-bold border rounded-full px-2 py-0.5 ${priorityColors[item.priority] ?? "text-slate-600 bg-slate-50 border-slate-200"}`}>
-                              {item.priority.toUpperCase()}
-                            </span>
-                            <Badge variant="outline" className={`text-xs ${statusColors[item.status] ?? ""}`}>
-                              {item.status.replace(/_/g, " ")}
-                            </Badge>
-                            <span className="text-xs font-mono text-slate-400">{item.reference}</span>
-                          </div>
-                          <p className="font-semibold text-slate-900 text-sm">{item.title}</p>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {item.project.name} · from {item.raisedBy.fullName}
-                            {item.dueDate && (
-                              <span className={`ml-2 font-medium ${isOverdue ? "text-red-600" : "text-slate-600"}`}>
-                                · Due {formatDate(item.dueDate)}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+          <ActionItemsClient
+            items={myActionItems.map((i: any) => ({
+              id: i.id,
+              reference: i.reference,
+              title: i.title,
+              priority: i.priority,
+              status: i.status,
+              dueDate: i.dueDate ? i.dueDate.toISOString() : null,
+              project: { id: i.project.id, name: i.project.name },
+              raisedBy: { fullName: i.raisedBy.fullName },
+            }))}
+            overdueCount={overdueCount}
+          />
         </div>
       )}
     </div>

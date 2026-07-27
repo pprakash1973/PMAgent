@@ -187,6 +187,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
   const projectId = detail?.project?.id;
   const items: any[] = detail?.actionItems ?? [];
   const open = items.filter((a: any) => !["closed", "cancelled"].includes(a.status));
+  const resolved = items.filter((a: any) => ["closed", "cancelled"].includes(a.status));
 
   async function add() {
     if (!projectId || !newText.trim()) return;
@@ -253,6 +254,41 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
               {statusBadge(act.status)}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Resolved items (closed / cancelled by PM) */}
+      {resolved.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ font: `700 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 6 }}>
+            Resolved by PM ({resolved.length})
+          </div>
+          <div style={{ background: C.panelBg, border: `1px solid ${C.borderLight}`, borderRadius: 11, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
+            {resolved.map((act: any, i: number) => {
+              const note = act.closureNote || act.pmResponse;
+              return (
+                <div key={act.id} style={{
+                  display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 16px",
+                  borderBottom: i < resolved.length - 1 ? `1px solid #f8f9fb` : "none",
+                  opacity: 0.75,
+                }}>
+                  {priorityDot(act.priority)}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: `500 13px ${C.FF}`, color: C.text, marginBottom: 2, textDecoration: act.status === "cancelled" ? "line-through" : "none" }}>{act.title}</div>
+                    {note && (
+                      <div style={{ font: `400 11px ${C.FF}`, color: C.textMuted, background: "#f7f8fa", borderRadius: 6, padding: "4px 8px", marginTop: 4 }}>
+                        PM: {note}
+                      </div>
+                    )}
+                    <div style={{ font: `400 10px ${C.FM}`, color: C.textFaint, marginTop: 3 }}>
+                      {act.assignedToName && <span>→ {act.assignedToName}</span>}
+                    </div>
+                  </div>
+                  {statusBadge(act.status)}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
