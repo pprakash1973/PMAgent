@@ -33,18 +33,23 @@ export default async function DashboardPage() {
     take: 20,
   });
 
-  // Fetch action items assigned to this PM
+  // Fetch action items assigned to this PM (table may not exist on older deployments)
   const now = new Date();
-  const myActionItems = user.role === "pm" ? await prisma.actionItem.findMany({
-    where: { assignedToId: user.id, status: { in: ["open", "acknowledged", "in_progress", "blocked"] } },
-    orderBy: [{ dueDate: "asc" }, { priority: "asc" }],
-    include: {
-      project: { select: { id: true, name: true } },
-      raisedBy: { select: { fullName: true } },
-    },
-    take: 10,
-  }) : [];
-  const overdueCount = myActionItems.filter(i => i.dueDate && i.dueDate < now).length;
+  let myActionItems: any[] = [];
+  try {
+    myActionItems = user.role === "pm" ? await prisma.actionItem.findMany({
+      where: { assignedToId: user.id, status: { in: ["open", "acknowledged", "in_progress", "blocked"] } },
+      orderBy: [{ dueDate: "asc" }, { priority: "asc" }],
+      include: {
+        project: { select: { id: true, name: true } },
+        raisedBy: { select: { fullName: true } },
+      },
+      take: 10,
+    }) : [];
+  } catch {
+    // action_items table not yet migrated
+  }
+  const overdueCount = myActionItems.filter((i: any) => i.dueDate && i.dueDate < now).length;
 
   return (
     <div className="p-8 space-y-8">
