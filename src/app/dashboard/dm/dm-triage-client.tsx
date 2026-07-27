@@ -180,7 +180,7 @@ function ProjectHeader({ p, detail }: { p: TriageRow; detail: any }) {
 
 function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName: string; onRefresh: () => void }) {
   const [newText, setNewText] = useState("");
-  const [priority, setPriority] = useState("high");
+  const [priority, setPriority] = useState("p2");
   const [due, setDue] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -220,7 +220,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
   }
 
   function priorityDot(p: string) {
-    const col = p === "high" ? C.red : p === "medium" ? C.amber : C.noData;
+    const col = p === "p1" ? C.red : p === "p2" ? C.amber : C.noData;
     return <div style={{ width: 7, height: 7, borderRadius: "50%", background: col, flexShrink: 0, marginTop: 5 }} />;
   }
 
@@ -245,11 +245,10 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
               {priorityDot(act.priority)}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ font: `500 13px ${C.FF}`, color: C.text, marginBottom: 2 }}>{act.title}</div>
-                {act.dueDate && (
-                  <div style={{ font: `400 10px ${C.FM}`, color: C.textFaint }}>
-                    Due {new Date(act.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
-                  </div>
-                )}
+                <div style={{ font: `400 10px ${C.FM}`, color: C.textFaint, display: "flex", gap: 8 }}>
+                  {act.assignedToName && <span>→ {act.assignedToName}</span>}
+                  {act.dueDate && <span>Due {new Date(act.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</span>}
+                </div>
               </div>
               {statusBadge(act.status)}
             </div>
@@ -274,18 +273,18 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
             height: 34, border: `1.5px solid ${C.borderLight}`, borderRadius: 8, padding: "0 10px",
             font: `500 12px ${C.FF}`, color: C.text, background: "#fafbfc", outline: "none", flex: 1, cursor: "pointer",
           }}>
-            <option value="high">🔴 High priority</option>
-            <option value="medium">🟡 Medium priority</option>
-            <option value="low">⚪ Low priority</option>
+            <option value="p1">P1 — Critical</option>
+            <option value="p2">P2 — Standard</option>
+            <option value="p3">P3 — Low</option>
           </select>
           <input
-            type="text"
+            type="date"
             value={due}
             onChange={e => setDue(e.target.value)}
-            placeholder="Due date (YYYY-MM-DD)"
+            min={new Date().toISOString().slice(0, 10)}
             style={{
-              height: 34, border: `1.5px solid ${C.borderLight}`, borderRadius: 8, padding: "0 12px",
-              font: `400 12px ${C.FF}`, color: C.text, background: "#fafbfc", outline: "none", flex: 1,
+              height: 34, border: `1.5px solid ${C.borderLight}`, borderRadius: 8, padding: "0 10px",
+              font: `400 12px ${C.FF}`, color: due ? C.text : C.textFaint, background: "#fafbfc", outline: "none", flex: 1, cursor: "pointer",
             }}
           />
           <button onClick={add} disabled={saving || !newText.trim()} style={{

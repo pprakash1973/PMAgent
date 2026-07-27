@@ -77,7 +77,10 @@ export async function GET(
       prisma.actionItem.findMany({
         where: { projectId: id },
         orderBy: [{ status: "asc" }, { dueDate: "asc" }],
-        include: { raisedBy: { select: { fullName: true } } },
+        include: {
+          raisedBy: { select: { fullName: true } },
+          assignedTo: { select: { fullName: true } },
+        },
       }),
       prisma.dmReviewNote.findMany({
         where: {
@@ -151,6 +154,7 @@ export async function GET(
       status: ai.status,
       dueDate: ai.dueDate?.toISOString() ?? null,
       raisedByName: ai.raisedBy.fullName,
+      assignedToName: ai.assignedTo.fullName,
     })),
     reviewNotes: reviewNotes.map((n) => ({
       id: n.id,
