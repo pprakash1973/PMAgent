@@ -1,281 +1,643 @@
 "use client";
-import { useState } from "react";
-import { DrillDownPanel } from "./drill-down-panel";
+import { useState, useEffect, useCallback } from "react";
 
 type TriageRow = {
-  id: string;
-  name: string;
-  accountId: string | null;
-  accountName: string | null;
-  programId: string | null;
-  programName: string | null;
-  pmId: string;
-  pmName: string;
-  healthStatus: string;
-  band: "red" | "amber" | "no_data" | "green";
-  attentionScore: number;
-  spi: number | null;
-  cpi: number | null;
-  compositeScore: number | null;
-  openActionItems: number;
-  highRisks: number;
-  criticalIssues: number;
-  nextMilestone: { name: string; dueDate: string } | null;
-  phase: string;
-  lastReportDate: string | null;
+  id: string; name: string; accountId: string | null; accountName: string | null;
+  programId: string | null; programName: string | null; pmId: string; pmName: string;
+  healthStatus: string; band: "red" | "amber" | "no_data" | "green"; attentionScore: number;
+  spi: number | null; cpi: number | null; compositeScore: number | null;
+  openActionItems: number; highRisks: number; criticalIssues: number;
+  nextMilestone: { name: string; dueDate: string } | null; phase: string; lastReportDate: string | null;
 };
-
 type TriageData = {
   bands: { red: TriageRow[]; amber: TriageRow[]; no_data: TriageRow[]; green: TriageRow[] };
   counts: { red: number; amber: number; no_data: number; green: number; total: number };
   overdueActionItems: number;
 };
 
-const UST_PETROL = "#003C51";
-const UST_BORDER = "#D7E0E3";
-const UST_WASH = "#F2F7F8";
+const C = {
+  bg: "#f0f2f5",
+  sidebarBg: "#13151e",
+  tabBar: "#1b1e27",
+  border: "rgba(255,255,255,.08)",
+  borderLight: "#e2e5ea",
+  red: "#cf3f3a", redBg: "rgba(207,63,58,.14)", redBorder: "rgba(207,63,58,.22)",
+  amber: "#c17d12", amberBg: "rgba(193,125,18,.1)", amberBorder: "rgba(193,125,18,.18)",
+  green: "#158a5a", greenBg: "rgba(21,138,90,.1)", greenBorder: "rgba(21,138,90,.18)",
+  noData: "#6b7280", noDataBg: "rgba(107,114,128,.1)", noDataBorder: "rgba(107,114,128,.22)",
+  blue: "#4f5bd5", blueL: "#5b67e0",
+  text: "#1a1d24", textMuted: "#5b616e", textFaint: "#8a909c",
+  panelBg: "#fff",
+  FF: "'Aptos','Calibri',system-ui,sans-serif",
+  FM: "'Consolas','Courier New',monospace",
+};
 
-function bandConfig(band: string) {
-  switch (band) {
-    case "red": return { color: "#cf3f3a", bg: "#fbe4e2", label: "RED", dot: "🔴" };
-    case "amber": return { color: "#c17d12", bg: "#fbf0da", label: "AMBER", dot: "🟡" };
-    case "no_data": return { color: "#6b7280", bg: "#f3f4f6", label: "NO DATA", dot: "⚪" };
-    default: return { color: "#158a5a", bg: "#e3f3ea", label: "GREEN", dot: "🟢" };
-  }
+function ragColor(band: string) {
+  if (band === "red") return C.red;
+  if (band === "amber") return C.amber;
+  if (band === "green") return C.green;
+  return C.noData;
 }
-
-function phaseLabel(phase: string) {
-  return phase.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+function ragLabel(band: string) {
+  if (band === "red") return "RED";
+  if (band === "amber") return "AMBER";
+  if (band === "no_data") return "NO DATA";
+  return "GREEN";
 }
-
-function formatDate(d: string | null) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+function spiColor(v: number | null) {
+  if (v === null) return C.textFaint;
+  if (v < 0.85) return C.red;
+  if (v < 0.95) return C.amber;
+  return C.green;
 }
+function fmt(v: number | null) { return v === null ? "—" : v.toFixed(2); }
+function clamp(lo: number, hi: number, v: number) { return Math.max(lo, Math.min(hi, v)); }
+function pct(v: number | null) { return v === null ? null : clamp(0, 100, Math.round(v * 100)); }
 
-function MetricChip({ label, value, warn }: { label: string; value: string | null; warn?: boolean }) {
-  if (!value) return null;
+// ── Project list item (left sidebar) ──────────────────────────────────────────
+
+function SidebarItem({ p, selected, onClick }: { p: TriageRow; selected: boolean; onClick: () => void }) {
+  const rc = ragColor(p.band);
+  const sc = spiColor(p.spi);
+  const issueCount = p.highRisks + p.criticalIssues;
   return (
-    <span style={{
-      fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 6,
-      background: warn ? "#fbe4e2" : "#f1f5f9",
-      color: warn ? "#cf3f3a" : "#475569",
-      border: `1px solid ${warn ? "#fca5a5" : UST_BORDER}`,
-    }}>
-      {label} {value}
-    </span>
-  );
-}
-
-function ProjectRow({ row, onReview, onActionItem }: {
-  row: TriageRow;
-  onReview: (id: string) => void;
-  onActionItem: (id: string) => void;
-}) {
-  const bc = bandConfig(row.band);
-  const spiWarn = row.spi !== null && row.spi < 0.85;
-  const cpiWarn = row.cpi !== null && row.cpi < 0.85;
-
-  return (
-    <div style={{
-      background: "#fff", border: `1px solid ${UST_BORDER}`, borderRadius: 10,
-      padding: "14px 16px", marginBottom: 8,
-      borderLeft: `4px solid ${bc.color}`,
-      display: "flex", flexDirection: "column", gap: 8,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        {/* Band dot */}
-        <span style={{ fontSize: 14 }}>{bc.dot}</span>
-
-        {/* Project name */}
-        <button
-          onClick={() => onReview(row.id)}
-          style={{
-            fontWeight: 700, fontSize: 15, color: UST_PETROL, background: "none",
-            border: "none", cursor: "pointer", padding: 0, textDecoration: "underline",
-            textDecorationColor: "transparent", textUnderlineOffset: 2,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.textDecorationColor = UST_PETROL)}
-          onMouseLeave={(e) => (e.currentTarget.style.textDecorationColor = "transparent")}
-        >
-          {row.name}
-        </button>
-
-        {/* Account · Program */}
-        <span style={{ fontSize: 12, color: "#64748b" }}>
-          {row.accountName ?? "—"}{row.programName ? ` · ${row.programName}` : ""}
-        </span>
-
-        <div style={{ flex: 1 }} />
-
-        {/* Attention score badge */}
-        <span style={{
-          fontSize: 11, fontWeight: 700, color: bc.color,
-          background: bc.bg, border: `1px solid ${bc.color}30`,
-          borderRadius: 6, padding: "2px 8px",
-        }}>
-          Attn {row.attentionScore}
-        </span>
+    <div onClick={onClick} style={{
+      padding: "9px 14px", cursor: "pointer",
+      background: selected ? "rgba(79,91,213,.18)" : "transparent",
+      borderLeft: selected ? `3px solid ${C.blueL}` : "3px solid transparent",
+      transition: "background .12s",
+    }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = "rgba(255,255,255,.04)"; }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.background = "transparent"; }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+        <div style={{ width: 8, height: 8, borderRadius: "50%", background: rc, flexShrink: 0 }} />
+        <span style={{ font: `600 12px ${C.FF}`, color: "#fff", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
       </div>
-
-      {/* Second line: PM, metrics, phase */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, color: "#64748b" }}>
-          PM: <strong style={{ color: "#1e293b" }}>{row.pmName}</strong>
-        </span>
-        <span style={{ color: UST_BORDER }}>|</span>
-        <span style={{ fontSize: 12, color: "#64748b" }}>{phaseLabel(row.phase)}</span>
-        {row.spi !== null && <MetricChip label="SPI" value={row.spi.toFixed(2)} warn={spiWarn} />}
-        {row.cpi !== null && <MetricChip label="CPI" value={row.cpi.toFixed(2)} warn={cpiWarn} />}
-        {row.highRisks > 0 && <MetricChip label="⚠" value={`${row.highRisks} high risks`} warn />}
-        {row.criticalIssues > 0 && <MetricChip label="🔥" value={`${row.criticalIssues} critical issues`} warn />}
-        {row.openActionItems > 0 && (
-          <MetricChip label="◷" value={`${row.openActionItems} open action${row.openActionItems > 1 ? "s" : ""}`} warn={row.openActionItems > 2} />
-        )}
-        {row.nextMilestone && (
-          <span style={{ fontSize: 12, color: "#64748b" }}>
-            Next: <strong style={{ color: "#1e293b" }}>{row.nextMilestone.name}</strong> {formatDate(row.nextMilestone.dueDate)}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 16 }}>
+        <span style={{ font: `400 10px ${C.FF}`, color: "rgba(255,255,255,.35)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.pmName}</span>
+        <span style={{ font: `600 10.5px ${C.FM}`, color: sc }}>{fmt(p.spi)}</span>
+        {issueCount > 0 && (
+          <span style={{ font: `700 8.5px ${C.FF}`, color: "#e07a77", background: "rgba(207,63,58,.18)", borderRadius: 4, padding: "1px 5px" }}>
+            {issueCount} issue{issueCount !== 1 ? "s" : ""}
           </span>
         )}
       </div>
+    </div>
+  );
+}
 
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 8 }}>
-        {[
-          { label: "Review", action: () => onReview(row.id), primary: true },
-          { label: "Action Item", action: () => onActionItem(row.id), primary: false },
-        ].map(({ label, action, primary }) => (
-          <button
-            key={label}
-            onClick={action}
-            style={{
-              fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 7, cursor: "pointer",
-              background: primary ? UST_PETROL : "#fff",
-              color: primary ? "#fff" : UST_PETROL,
-              border: `1.5px solid ${primary ? UST_PETROL : UST_BORDER}`,
-            }}
-          >
-            {label}
+// ── Project header (right panel top) ──────────────────────────────────────────
+
+function ProjectHeader({ p, detail }: { p: TriageRow; detail: any }) {
+  const rc = ragColor(p.band);
+  const rl = ragLabel(p.band);
+  const schedPct = pct(p.spi);
+  const budPct = pct(p.cpi);
+  const schedColor = p.spi === null ? C.textFaint : p.spi < 0.85 ? C.red : p.spi < 0.95 ? C.amber : C.green;
+  const budColor = p.cpi === null ? C.textFaint : p.cpi < 0.85 ? C.red : p.cpi < 0.95 ? C.amber : C.green;
+
+  return (
+    <div style={{ background: C.panelBg, borderBottom: `1px solid ${C.borderLight}`, flexShrink: 0, boxShadow: "0 2px 10px rgba(0,0,0,.06)" }}>
+      <div style={{ padding: "14px 24px 12px", display: "flex", alignItems: "flex-start", gap: 14 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5, flexWrap: "wrap" as const }}>
+            <div style={{ width: 11, height: 11, borderRadius: "50%", background: rc, boxShadow: `0 0 0 3px ${rc}30`, flexShrink: 0 }} />
+            <h1 style={{ margin: 0, font: `700 17px/1.2 ${C.FF}`, color: C.text }}>{p.name}</h1>
+            <span style={{ font: `700 9.5px ${C.FF}`, color: rc, background: `${rc}18`, border: `1px solid ${rc}30`, borderRadius: 5, padding: "2px 8px", letterSpacing: ".05em" }}>{rl}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, paddingLeft: 21, flexWrap: "wrap" as const }}>
+            {p.accountName && <><span style={{ font: `400 12px ${C.FF}`, color: C.textMuted }}>{p.accountName}</span><span style={{ color: "#d3d7de" }}>·</span></>}
+            {detail?.project?.programName && <><span style={{ font: `400 12px ${C.FF}`, color: C.textMuted }}>{detail.project.programName}</span><span style={{ color: "#d3d7de" }}>·</span></>}
+            <span style={{ font: `500 12px ${C.FF}`, color: C.textMuted }}>PM: <strong style={{ color: C.text }}>{p.pmName}</strong></span>
+            <span style={{ color: "#d3d7de" }}>·</span>
+            <span style={{ font: `400 12px ${C.FF}`, color: C.textMuted }}>{p.phase.replace(/_/g, " ")}</span>
+          </div>
+        </div>
+        {p.band === "red" && (
+          <button style={{
+            height: 32, padding: "0 13px",
+            background: `linear-gradient(135deg, ${C.red}, #c43a36)`,
+            color: "#fff", border: "none", borderRadius: 8,
+            font: `600 11.5px ${C.FF}`, cursor: "pointer",
+            boxShadow: "0 3px 10px rgba(207,63,58,.28)",
+            whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+          }}>
+            <span>⚑</span> Escalate
           </button>
-        ))}
+        )}
       </div>
-    </div>
-  );
-}
-
-function BandSection({ band, rows, collapsed: initCollapsed, onReview, onActionItem }: {
-  band: "red" | "amber" | "no_data" | "green";
-  rows: TriageRow[];
-  collapsed: boolean;
-  onReview: (id: string) => void;
-  onActionItem: (id: string) => void;
-}) {
-  const [collapsed, setCollapsed] = useState(initCollapsed);
-  const bc = bandConfig(band);
-  if (rows.length === 0) return null;
-
-  return (
-    <div style={{ marginBottom: 24 }}>
-      <div
-        style={{
-          display: "flex", alignItems: "center", gap: 10, marginBottom: 10,
-          cursor: "pointer", userSelect: "none",
-        }}
-        onClick={() => setCollapsed((c) => !c)}
-      >
-        <span style={{ fontSize: 13, fontWeight: 700, color: bc.color, letterSpacing: "0.06em" }}>
-          ▾ {bc.dot} {bc.label} — {rows.length} project{rows.length !== 1 ? "s" : ""}
-        </span>
-        <div style={{ flex: 1, height: 1, background: `${bc.color}30` }} />
-        <span style={{ fontSize: 11, color: "#94a3b8" }}>{collapsed ? "expand" : "collapse"}</span>
-      </div>
-      {!collapsed && rows.map((r) => (
-        <ProjectRow key={r.id} row={r} onReview={onReview} onActionItem={onActionItem} />
-      ))}
-    </div>
-  );
-}
-
-export function DmTriageClient({ data, userName }: { data: TriageData; userName: string }) {
-  const [reviewProjectId, setReviewProjectId] = useState<string | null>(null);
-  const [actionItemProjectId, setActionItemProjectId] = useState<string | null>(null);
-
-  const { bands, counts, overdueActionItems } = data;
-
-  const greenCollapsed = bands.green.length > 5;
-  const noDataCollapsed = bands.no_data.length > 5;
-
-  return (
-    <div style={{ padding: "28px 32px", maxWidth: 1100, margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: UST_PETROL, marginBottom: 4 }}>
-          Triage
-        </h1>
-        <p style={{ fontSize: 13, color: "#64748b" }}>
-          {counts.total} project{counts.total !== 1 ? "s" : ""} across your assigned accounts — sorted by attention priority
-        </p>
-      </div>
-
-      {/* Band summary chips */}
-      <div style={{
-        display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap",
-        padding: "14px 18px", background: UST_WASH, borderRadius: 10, border: `1px solid ${UST_BORDER}`,
-      }}>
-        {[
-          { band: "red", label: "Red", count: counts.red },
-          { band: "amber", label: "Amber", count: counts.amber },
-          { band: "no_data", label: "No Data", count: counts.no_data },
-          { band: "green", label: "Green", count: counts.green },
-        ].map(({ band, label, count }) => {
-          const bc = bandConfig(band);
-          return (
-            <span key={band} style={{ fontSize: 13, fontWeight: 600, color: bc.color }}>
-              {bc.dot} {count} {label}
-            </span>
-          );
-        })}
-        {overdueActionItems > 0 && (
+      <div style={{ padding: "0 24px 14px", display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" as const }}>
+        <div style={{ textAlign: "center" as const }}>
+          <div style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 2 }}>SPI</div>
+          <div style={{ font: `700 21px ${C.FM}`, color: spiColor(p.spi), lineHeight: 1 }}>{fmt(p.spi)}</div>
+        </div>
+        <div style={{ width: 1, height: 32, background: "#eef0f3" }} />
+        <div style={{ textAlign: "center" as const }}>
+          <div style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 2 }}>CPI</div>
+          <div style={{ font: `700 21px ${C.FM}`, color: spiColor(p.cpi), lineHeight: 1 }}>{fmt(p.cpi)}</div>
+        </div>
+        {schedPct !== null && (
           <>
-            <span style={{ color: UST_BORDER }}>·</span>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#cf3f3a" }}>
-              ◷ {overdueActionItems} overdue action{overdueActionItems !== 1 ? "s" : ""}
-            </span>
+            <div style={{ width: 1, height: 32, background: "#eef0f3" }} />
+            <div style={{ width: 140 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint }}>Schedule</span>
+                <span style={{ font: `600 10.5px ${C.FM}`, color: schedColor }}>{schedPct}%</span>
+              </div>
+              <div style={{ height: 7, background: "#eef0f3", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ height: "100%", borderRadius: 4, background: schedColor, width: `${schedPct}%`, transition: "width .4s" }} />
+              </div>
+            </div>
+          </>
+        )}
+        {budPct !== null && (
+          <div style={{ width: 140 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint }}>Budget</span>
+              <span style={{ font: `600 10.5px ${C.FM}`, color: budColor }}>{budPct}%</span>
+            </div>
+            <div style={{ height: 7, background: "#eef0f3", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: 4, background: budColor, width: `${budPct}%`, transition: "width .4s" }} />
+            </div>
+          </div>
+        )}
+        {p.openActionItems > 0 && (
+          <>
+            <div style={{ width: 1, height: 32, background: "#eef0f3" }} />
+            <div style={{ textAlign: "center" as const }}>
+              <div style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 2 }}>Open Actions</div>
+              <div style={{ font: `700 21px ${C.FM}`, color: C.amber, lineHeight: 1 }}>{p.openActionItems}</div>
+            </div>
           </>
         )}
       </div>
+    </div>
+  );
+}
 
-      {counts.total === 0 && (
-        <div style={{ textAlign: "center", padding: "60px 0", color: "#94a3b8" }}>
-          <p style={{ fontSize: 16 }}>No projects in your assigned accounts.</p>
-          <p style={{ fontSize: 13, marginTop: 6 }}>Contact an administrator to assign accounts to your profile.</p>
+// ── Action items section ───────────────────────────────────────────────────────
+
+function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName: string; onRefresh: () => void }) {
+  const [newText, setNewText] = useState("");
+  const [priority, setPriority] = useState("high");
+  const [due, setDue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const projectId = detail?.project?.id;
+  const items: any[] = detail?.actionItems ?? [];
+  const open = items.filter((a: any) => !["closed", "cancelled"].includes(a.status));
+
+  async function add() {
+    if (!projectId || !newText.trim()) return;
+    setSaving(true);
+    try {
+      await fetch(`/api/projects/${projectId}/action-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newText.trim(), priority, dueDate: due || null, category: "delivery" }),
+      });
+      setNewText(""); setDue("");
+      onRefresh();
+    } catch {}
+    setSaving(false);
+  }
+
+  function statusBadge(status: string) {
+    const map: Record<string, { label: string; bg: string; color: string }> = {
+      open: { label: "Open", bg: "#eef0f3", color: C.textFaint },
+      acknowledged: { label: "Ack'd", bg: "#e8f0fe", color: "#3a54c4" },
+      in_progress: { label: "In Progress", bg: "#e3f3ea", color: C.green },
+      blocked: { label: "Blocked", bg: "#fbe4e2", color: C.red },
+      submitted: { label: "Submitted", bg: "#fdf3e0", color: C.amber },
+      closed: { label: "Closed", bg: "#e3f3ea", color: C.green },
+      cancelled: { label: "Cancelled", bg: "#f3f4f6", color: C.noData },
+    };
+    const cfg = map[status] ?? map.open;
+    return (
+      <span style={{ font: `600 9.5px ${C.FF}`, background: cfg.bg, color: cfg.color, borderRadius: 5, padding: "2px 7px" }}>{cfg.label}</span>
+    );
+  }
+
+  function priorityDot(p: string) {
+    const col = p === "high" ? C.red : p === "medium" ? C.amber : C.noData;
+    return <div style={{ width: 7, height: 7, borderRadius: "50%", background: col, flexShrink: 0, marginTop: 5 }} />;
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+        <span style={{ font: `700 11px ${C.FF}`, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.textFaint }}>
+          Action Items for {pmName}
+        </span>
+        {open.length > 0 && (
+          <span style={{ font: `600 10px ${C.FF}`, color: C.amber, background: "#fdf3e0", borderRadius: 4, padding: "2px 7px" }}>{open.length} open</span>
+        )}
+      </div>
+
+      {open.length > 0 && (
+        <div style={{ background: C.panelBg, border: `1px solid ${C.borderLight}`, borderRadius: 11, overflow: "hidden", marginBottom: 12, boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
+          {open.map((act: any, i: number) => (
+            <div key={act.id} style={{
+              display: "flex", alignItems: "flex-start", gap: 10, padding: "11px 16px",
+              borderBottom: i < open.length - 1 ? `1px solid #f8f9fb` : "none",
+            }}>
+              {priorityDot(act.priority)}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ font: `500 13px ${C.FF}`, color: C.text, marginBottom: 2 }}>{act.title}</div>
+                {act.dueDate && (
+                  <div style={{ font: `400 10px ${C.FM}`, color: C.textFaint }}>
+                    Due {new Date(act.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                  </div>
+                )}
+              </div>
+              {statusBadge(act.status)}
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Band sections */}
-      <BandSection band="red" rows={bands.red} collapsed={false} onReview={setReviewProjectId} onActionItem={setActionItemProjectId} />
-      <BandSection band="amber" rows={bands.amber} collapsed={false} onReview={setReviewProjectId} onActionItem={setActionItemProjectId} />
-      <BandSection band="no_data" rows={bands.no_data} collapsed={noDataCollapsed} onReview={setReviewProjectId} onActionItem={setActionItemProjectId} />
-      <BandSection band="green" rows={bands.green} collapsed={greenCollapsed} onReview={setReviewProjectId} onActionItem={setActionItemProjectId} />
-
-      {/* Drill-down panel */}
-      {reviewProjectId && (
-        <DrillDownPanel
-          projectId={reviewProjectId}
-          onClose={() => setReviewProjectId(null)}
-          initialTab="review"
-          openActionItem={() => { setActionItemProjectId(reviewProjectId); setReviewProjectId(null); }}
+      {/* Quick add */}
+      <div style={{ background: C.panelBg, border: `1.5px solid ${C.borderLight}`, borderRadius: 11, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
+        <textarea
+          value={newText}
+          onChange={e => setNewText(e.target.value)}
+          placeholder={`Describe the action for ${pmName}…`}
+          style={{
+            width: "100%", height: 64, border: `1.5px solid ${C.borderLight}`, borderRadius: 8,
+            padding: "9px 12px", font: `400 13px ${C.FF}`, color: C.text,
+            resize: "none" as const, outline: "none", background: "#fafbfc", lineHeight: 1.5, marginBottom: 9,
+          }}
         />
+        <div style={{ display: "flex", gap: 8 }}>
+          <select value={priority} onChange={e => setPriority(e.target.value)} style={{
+            height: 34, border: `1.5px solid ${C.borderLight}`, borderRadius: 8, padding: "0 10px",
+            font: `500 12px ${C.FF}`, color: C.text, background: "#fafbfc", outline: "none", flex: 1, cursor: "pointer",
+          }}>
+            <option value="high">🔴 High priority</option>
+            <option value="medium">🟡 Medium priority</option>
+            <option value="low">⚪ Low priority</option>
+          </select>
+          <input
+            type="text"
+            value={due}
+            onChange={e => setDue(e.target.value)}
+            placeholder="Due date (YYYY-MM-DD)"
+            style={{
+              height: 34, border: `1.5px solid ${C.borderLight}`, borderRadius: 8, padding: "0 12px",
+              font: `400 12px ${C.FF}`, color: C.text, background: "#fafbfc", outline: "none", flex: 1,
+            }}
+          />
+          <button onClick={add} disabled={saving || !newText.trim()} style={{
+            height: 34, padding: "0 18px",
+            background: saving || !newText.trim() ? "#c9cdd6" : `linear-gradient(135deg, ${C.blueL}, ${C.blue})`,
+            color: "#fff", border: "none", borderRadius: 8,
+            font: `600 12.5px ${C.FF}`, cursor: saving || !newText.trim() ? "not-allowed" : "pointer",
+            boxShadow: "0 3px 10px rgba(79,91,213,.25)", whiteSpace: "nowrap" as const,
+          }}>
+            {saving ? "Saving…" : "Assign →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Issues & Risks section ────────────────────────────────────────────────────
+
+function IssuesRisks({ detail }: { detail: any }) {
+  const openIssues = (detail?.issues ?? []).filter((i: any) => i.status === "open");
+  const highRisks = (detail?.risks ?? []).filter((r: any) => r.status === "open" && ["high", "very_high"].includes(r.probability));
+  const combined = [
+    ...openIssues.map((i: any) => ({ type: "issue", sev: i.severity, title: i.description, body: i.description, owner: i.owner })),
+    ...highRisks.map((r: any) => ({ type: "risk", sev: r.impact, title: r.description, body: r.description, owner: r.owner })),
+  ].slice(0, 4);
+
+  if (combined.length === 0) return null;
+
+  return (
+    <div>
+      <div style={{ font: `700 11px ${C.FF}`, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 9 }}>Issues &amp; Risks</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        {combined.map((item, i) => {
+          const isHigh = ["critical", "high", "very_high"].includes(item.sev);
+          const borderCol = isHigh ? C.red : C.amber;
+          const typeCol = item.type === "issue" ? C.red : C.amber;
+          const typeBg = item.type === "issue" ? "rgba(207,63,58,.1)" : "rgba(193,125,18,.1)";
+          return (
+            <div key={i} style={{
+              background: C.panelBg, border: `1px solid ${isHigh ? "rgba(207,63,58,.2)" : "rgba(193,125,18,.2)"}`,
+              borderLeft: `3px solid ${borderCol}`, borderRadius: 11, padding: "13px 16px",
+              boxShadow: "0 1px 3px rgba(0,0,0,.04)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
+                <span style={{ font: `700 9px ${C.FF}`, color: typeCol, background: typeBg, borderRadius: 5, padding: "2px 7px", textTransform: "uppercase" as const, letterSpacing: ".04em" }}>
+                  {item.type === "issue" ? "Issue" : "Risk"} · {item.sev}
+                </span>
+              </div>
+              <div style={{ font: `400 12.5px ${C.FF}`, color: C.textMuted, lineHeight: 1.5 }}>{item.body}</div>
+              {item.owner && <div style={{ marginTop: 4, font: `400 10px ${C.FM}`, color: C.textFaint }}>Owner: {item.owner}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Health Overview tab ───────────────────────────────────────────────────────
+
+function HealthOverview({ data, onSelect }: { data: TriageData; onSelect: (id: string) => void }) {
+  const all = [...data.bands.red, ...data.bands.amber, ...data.bands.no_data, ...data.bands.green];
+  const total = data.counts.total;
+  const avgSpi = all.length > 0 ? all.filter(p => p.spi !== null).reduce((s, p) => s + (p.spi ?? 0), 0) / Math.max(1, all.filter(p => p.spi !== null).length) : null;
+  const avgCpi = all.length > 0 ? all.filter(p => p.cpi !== null).reduce((s, p) => s + (p.cpi ?? 0), 0) / Math.max(1, all.filter(p => p.cpi !== null).length) : null;
+
+  const kpiCard = (title: string, value: number | string, subtitle: string | null, color: string, border: string, bg: string = C.panelBg) => (
+    <div style={{ flex: 1, minWidth: 130, background: bg, border: `1px solid ${border}`, borderRadius: 13, padding: "16px 18px" }}>
+      <div style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: color, marginBottom: 8, opacity: .7 }}>{title}</div>
+      <div style={{ font: `700 32px ${C.FM}`, color: color, lineHeight: 1 }}>{value}</div>
+      {subtitle && <div style={{ font: `400 11px ${C.FF}`, color: C.textFaint, marginTop: 4 }}>{subtitle}</div>}
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "22px 28px 48px", background: C.bg }}>
+      {/* KPI strip */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" as const }}>
+        {kpiCard("Total Projects", total, null, C.text, C.borderLight, "#1b1e27")}
+        {kpiCard("At Risk", data.counts.red, total ? `${Math.round(data.counts.red / total * 100)}% of portfolio` : null, C.red, "rgba(207,63,58,.25)")}
+        {kpiCard("Needs Watch", data.counts.amber, total ? `${Math.round(data.counts.amber / total * 100)}% of portfolio` : null, C.amber, "rgba(193,125,18,.25)")}
+        {kpiCard("On Track", data.counts.green, total ? `${Math.round(data.counts.green / total * 100)}% of portfolio` : null, C.green, "rgba(21,138,90,.25)")}
+        <div style={{ flex: 1, minWidth: 130, background: C.panelBg, border: `1px solid ${C.borderLight}`, borderRadius: 13, padding: "16px 18px" }}>
+          <div style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 10 }}>Avg SPI / CPI</div>
+          <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+            <div><div style={{ font: `400 9px ${C.FF}`, color: C.textFaint }}>SPI</div><div style={{ font: `700 22px ${C.FM}`, color: spiColor(avgSpi), lineHeight: 1.1 }}>{fmt(avgSpi)}</div></div>
+            <div style={{ width: 1, background: "#eef0f3" }} />
+            <div><div style={{ font: `400 9px ${C.FF}`, color: C.textFaint }}>CPI</div><div style={{ font: `700 22px ${C.FM}`, color: spiColor(avgCpi), lineHeight: 1.1 }}>{fmt(avgCpi)}</div></div>
+          </div>
+        </div>
+        <div style={{ flex: 1.6, minWidth: 180, background: C.panelBg, border: `1px solid ${C.borderLight}`, borderRadius: 13, padding: "16px 18px" }}>
+          <div style={{ font: `600 9px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 10 }}>RAG Distribution</div>
+          {total > 0 && (
+            <div style={{ height: 10, borderRadius: 5, overflow: "hidden", display: "flex", marginBottom: 8 }}>
+              <div style={{ background: C.red, width: `${data.counts.red / total * 100}%`, transition: "width .4s" }} />
+              <div style={{ background: C.amber, width: `${data.counts.amber / total * 100}%`, transition: "width .4s" }} />
+              <div style={{ background: C.green, width: `${(data.counts.green + data.counts.no_data) / total * 100}%`, transition: "width .4s" }} />
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 12 }}>
+            <span style={{ font: `500 11px ${C.FF}`, color: C.red }}>● {data.counts.red} Red</span>
+            <span style={{ font: `500 11px ${C.FF}`, color: C.amber }}>● {data.counts.amber} Amber</span>
+            <span style={{ font: `500 11px ${C.FF}`, color: C.green }}>● {data.counts.green} Green</span>
+          </div>
+        </div>
+      </div>
+
+      {/* All projects table */}
+      <div style={{ background: C.panelBg, border: `1px solid ${C.borderLight}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,.05)" }}>
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid #f0f2f5`, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ font: `700 13px ${C.FF}`, color: C.text }}>All Projects</span>
+          <span style={{ font: `400 11px ${C.FF}`, color: C.textFaint }}>· sorted by risk</span>
+          <div style={{ flex: 1 }} />
+          <span style={{ font: `400 11px ${C.FF}`, color: C.textFaint }}>{total} projects</span>
+        </div>
+        {/* Table header */}
+        <div style={{ display: "flex", alignItems: "center", padding: "8px 20px", background: "#f7f8fa", borderBottom: "1px solid #eceef2", font: `700 9.5px ${C.FF}`, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.textFaint }}>
+          <span style={{ flex: 1.8, minWidth: 160 }}>Project</span>
+          <span style={{ width: 100 }}>Account</span>
+          <span style={{ width: 90 }}>PM</span>
+          <span style={{ width: 62 }}>Status</span>
+          <span style={{ width: 54 }}>SPI</span>
+          <span style={{ width: 54 }}>CPI</span>
+          <span style={{ width: 60 }}>Actions</span>
+          <span style={{ width: 60 }} />
+        </div>
+        {/* Table rows */}
+        {all.length === 0 && (
+          <div style={{ padding: "40px 20px", textAlign: "center" as const, color: C.textFaint, font: `400 13px ${C.FF}` }}>No projects in your assigned accounts.</div>
+        )}
+        {all.map((p, i) => {
+          const rc = ragColor(p.band);
+          const rl = ragLabel(p.band);
+          return (
+            <div key={p.id} style={{
+              display: "flex", alignItems: "center", padding: "10px 20px",
+              borderBottom: i < all.length - 1 ? "1px solid #f8f9fb" : "none",
+              background: i % 2 === 0 ? C.panelBg : "#fafbfc",
+            }}>
+              <div style={{ flex: 1.8, minWidth: 160, display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                <div style={{ width: 9, height: 9, borderRadius: "50%", background: rc, flexShrink: 0 }} />
+                <span style={{ font: `600 12.5px ${C.FF}`, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.name}</span>
+              </div>
+              <span style={{ width: 100, font: `400 12px ${C.FF}`, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.accountName ?? "—"}</span>
+              <span style={{ width: 90, font: `400 12px ${C.FF}`, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.pmName}</span>
+              <span style={{ width: 62 }}>
+                <span style={{ font: `700 9px ${C.FF}`, color: rc, background: `${rc}18`, border: `1px solid ${rc}30`, borderRadius: 5, padding: "2px 6px", letterSpacing: ".04em" }}>{rl}</span>
+              </span>
+              <span style={{ width: 54, font: `600 13px ${C.FM}`, color: spiColor(p.spi) }}>{fmt(p.spi)}</span>
+              <span style={{ width: 54, font: `600 13px ${C.FM}`, color: spiColor(p.cpi) }}>{fmt(p.cpi)}</span>
+              <span style={{ width: 60 }}>
+                {p.openActionItems > 0 && (
+                  <span style={{ font: `600 10px ${C.FF}`, color: C.amber, background: "#fdf3e0", borderRadius: 4, padding: "2px 6px" }}>{p.openActionItems} open</span>
+                )}
+              </span>
+              <span style={{ width: 60, font: `600 12px ${C.FF}`, color: C.blue, cursor: "pointer", textAlign: "right" as const }}
+                onClick={() => onSelect(p.id)}>
+                View →
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export function DmTriageClient({ data, userName }: { data: TriageData; userName: string }) {
+  const [tab, setTab] = useState<"portfolio" | "health">("portfolio");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+
+  const allProjects = [...data.bands.red, ...data.bands.amber, ...data.bands.no_data, ...data.bands.green];
+
+  // Auto-select first project
+  useEffect(() => {
+    if (allProjects.length > 0 && selectedId === null) {
+      setSelectedId(allProjects[0].id);
+    }
+  }, [allProjects.length]);
+
+  const fetchDetail = useCallback((id: string) => {
+    setDetail(null);
+    setDetailLoading(true);
+    fetch(`/api/projects/${id}/dm-review`)
+      .then(r => r.json())
+      .then(d => { setDetail(d); setDetailLoading(false); })
+      .catch(() => setDetailLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (selectedId) fetchDetail(selectedId);
+  }, [selectedId, fetchDetail]);
+
+  const sel = allProjects.find(p => p.id === selectedId);
+
+  const q = searchQ.toLowerCase();
+  const filteredRed = data.bands.red.filter(p => !q || p.name.toLowerCase().includes(q) || p.pmName.toLowerCase().includes(q));
+  const filteredOther = [...data.bands.amber, ...data.bands.no_data, ...data.bands.green].filter(p => !q || p.name.toLowerCase().includes(q) || p.pmName.toLowerCase().includes(q));
+
+  function selectAndView(id: string) {
+    setSelectedId(id);
+    setTab("portfolio");
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 60px)", overflow: "hidden", fontFamily: C.FF }}>
+      {/* ── Tab bar ─────────────────────────────────────── */}
+      <div style={{ background: C.tabBar, borderBottom: `1px solid ${C.border}`, padding: "0 22px", display: "flex", gap: 4, flexShrink: 0 }}>
+        {([["portfolio", "My Portfolio"], ["health", "Health Overview"]] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)} style={{
+            padding: "12px 16px 11px", border: "none", background: "transparent",
+            font: `600 12.5px ${C.FF}`,
+            color: tab === key ? "#fff" : "rgba(255,255,255,.45)",
+            borderBottom: tab === key ? `2px solid ${C.blueL}` : "2px solid transparent",
+            cursor: "pointer",
+          }}>{label}</button>
+        ))}
+        <div style={{ flex: 1 }} />
+        {data.counts.total > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingRight: 4 }}>
+            {data.counts.red > 0 && <span style={{ font: `600 10.5px ${C.FF}`, color: "#e07a77", background: "rgba(207,63,58,.16)", borderRadius: 4, padding: "2px 8px" }}>🔴 {data.counts.red} Red</span>}
+            {data.counts.amber > 0 && <span style={{ font: `600 10.5px ${C.FF}`, color: "#c89a44", background: "rgba(193,125,18,.14)", borderRadius: 4, padding: "2px 8px" }}>🟡 {data.counts.amber} Amber</span>}
+            <span style={{ font: `400 10.5px ${C.FF}`, color: "rgba(255,255,255,.3)" }}>{data.counts.total} projects</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Portfolio tab ───────────────────────────────── */}
+      {tab === "portfolio" && (
+        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+          {/* LEFT SIDEBAR */}
+          <div style={{ width: 272, background: C.sidebarBg, display: "flex", flexDirection: "column", flexShrink: 0, borderRight: "1px solid rgba(255,255,255,.05)" }}>
+            {/* Search */}
+            <div style={{ padding: "11px 10px 7px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, height: 32, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, padding: "0 10px" }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="rgba(255,255,255,.3)" strokeWidth="2" /><path d="M20 20l-3-3" stroke="rgba(255,255,255,.3)" strokeWidth="2" strokeLinecap="round" /></svg>
+                <input type="text" placeholder="Search projects…" value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                  style={{ border: "none", background: "transparent", font: `400 11.5px ${C.FF}`, color: "rgba(255,255,255,.65)", outline: "none", flex: 1 }} />
+              </div>
+            </div>
+
+            {/* Status chips */}
+            <div style={{ padding: "0 10px 8px", display: "flex", gap: 5, flexWrap: "wrap" as const }}>
+              {data.counts.red > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 5, padding: "3px 8px" }}>
+                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.red }} />
+                  <span style={{ font: `600 9.5px ${C.FF}`, color: "#e07a77" }}>{data.counts.red} Red</span>
+                </div>
+              )}
+              {data.counts.amber > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.amberBg, border: `1px solid ${C.amberBorder}`, borderRadius: 5, padding: "3px 8px" }}>
+                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }} />
+                  <span style={{ font: `600 9.5px ${C.FF}`, color: "#c89a44" }}>{data.counts.amber} Amber</span>
+                </div>
+              )}
+              {data.counts.green > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.greenBg, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "3px 8px" }}>
+                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }} />
+                  <span style={{ font: `600 9.5px ${C.FF}`, color: "#3aad79" }}>{data.counts.green} Green</span>
+                </div>
+              )}
+            </div>
+
+            {/* Project list */}
+            <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
+              {allProjects.length === 0 ? (
+                <div style={{ padding: "24px 14px", font: `400 12px ${C.FF}`, color: "rgba(255,255,255,.25)", textAlign: "center" as const }}>
+                  No projects in your assigned accounts.
+                </div>
+              ) : (
+                <>
+                  {filteredRed.length > 0 && (
+                    <>
+                      <div style={{ padding: "6px 14px 5px", display: "flex", alignItems: "center", gap: 7 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: "50%", background: C.red, flexShrink: 0 }} />
+                        <span style={{ font: `700 9px ${C.FF}`, letterSpacing: ".09em", textTransform: "uppercase" as const, color: "rgba(207,63,58,.75)" }}>Immediate Attention</span>
+                      </div>
+                      {filteredRed.map(p => <SidebarItem key={p.id} p={p} selected={selectedId === p.id} onClick={() => setSelectedId(p.id)} />)}
+                    </>
+                  )}
+                  {filteredOther.length > 0 && (
+                    <>
+                      <div style={{ height: 1, background: "rgba(255,255,255,.05)", margin: "8px 10px" }} />
+                      <div style={{ padding: "4px 14px 5px" }}>
+                        <span style={{ font: `700 9px ${C.FF}`, letterSpacing: ".09em", textTransform: "uppercase" as const, color: "rgba(255,255,255,.22)" }}>
+                          Other Projects ({filteredOther.length})
+                        </span>
+                      </div>
+                      {filteredOther.map(p => <SidebarItem key={p.id} p={p} selected={selectedId === p.id} onClick={() => setSelectedId(p.id)} />)}
+                    </>
+                  )}
+                  {filteredRed.length === 0 && filteredOther.length === 0 && searchQ && (
+                    <div style={{ padding: "24px 14px", font: `400 12px ${C.FF}`, color: "rgba(255,255,255,.25)", textAlign: "center" as const }}>No matches</div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* AI bar */}
+            <div style={{ padding: "9px 10px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0e1017" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, height: 32, background: "linear-gradient(135deg,rgba(79,91,213,.1),rgba(91,103,224,.06))", border: "1px solid rgba(79,91,213,.2)", borderRadius: 8, padding: "0 11px", cursor: "pointer" }}>
+                <span style={{ color: "#7b85e8", fontSize: 12 }}>✦</span>
+                <span style={{ font: `400 11.5px ${C.FF}`, color: "rgba(255,255,255,.4)" }}>Ask AI about portfolio…</span>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT PANEL */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.bg }}>
+            {allProjects.length === 0 ? (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: C.textFaint, padding: 40 }}>
+                <p style={{ font: `500 16px ${C.FF}`, margin: 0 }}>No projects in your assigned accounts.</p>
+                <p style={{ font: `400 13px ${C.FF}`, margin: 0 }}>Contact an administrator to assign accounts to your profile.</p>
+              </div>
+            ) : !sel ? (
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: C.textFaint }}>
+                <p style={{ font: `400 14px ${C.FF}` }}>Select a project from the list</p>
+              </div>
+            ) : (
+              <>
+                <ProjectHeader p={sel} detail={detail} />
+                {detailLoading ? (
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ font: `400 13px ${C.FF}`, color: C.textFaint }}>Loading project data…</span>
+                  </div>
+                ) : (
+                  <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px 48px", display: "flex", flexDirection: "column", gap: 18 }}>
+                    {detail && <IssuesRisks detail={detail} />}
+                    {detail && (
+                      <ActionItemsSection
+                        detail={detail}
+                        pmName={sel.pmName}
+                        onRefresh={() => fetchDetail(sel.id)}
+                      />
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       )}
 
-      {/* Action item create panel */}
-      {actionItemProjectId && (
-        <DrillDownPanel
-          projectId={actionItemProjectId}
-          onClose={() => setActionItemProjectId(null)}
-          initialTab="action-item"
-          openActionItem={() => {}}
-        />
+      {/* ── Health Overview tab ─────────────────────────── */}
+      {tab === "health" && (
+        <HealthOverview data={data} onSelect={selectAndView} />
       )}
     </div>
   );

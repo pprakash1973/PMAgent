@@ -318,8 +318,8 @@ export function CopilotPanel() {
       .then(d => {
         setEnabled(d.copilotEnabled);
         setAssistantName(d.assistantName || "Advisor");
-        // Show ceremony when copilot hasn't been activated yet
-        if (!d.copilotEnabled) setShowNaming(true);
+        // Show ceremony only for enabled users who haven't named their assistant yet
+        if (d.copilotEnabled && !d.isNamed) setShowNaming(true);
       })
       .catch(() => setEnabled(false));
   }, [session]);
@@ -397,8 +397,8 @@ export function CopilotPanel() {
 
   if (!session?.user || enabled === null || skippedThisSession) return null;
 
-  // Ceremony: show full-screen onboarding when not yet activated
-  if (showNaming && enabled === false) {
+  // Ceremony: show full-screen onboarding when enabled but not yet named
+  if (showNaming && enabled === true) {
     return (
       <NamingCeremony
         pmName={(session?.user as any)?.name?.split(" ")[0] || ""}
