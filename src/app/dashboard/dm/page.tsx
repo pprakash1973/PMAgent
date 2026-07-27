@@ -166,7 +166,7 @@ export default async function DmTriagePage() {
     overdueActionItems,
   };
 
-  return <DmTriageClient data={serialized} userName={user.name ?? user.email} />;
+  return <DmTriageClient data={serialized} userName={user.name ?? user.email} userRole={user.role} />;
 }
 
 function serializeRow(r: any) {

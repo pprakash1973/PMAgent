@@ -414,7 +414,9 @@ function HealthOverview({ data, onSelect }: { data: TriageData; onSelect: (id: s
         </div>
         {/* Table rows */}
         {all.length === 0 && (
-          <div style={{ padding: "40px 20px", textAlign: "center" as const, color: C.textFaint, font: `400 13px ${C.FF}` }}>No projects in your assigned accounts.</div>
+          <div style={{ padding: "40px 20px", textAlign: "center" as const, color: C.textFaint, font: `400 13px ${C.FF}` }}>
+            {userRole === "pgm" ? "No projects in your assigned programs." : "No projects in your assigned accounts."}
+          </div>
         )}
         {all.map((p, i) => {
           const rc = ragColor(p.band);
@@ -455,7 +457,7 @@ function HealthOverview({ data, onSelect }: { data: TriageData; onSelect: (id: s
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function DmTriageClient({ data, userName }: { data: TriageData; userName: string }) {
+export function DmTriageClient({ data, userName, userRole }: { data: TriageData; userName: string; userRole?: string }) {
   const [tab, setTab] = useState<"portfolio" | "health">("portfolio");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
@@ -558,7 +560,7 @@ export function DmTriageClient({ data, userName }: { data: TriageData; userName:
             <div style={{ flex: 1, overflowY: "auto", paddingBottom: 12 }}>
               {allProjects.length === 0 ? (
                 <div style={{ padding: "24px 14px", font: `400 12px ${C.FF}`, color: "rgba(255,255,255,.25)", textAlign: "center" as const }}>
-                  No projects in your assigned accounts.
+                  {userRole === "pgm" ? "No projects in your assigned programs." : "No projects in your assigned accounts."}
                 </div>
               ) : (
                 <>
@@ -602,8 +604,14 @@ export function DmTriageClient({ data, userName }: { data: TriageData; userName:
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: C.bg }}>
             {allProjects.length === 0 ? (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: C.textFaint, padding: 40 }}>
-                <p style={{ font: `500 16px ${C.FF}`, margin: 0 }}>No projects in your assigned accounts.</p>
-                <p style={{ font: `400 13px ${C.FF}`, margin: 0 }}>Contact an administrator to assign accounts to your profile.</p>
+                <p style={{ font: `500 16px ${C.FF}`, margin: 0 }}>
+                  {userRole === "pgm" ? "No projects in your assigned programs." : "No projects in your assigned accounts."}
+                </p>
+                <p style={{ font: `400 13px ${C.FF}`, margin: 0 }}>
+                  {userRole === "pgm"
+                    ? "Contact an administrator to assign programs to your profile."
+                    : "Contact an administrator to assign accounts to your profile."}
+                </p>
               </div>
             ) : !sel ? (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: C.textFaint }}>

@@ -217,7 +217,7 @@ async function main() {
       healthStatus: "amber",
       description: "Full SAP ERP implementation replacing legacy systems across 12 retail stores and HQ. Includes finance, inventory, and HR modules.",
     },
-    update: {},
+    update: { programId: program.id },
   });
 
   for (const m of [

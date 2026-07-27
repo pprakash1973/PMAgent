@@ -13,7 +13,6 @@ export default async function DashboardPage() {
   const user = session!.user as any;
 
   if (user.role === "dh") redirect("/dashboard/executive");
-  if (user.role === "pgm") redirect("/dashboard/program");
   if (user.role === "dm" || user.role === "pgm") redirect("/dashboard/dm");
 
   const projects = await prisma.project.findMany({
@@ -93,58 +92,56 @@ export default async function DashboardPage() {
             {projects.map((project) => {
               const nextMilestone = project.milestones[0] ?? null;
               return (
-                <Card key={project.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-4">
-                      {/* Left: project info */}
-                      <div className="flex-1 min-w-0">
-                        <Link href={`/dashboard/projects/${project.id}`} className="block">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-slate-900 truncate hover:text-blue-700">
-                              {project.name}
-                            </h3>
-                            <Badge variant={project.healthStatus as any} className="shrink-0">
-                              {project.healthStatus.toUpperCase()}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            {project.customer} · {project.methodology}
-                            {project.endDate && ` · Due ${formatDate(project.endDate)}`}
-                          </p>
-                          <div className="flex items-center gap-4 mt-1.5 text-xs text-slate-400">
-                            <span>{project._count.risks} risks</span>
-                            <span>{project._count.issues} issues</span>
-                            {project.budget && (
-                              <span>{formatCurrency(project.budget, project.currency)}</span>
-                            )}
-                          </div>
-                        </Link>
-                      </div>
+                <div key={project.id} className="grid gap-3" style={{ gridTemplateColumns: "1fr minmax(200px, 240px)" }}>
+                  {/* Left tile: project info */}
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4">
+                      <Link href={`/dashboard/projects/${project.id}`} className="block">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold text-slate-900 truncate hover:text-blue-700">
+                            {project.name}
+                          </h3>
+                          <Badge variant={project.healthStatus as any} className="shrink-0">
+                            {project.healthStatus.toUpperCase()}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {project.customer} · {project.methodology}
+                          {project.endDate && ` · Due ${formatDate(project.endDate)}`}
+                        </p>
+                        <div className="flex items-center gap-4 mt-1.5 text-xs text-slate-400">
+                          <span>{project._count.risks} risks</span>
+                          <span>{project._count.issues} issues</span>
+                          {project.budget && (
+                            <span>{formatCurrency(project.budget, project.currency)}</span>
+                          )}
+                        </div>
+                      </Link>
+                    </CardContent>
+                  </Card>
 
-                      {/* Divider */}
-                      <div className="w-px self-stretch bg-slate-100 shrink-0" />
-
-                      {/* Right: next milestone */}
-                      <div className="w-56 shrink-0">
-                        {nextMilestone ? (
-                          <div className="flex items-start gap-2">
-                            <Clock className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                            <div>
-                              <p className="text-xs font-medium text-slate-700 leading-tight">
-                                {nextMilestone.name}
-                              </p>
-                              <p className="text-xs text-blue-700 font-medium mt-0.5">
-                                {formatDate(nextMilestone.dueDate)}
-                              </p>
-                            </div>
+                  {/* Right tile: next milestone */}
+                  <Card className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex flex-col justify-center h-full">
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Next milestone</p>
+                      {nextMilestone ? (
+                        <div className="flex items-start gap-2">
+                          <Clock className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="text-xs font-medium text-slate-700 leading-tight">
+                              {nextMilestone.name}
+                            </p>
+                            <p className="text-xs text-blue-700 font-medium mt-0.5">
+                              {formatDate(nextMilestone.dueDate)}
+                            </p>
                           </div>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic">No upcoming milestones</p>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">No upcoming milestones</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               );
             })}
           </div>
