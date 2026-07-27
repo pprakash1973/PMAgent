@@ -63,13 +63,32 @@ export default async function DmTriagePage() {
         select: {
           risks: { where: { status: "open", probability: { in: ["high", "very_high"] } } },
           issues: { where: { status: "open", severity: { in: ["critical", "high"] } } },
-          actionItems: { where: { status: { in: ["open", "acknowledged", "in_progress", "blocked"] } } },
         },
       },
       milestones: { where: { status: "pending" }, orderBy: { dueDate: "asc" }, take: 1 },
     },
     orderBy: { updatedAt: "desc" },
   });
+
+  // Fetch action item counts separately — table may not exist on older deployments
+  let actionItemCountMap: Record<string, number> = {};
+  let overdueActionItems = 0;
+  if (projects.length > 0) {
+    try {
+      const aiCounts = await prisma.actionItem.groupBy({
+        by: ["projectId"],
+        where: { projectId: { in: projects.map((p) => p.id) }, status: { in: ["open", "acknowledged", "in_progress", "blocked"] } },
+        _count: { id: true },
+      });
+      aiCounts.forEach((r) => { actionItemCountMap[r.projectId] = r._count.id; });
+
+      overdueActionItems = await prisma.actionItem.count({
+        where: { project: { accountId: { in: accountIds } }, status: { in: ["open", "acknowledged", "in_progress", "blocked"] }, dueDate: { lt: new Date() } },
+      });
+    } catch {
+      // action_items table not yet migrated — counts default to 0
+    }
+  }
 
   type TriageRow = {
     id: string; name: string; accountId: string | null; accountName: string | null;
@@ -87,7 +106,7 @@ export default async function DmTriagePage() {
     const spi = hs?.spi ?? null;
     const cpi = hs?.cpi ?? null;
     const composite = hs?.compositeScore ?? null;
-    const openAI = p._count.actionItems;
+    const openAI = actionItemCountMap[p.id] ?? 0;
     const highR = p._count.risks;
     const critI = p._count.issues;
     const band = toBand(p.healthStatus, hasRecentReport);
@@ -111,10 +130,6 @@ export default async function DmTriagePage() {
     green: sorted.filter((r) => r.band === "green"),
   };
   const counts = { red: bands.red.length, amber: bands.amber.length, no_data: bands.no_data.length, green: bands.green.length, total: rows.length };
-
-  const overdueActionItems = accountIds.length === 0 ? 0 : await prisma.actionItem.count({
-    where: { project: { accountId: { in: accountIds } }, status: { in: ["open", "acknowledged", "in_progress", "blocked"] }, dueDate: { lt: new Date() } },
-  });
 
   // Serialize dates for client component
   const serialized = {

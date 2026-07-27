@@ -70,6 +70,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         (session.user as any).role = token.role;
         (session.user as any).orgId = token.orgId;
         (session.user as any).orgName = token.orgName;
+
+        // Freshen role + org from DB so role changes take effect without re-login
+        try {
+          const fresh = await prisma.user.findUnique({
+            where: { id: token.sub! },
+            select: { role: true, orgId: true },
+          });
+          if (fresh) {
+            (session.user as any).role = fresh.role;
+            (session.user as any).orgId = fresh.orgId;
+          }
+        } catch {
+          // DB unavailable — fall back to cached token values
+        }
       }
       return session;
     },

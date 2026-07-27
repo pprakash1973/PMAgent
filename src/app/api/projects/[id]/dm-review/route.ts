@@ -37,7 +37,7 @@ export async function GET(
     if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   }
 
-  const [latestReport, risks, issues, milestones, artifacts, actionItems, reviewNotes] = await Promise.all([
+  const [latestReport, risks, issues, milestones, artifacts] = await Promise.all([
     prisma.statusReport.findFirst({
       where: { projectId: id },
       orderBy: { reportDate: "desc" },
@@ -61,23 +61,32 @@ export async function GET(
       where: { projectId: id },
       orderBy: { updatedAt: "desc" },
     }),
-    prisma.actionItem.findMany({
-      where: { projectId: id },
-      orderBy: [{ status: "asc" }, { dueDate: "asc" }],
-      include: { raisedBy: { select: { fullName: true } } },
-    }),
-    prisma.dmReviewNote.findMany({
-      where: {
-        projectId: id,
-        // DMs can only see their own dm_only notes; others see shared ones
-        ...(user.role === "dm"
-          ? { OR: [{ visibility: "shared_with_pm" }, { authorId: user.id }] }
-          : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      include: { author: { select: { fullName: true } } },
-    }),
   ]);
+
+  // action_items and dm_review_notes are new tables — guard against missing migration
+  let actionItems: any[] = [];
+  let reviewNotes: any[] = [];
+  try {
+    [actionItems, reviewNotes] = await Promise.all([
+      prisma.actionItem.findMany({
+        where: { projectId: id },
+        orderBy: [{ status: "asc" }, { dueDate: "asc" }],
+        include: { raisedBy: { select: { fullName: true } } },
+      }),
+      prisma.dmReviewNote.findMany({
+        where: {
+          projectId: id,
+          ...(user.role === "dm"
+            ? { OR: [{ visibility: "shared_with_pm" }, { authorId: user.id }] }
+            : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        include: { author: { select: { fullName: true } } },
+      }),
+    ]);
+  } catch {
+    // Tables not yet migrated — return empty arrays
+  }
 
   return NextResponse.json({
     project: {
