@@ -346,17 +346,6 @@ function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
           </div>
         )}
 
-        {/* Quick actions */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 17px" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 11 }}>Quick Actions</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <Link href={`/dashboard/projects/${project.id}/settings`} style={{
-              display: "flex", alignItems: "center", gap: 8, height: 34, padding: "0 12px",
-              background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8,
-              fontSize: 12.5, color: C.text2, textDecoration: "none", fontWeight: 500,
-            }}>⚙ Project settings</Link>
-          </div>
-        </div>
       </div>
     </div>
   );

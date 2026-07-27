@@ -8,15 +8,17 @@ type TriageRow = {
   spi: number | null; cpi: number | null; compositeScore: number | null;
   openActionItems: number; highRisks: number; criticalIssues: number;
   nextMilestone: { name: string; dueDate: string } | null; phase: string; lastReportDate: string | null;
+  artifactsGenerated: number; hoursSaved: number; dollarsSaved: number;
 };
 type TriageData = {
   bands: { red: TriageRow[]; amber: TriageRow[]; no_data: TriageRow[]; green: TriageRow[] };
   counts: { red: number; amber: number; no_data: number; green: number; total: number };
   overdueActionItems: number;
+  portfolioProd?: { artifactsGenerated: number; hoursSaved: number; dollarsSaved: number };
 };
 
-// UST brand palette â€” Dark Teal #006E74 Â· Light Teal #0097AC Â· Petrol #003C51
-// RAG: Green #01B27C Â· Amber (kept) Â· Red/Orange #FC6A59
+// UST brand palette — Dark Teal #006E74 · Light Teal #0097AC · Petrol #003C51
+// RAG: Green #01B27C · Amber (kept) · Red/Orange #FC6A59
 const C = {
   bg: "#F2F7F8",           // UST Light Gray Wash
   sidebarBg: "#003C51",    // UST Petrol
@@ -27,7 +29,7 @@ const C = {
   amber: "#c17d12", amberBg: "rgba(193,125,18,.10)", amberBorder: "rgba(193,125,18,.20)",
   green: "#01B27C", greenBg: "rgba(1,178,124,.10)", greenBorder: "rgba(1,178,124,.22)",
   noData: "#7A7480", noDataBg: "rgba(122,116,128,.10)", noDataBorder: "rgba(122,116,128,.22)",
-  blue: "#0097AC", blueL: "#0097AC",   // UST Light Teal â€” actions & highlights
+  blue: "#0097AC", blueL: "#0097AC",   // UST Light Teal — actions & highlights
   text: "#231F20", textMuted: "#7A7480", textFaint: "#7A7480",  // UST Soft Black / Dark Gray
   panelBg: "#fff",
   FF: "'Aptos','Calibri',system-ui,sans-serif",
@@ -52,7 +54,7 @@ function spiColor(v: number | null) {
   if (v < 0.95) return C.amber;
   return C.green;
 }
-function fmt(v: number | null) { return v === null ? "â€”" : v.toFixed(2); }
+function fmt(v: number | null) { return v === null ? "—" : v.toFixed(2); }
 function clamp(lo: number, hi: number, v: number) { return Math.max(lo, Math.min(hi, v)); }
 function pct(v: number | null) { return v === null ? null : clamp(0, 100, Math.round(v * 100)); }
 
@@ -69,7 +71,7 @@ function pmScore(spi: number | null, cpi: number | null, rag: string): number {
 function pmLabel(s: number) { return s >= 80 ? "High" : s >= 60 ? "Moderate" : s >= 40 ? "Low" : "Critical"; }
 function pmColor(s: number): string { return s >= 80 ? C.green : s >= 60 ? C.blue : s >= 40 ? C.amber : C.red; }
 
-// â”€â”€ Project list item (left sidebar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Project list item (left sidebar) ──────────────────────────────────────────
 
 function SidebarItem({ p, selected, onClick }: { p: TriageRow; selected: boolean; onClick: () => void }) {
   const rc = ragColor(p.band);
@@ -102,9 +104,9 @@ function SidebarItem({ p, selected, onClick }: { p: TriageRow; selected: boolean
   );
 }
 
-// â”€â”€ Project header (right panel top) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Project header (right panel top) ──────────────────────────────────────────
 
-function ProjectHeader({ p, detail }: { p: TriageRow; detail: any }) {
+function ProjectHeader({ p, detail, onEscalate, escalated }: { p: TriageRow; detail: any; onEscalate: () => void; escalated: boolean }) {
   const rc = ragColor(p.band);
   const rl = ragLabel(p.band);
   const schedPct = pct(p.spi);
@@ -122,23 +124,23 @@ function ProjectHeader({ p, detail }: { p: TriageRow; detail: any }) {
             <span style={{ font: `700 10.5px ${C.FF}`, color: rc, background: `${rc}18`, border: `1px solid ${rc}30`, borderRadius: 5, padding: "2px 8px", letterSpacing: ".05em" }}>{rl}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 7, paddingLeft: 21, flexWrap: "wrap" as const }}>
-            {p.accountName && <><span style={{ font: `400 13px ${C.FF}`, color: C.textMuted }}>{p.accountName}</span><span style={{ color: "#d3d7de" }}>Â·</span></>}
-            {detail?.project?.programName && <><span style={{ font: `400 13px ${C.FF}`, color: C.textMuted }}>{detail.project.programName}</span><span style={{ color: "#d3d7de" }}>Â·</span></>}
+            {p.accountName && <><span style={{ font: `400 13px ${C.FF}`, color: C.textMuted }}>{p.accountName}</span><span style={{ color: "#d3d7de" }}>·</span></>}
+            {detail?.project?.programName && <><span style={{ font: `400 13px ${C.FF}`, color: C.textMuted }}>{detail.project.programName}</span><span style={{ color: "#d3d7de" }}>·</span></>}
             <span style={{ font: `500 13px ${C.FF}`, color: C.textMuted }}>PM: <strong style={{ color: C.text }}>{p.pmName}</strong></span>
-            <span style={{ color: "#d3d7de" }}>Â·</span>
+            <span style={{ color: "#d3d7de" }}>·</span>
             <span style={{ font: `400 13px ${C.FF}`, color: C.textMuted }}>{p.phase.replace(/_/g, " ")}</span>
           </div>
         </div>
         {p.band === "red" && (
-          <button style={{
+          <button onClick={onEscalate} style={{
             height: 32, padding: "0 13px",
-            background: `linear-gradient(135deg, #FC6A59, #e05540)`,
+            background: escalated ? `linear-gradient(135deg, #01B27C, #009060)` : `linear-gradient(135deg, #FC6A59, #e05540)`,
             color: "#fff", border: "none", borderRadius: 8,
             font: `600 12.5px ${C.FF}`, cursor: "pointer",
-            boxShadow: "0 3px 10px rgba(252,106,89,.28)",
+            boxShadow: escalated ? "0 3px 10px rgba(1,178,124,.28)" : "0 3px 10px rgba(252,106,89,.28)",
             whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
           }}>
-            <span>âš‘</span> Escalate
+            <span>{escalated ? "✓" : "⚑"}</span> {escalated ? "Escalated" : "Escalate"}
           </button>
         )}
       </div>
@@ -197,6 +199,16 @@ function ProjectHeader({ p, detail }: { p: TriageRow; detail: any }) {
             </>
           );
         })()}
+        {(p.artifactsGenerated ?? 0) > 0 && (
+          <>
+            <div style={{ width: 1, height: 32, background: "#eef0f3" }} />
+            <div style={{ textAlign: "center" as const }}>
+              <div style={{ font: `600 10px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.textFaint, marginBottom: 2 }}>AI Effort Saved</div>
+              <div style={{ font: `700 17px ${C.FM}`, color: C.green, lineHeight: 1 }}>{p.hoursSaved}h</div>
+              <div style={{ font: `500 10px ${C.FF}`, color: C.textFaint, marginTop: 1 }}>${(p.dollarsSaved ?? 0).toLocaleString()}</div>
+            </div>
+          </>
+        )}
         {p.openActionItems > 0 && (
           <>
             <div style={{ width: 1, height: 32, background: "#eef0f3" }} />
@@ -211,7 +223,7 @@ function ProjectHeader({ p, detail }: { p: TriageRow; detail: any }) {
   );
 }
 
-// â”€â”€ Action items section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Action items section ───────────────────────────────────────────────────────
 
 function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName: string; onRefresh: () => void }) {
   const [newText, setNewText] = useState("");
@@ -282,7 +294,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ font: `500 14px ${C.FF}`, color: C.text, marginBottom: 2 }}>{act.title}</div>
                 <div style={{ font: `400 11px ${C.FM}`, color: C.textFaint, display: "flex", gap: 8 }}>
-                  {act.assignedToName && <span>â†’ {act.assignedToName}</span>}
+                  {act.assignedToName && <span>→ {act.assignedToName}</span>}
                   {act.dueDate && <span>Due {new Date(act.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}</span>}
                 </div>
               </div>
@@ -316,7 +328,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
                       </div>
                     )}
                     <div style={{ font: `400 11px ${C.FM}`, color: C.textFaint, marginTop: 3 }}>
-                      {act.assignedToName && <span>â†’ {act.assignedToName}</span>}
+                      {act.assignedToName && <span>→ {act.assignedToName}</span>}
                     </div>
                   </div>
                   {statusBadge(act.status)}
@@ -332,7 +344,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
         <textarea
           value={newText}
           onChange={e => setNewText(e.target.value)}
-          placeholder={`Describe the action for ${pmName}â€¦`}
+          placeholder={`Describe the action for ${pmName}…`}
           style={{
             width: "100%", height: 64, border: `1.5px solid ${C.borderLight}`, borderRadius: 8,
             padding: "9px 12px", font: `400 14px ${C.FF}`, color: C.text,
@@ -344,9 +356,9 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
             height: 34, border: `1.5px solid ${C.borderLight}`, borderRadius: 8, padding: "0 10px",
             font: `500 13px ${C.FF}`, color: C.text, background: "#fafbfc", outline: "none", flex: 1, cursor: "pointer",
           }}>
-            <option value="p1">P1 â€” Critical</option>
-            <option value="p2">P2 â€” Standard</option>
-            <option value="p3">P3 â€” Low</option>
+            <option value="p1">P1 — Critical</option>
+            <option value="p2">P2 — Standard</option>
+            <option value="p3">P3 — Low</option>
           </select>
           <input
             type="date"
@@ -365,7 +377,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
             font: `600 13.5px ${C.FF}`, cursor: saving || !newText.trim() ? "not-allowed" : "pointer",
             boxShadow: "0 3px 10px rgba(79,91,213,.25)", whiteSpace: "nowrap" as const,
           }}>
-            {saving ? "Savingâ€¦" : "Assign â†’"}
+            {saving ? "Saving…" : "Assign →"}
           </button>
         </div>
       </div>
@@ -373,7 +385,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
   );
 }
 
-// â”€â”€ Issues & Risks section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Issues & Risks section ────────────────────────────────────────────────────
 
 function IssuesRisks({ detail }: { detail: any }) {
   const openIssues = (detail?.issues ?? []).filter((i: any) => i.status === "open");
@@ -402,7 +414,7 @@ function IssuesRisks({ detail }: { detail: any }) {
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
                 <span style={{ font: `700 10px ${C.FF}`, color: typeCol, background: typeBg, borderRadius: 5, padding: "2px 7px", textTransform: "uppercase" as const, letterSpacing: ".04em" }}>
-                  {item.type === "issue" ? "Issue" : "Risk"} Â· {item.sev}
+                  {item.type === "issue" ? "Issue" : "Risk"} · {item.sev}
                 </span>
               </div>
               <div style={{ font: `400 13.5px ${C.FF}`, color: C.textMuted, lineHeight: 1.5 }}>{item.body}</div>
@@ -415,7 +427,7 @@ function IssuesRisks({ detail }: { detail: any }) {
   );
 }
 
-// â”€â”€ Health Overview tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Health Overview tab ───────────────────────────────────────────────────────
 
 function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSelect: (id: string) => void; userRole?: string }) {
   const all = [...data.bands.red, ...data.bands.amber, ...data.bands.no_data, ...data.bands.green];
@@ -457,18 +469,25 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
             </div>
           )}
           <div style={{ display: "flex", gap: 12 }}>
-            <span style={{ font: `500 12px ${C.FF}`, color: C.red }}>â— {data.counts.red} Red</span>
-            <span style={{ font: `500 12px ${C.FF}`, color: C.amber }}>â— {data.counts.amber} Amber</span>
-            <span style={{ font: `500 12px ${C.FF}`, color: C.green }}>â— {data.counts.green} Green</span>
+            <span style={{ font: `500 12px ${C.FF}`, color: C.red }}>● {data.counts.red} Red</span>
+            <span style={{ font: `500 12px ${C.FF}`, color: C.amber }}>● {data.counts.amber} Amber</span>
+            <span style={{ font: `500 12px ${C.FF}`, color: C.green }}>● {data.counts.green} Green</span>
           </div>
         </div>
+        {(data.portfolioProd?.artifactsGenerated ?? 0) > 0 && (
+          <div style={{ flex: 1, minWidth: 150, background: `rgba(1,178,124,.06)`, border: `1px solid rgba(1,178,124,.22)`, borderRadius: 13, padding: "16px 18px" }}>
+            <div style={{ font: `600 10px ${C.FF}`, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.green, marginBottom: 8, opacity: .8 }}>AI Effort Saved</div>
+            <div style={{ font: `700 28px ${C.FM}`, color: C.green, lineHeight: 1 }}>{data.portfolioProd!.hoursSaved}h</div>
+            <div style={{ font: `400 12px ${C.FF}`, color: C.textFaint, marginTop: 4 }}>${(data.portfolioProd!.dollarsSaved).toLocaleString()} saved · {data.portfolioProd!.artifactsGenerated} artifacts</div>
+          </div>
+        )}
       </div>
 
       {/* All projects table */}
       <div style={{ background: C.panelBg, border: `1px solid ${C.borderLight}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,.05)" }}>
         <div style={{ padding: "14px 20px", borderBottom: `1px solid #f0f2f5`, display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ font: `700 14px ${C.FF}`, color: C.text }}>All Projects</span>
-          <span style={{ font: `400 12px ${C.FF}`, color: C.textFaint }}>Â· sorted by risk</span>
+          <span style={{ font: `400 12px ${C.FF}`, color: C.textFaint }}>· sorted by risk</span>
           <div style={{ flex: 1 }} />
           <span style={{ font: `400 12px ${C.FF}`, color: C.textFaint }}>{total} projects</span>
         </div>
@@ -503,7 +522,7 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
                 <div style={{ width: 9, height: 9, borderRadius: "50%", background: rc, flexShrink: 0 }} />
                 <span style={{ font: `600 13.5px ${C.FF}`, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.name}</span>
               </div>
-              <span style={{ width: 100, font: `400 13px ${C.FF}`, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.accountName ?? "â€”"}</span>
+              <span style={{ width: 100, font: `400 13px ${C.FF}`, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.accountName ?? "—"}</span>
               <span style={{ width: 90, font: `400 13px ${C.FF}`, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.pmName}</span>
               <span style={{ width: 62 }}>
                 <span style={{ font: `700 10px ${C.FF}`, color: rc, background: `${rc}18`, border: `1px solid ${rc}30`, borderRadius: 5, padding: "2px 6px", letterSpacing: ".04em" }}>{rl}</span>
@@ -534,7 +553,7 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
               </span>
               <span style={{ width: 60, font: `600 13px ${C.FF}`, color: C.blue, cursor: "pointer", textAlign: "right" as const }}
                 onClick={() => onSelect(p.id)}>
-                View â†’
+                View →
               </span>
             </div>
           );
@@ -544,7 +563,7 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
   );
 }
 
-// â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Main component ────────────────────────────────────────────────────────────
 
 export function DmTriageClient({ data, userName, userRole }: { data: TriageData; userName: string; userRole?: string }) {
   const [tab, setTab] = useState<"portfolio" | "health">("portfolio");
@@ -552,6 +571,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
   const [detail, setDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchQ, setSearchQ] = useState("");
+  const [escalatedIds, setEscalatedIds] = useState<Set<string>>(new Set());
 
   const allProjects = [...data.bands.red, ...data.bands.amber, ...data.bands.no_data, ...data.bands.green];
 
@@ -588,7 +608,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 60px)", overflow: "hidden", fontFamily: C.FF }}>
-      {/* â”€â”€ Tab bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Tab bar ─────────────────────────────────────── */}
       <div style={{ background: C.tabBar, borderBottom: `1px solid ${C.border}`, padding: "0 22px", display: "flex", gap: 4, flexShrink: 0 }}>
         {([["portfolio", "My Portfolio"], ["health", "Health Overview"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
@@ -602,14 +622,14 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
         <div style={{ flex: 1 }} />
         {data.counts.total > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, paddingRight: 4 }}>
-            {data.counts.red > 0 && <span style={{ font: `600 11.5px ${C.FF}`, color: C.red, background: C.redBg, borderRadius: 4, padding: "2px 8px" }}>ðŸ”´ {data.counts.red} Red</span>}
-            {data.counts.amber > 0 && <span style={{ font: `600 11.5px ${C.FF}`, color: C.amber, background: C.amberBg, borderRadius: 4, padding: "2px 8px" }}>ðŸŸ¡ {data.counts.amber} Amber</span>}
+            {data.counts.red > 0 && <span style={{ font: `600 11.5px ${C.FF}`, color: C.red, background: C.redBg, borderRadius: 4, padding: "2px 8px" }}>🔴 {data.counts.red} Red</span>}
+            {data.counts.amber > 0 && <span style={{ font: `600 11.5px ${C.FF}`, color: C.amber, background: C.amberBg, borderRadius: 4, padding: "2px 8px" }}>🟡 {data.counts.amber} Amber</span>}
             <span style={{ font: `400 11.5px ${C.FF}`, color: "rgba(255,255,255,.45)" }}>{data.counts.total} projects</span>
           </div>
         )}
       </div>
 
-      {/* â”€â”€ Portfolio tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Portfolio tab ───────────────────────────────── */}
       {tab === "portfolio" && (
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
           {/* LEFT SIDEBAR */}
@@ -618,7 +638,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
             <div style={{ padding: "11px 10px 7px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, height: 32, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.08)", borderRadius: 8, padding: "0 10px" }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="rgba(255,255,255,.3)" strokeWidth="2" /><path d="M20 20l-3-3" stroke="rgba(255,255,255,.3)" strokeWidth="2" strokeLinecap="round" /></svg>
-                <input type="text" placeholder="Search projectsâ€¦" value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                <input type="text" placeholder="Search projects…" value={searchQ} onChange={e => setSearchQ(e.target.value)}
                   style={{ border: "none", background: "transparent", font: `400 12.5px ${C.FF}`, color: "rgba(255,255,255,.65)", outline: "none", flex: 1 }} />
               </div>
             </div>
@@ -679,14 +699,6 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
                 </>
               )}
             </div>
-
-            {/* AI bar */}
-            <div style={{ padding: "9px 10px", borderTop: "1px solid rgba(255,255,255,.07)", background: "#002535" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, height: 32, background: "linear-gradient(135deg,rgba(0,151,172,.14),rgba(0,110,116,.08))", border: "1px solid rgba(0,151,172,.28)", borderRadius: 8, padding: "0 11px", cursor: "pointer" }}>
-                <span style={{ color: "#0097AC", fontSize: 13 }}>âœ¦</span>
-                <span style={{ font: `400 12.5px ${C.FF}`, color: "rgba(255,255,255,.45)" }}>Ask AI about portfolioâ€¦</span>
-              </div>
-            </div>
           </div>
 
           {/* RIGHT PANEL */}
@@ -708,10 +720,15 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
               </div>
             ) : (
               <>
-                <ProjectHeader p={sel} detail={detail} />
+                <ProjectHeader
+                  p={sel}
+                  detail={detail}
+                  escalated={escalatedIds.has(sel.id)}
+                  onEscalate={() => setEscalatedIds(prev => new Set([...prev, sel.id]))}
+                />
                 {detailLoading ? (
                   <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ font: `400 14px ${C.FF}`, color: C.textFaint }}>Loading project dataâ€¦</span>
+                    <span style={{ font: `400 14px ${C.FF}`, color: C.textFaint }}>Loading project data…</span>
                   </div>
                 ) : (
                   <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px 48px", display: "flex", flexDirection: "column", gap: 18 }}>
@@ -731,7 +748,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
         </div>
       )}
 
-      {/* â”€â”€ Health Overview tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Health Overview tab ─────────────────────────── */}
       {tab === "health" && (
         <HealthOverview data={data} onSelect={selectAndView} userRole={userRole} />
       )}

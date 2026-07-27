@@ -19,6 +19,9 @@ export interface DhProject {
   budPct: number;
   budget: number | null;
   phase: string;
+  artifactsGenerated?: number;
+  hoursSaved?: number;
+  dollarsSaved?: number;
 }
 
 export interface TrendPoint {
@@ -28,7 +31,7 @@ export interface TrendPoint {
   healthPct: number | null;
 }
 
-// â”€â”€â”€ color helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── color helpers ────────────────────────────────────────────────────────────
 
 function ragColor(r: string) {
   return r === "red" ? "#cf3f3a" : r === "amber" ? "#c17d12" : "#158a5a";
@@ -82,12 +85,12 @@ function PmMeter({ spi, cpi, rag }: { spi: number | null; cpi: number | null; ra
   );
 }
 
-// â”€â”€â”€ alert text derived from metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── alert text derived from metrics ─────────────────────────────────────────
 
 function alertFor(p: DhProject): { title: string; body: string } {
   if (p.rag === "green") return { title: "", body: "" };
   if (p.spi !== null && p.spi < 0.75) {
-    return { title: "Schedule critical", body: `SPI ${p.spi.toFixed(2)} â€” significant milestone risk.` };
+    return { title: "Schedule critical", body: `SPI ${p.spi.toFixed(2)} — significant milestone risk.` };
   }
   if (p.cpi !== null && p.cpi < 0.8) {
     return { title: "Budget overrun risk", body: `Burn rate exceeding plan; CPI ${p.cpi.toFixed(2)}.` };
@@ -96,12 +99,12 @@ function alertFor(p: DhProject): { title: string; body: string } {
     return { title: "Budget vs. schedule gap", body: `${p.budPct}% budget used, only ${p.schedPct}% schedule complete.` };
   }
   if (p.spi !== null && p.spi < 0.9) {
-    return { title: "Schedule pressure", body: `SPI ${p.spi.toFixed(2)} â€” monitor closely this sprint.` };
+    return { title: "Schedule pressure", body: `SPI ${p.spi.toFixed(2)} — monitor closely this sprint.` };
   }
   return { title: "At risk", body: "Review status with PM this week." };
 }
 
-// â”€â”€â”€ RAG pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── RAG pill ─────────────────────────────────────────────────────────────────
 
 function RagPill({ rag }: { rag: string }) {
   return (
@@ -112,7 +115,7 @@ function RagPill({ rag }: { rag: string }) {
   );
 }
 
-// â”€â”€â”€ mini progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── mini progress bar ────────────────────────────────────────────────────────
 
 function Bar({ pct, color }: { pct: number; color: string }) {
   return (
@@ -122,10 +125,10 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-// â”€â”€â”€ trend SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── trend SVG ───────────────────────────────────────────────────────────────
 
 function TrendChart({ trends }: { trends: TrendPoint[] }) {
-  // Map values (0.6â€“1.1 range) to y coords (20â€“155)
+  // Map values (0.6–1.1 range) to y coords (20–155)
   const H = 155, TOP = 20;
   const range = 0.5; // 0.6 to 1.1
   const toY = (v: number) => TOP + ((1.1 - Math.min(Math.max(v, 0.6), 1.1)) / range) * (H - TOP);
@@ -192,7 +195,7 @@ function TrendChart({ trends }: { trends: TrendPoint[] }) {
   );
 }
 
-// â”€â”€â”€ Cluster card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Cluster card ─────────────────────────────────────────────────────────────
 
 function ClusterCard({ name, type, projects }: { name: string; type: string; projects: DhProject[] }) {
   const green = projects.filter(p => p.rag === "green").length;
@@ -208,6 +211,10 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
 
   const avgSched = projects.length ? Math.round(projects.reduce((s,p) => s + p.schedPct, 0) / projects.length) : 0;
   const avgBud   = projects.length ? Math.round(projects.reduce((s,p) => s + p.budPct, 0) / projects.length) : 0;
+
+  const clusterArtifacts = projects.reduce((s, p) => s + (p.artifactsGenerated ?? 0), 0);
+  const clusterHours     = Math.round(projects.reduce((s, p) => s + (p.hoursSaved ?? 0), 0) * 10) / 10;
+  const clusterDollars   = projects.reduce((s, p) => s + (p.dollarsSaved ?? 0), 0);
 
   const clusterRag = red > 0 ? "red" : amber > 0 ? "amber" : "green";
   const atRisk = projects.filter(p => p.rag !== "green").map(p => p.name);
@@ -243,8 +250,8 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
         {[
           { label: "Projects", val: String(total), col: "#1a1d24" },
           { label: "Health", val: `${health}%`, col: ragColor(clusterRag) },
-          { label: "Avg SPI", val: avgSpi?.toFixed(2) ?? "â€”", col: spiCol(avgSpi) },
-          { label: "Avg CPI", val: avgCpi?.toFixed(2) ?? "â€”", col: spiCol(avgCpi) },
+          { label: "Avg SPI", val: avgSpi?.toFixed(2) ?? "—", col: spiCol(avgSpi) },
+          { label: "Avg CPI", val: avgCpi?.toFixed(2) ?? "—", col: spiCol(avgCpi) },
         ].map(({ label, val, col }, i, arr) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: 0 }}>
             {i > 0 && <div style={{ width: 1, background: "#eef0f3", height: 32, marginRight: 20 }} />}
@@ -266,9 +273,9 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
             <div style={{ width: `${total ? (red/total)*100 : 0}%`, background: "#cf3f3a", transition: "width .4s" }} />
           </div>
           <div style={{ display: "flex", gap: 14, fontSize: 13, fontWeight: 500 }}>
-            <span style={{ color: "#158a5a" }}>â— {green} Green</span>
-            <span style={{ color: "#c17d12" }}>â— {amber} Amber</span>
-            <span style={{ color: "#cf3f3a" }}>â— {red} Red</span>
+            <span style={{ color: "#158a5a" }}>● {green} Green</span>
+            <span style={{ color: "#c17d12" }}>● {amber} Amber</span>
+            <span style={{ color: "#cf3f3a" }}>● {red} Red</span>
           </div>
         </div>
         <div style={{ flex: 1, padding: "16px 20px", borderRight: "1px solid #f0f1f4" }}>
@@ -295,12 +302,19 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
             : <span style={{ fontSize: 13.5, color: "#cf3f3a", lineHeight: 1.6 }}>{atRisk.join(", ")}</span>
           }
         </div>
+        {clusterArtifacts > 0 && (
+          <div style={{ flex: 1, padding: "16px 20px", background: "rgba(1,178,124,.04)", borderLeft: "1px solid #f0f1f4" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: "#01B27C", textTransform: "uppercase", marginBottom: 10, opacity: .85 }}>AI Effort Saved</div>
+            <div style={{ fontSize: 26, fontWeight: 700, fontFamily: "monospace", color: "#01B27C", lineHeight: 1 }}>{clusterHours}h</div>
+            <div style={{ fontSize: 12, color: "#8a909c", marginTop: 4 }}>${clusterDollars.toLocaleString()} · {clusterArtifacts} artifacts</div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-// â”€â”€â”€ main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── main component ───────────────────────────────────────────────────────────
 
 export interface DhEscalation {
   id: string;
@@ -425,7 +439,7 @@ export default function DhDashboardClient({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", fontFamily: "'Aptos','Calibri',sans-serif" }}>
 
-      {/* â”€â”€ Filter bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Filter bar ──────────────────────────────────────────────────── */}
       <div style={{ background: "#fff", borderBottom: "1px solid #e2e5ea", padding: "10px 24px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flexShrink: 0 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase" }}>Filter</span>
 
@@ -436,7 +450,7 @@ export default function DhDashboardClient({
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search projectsâ€¦"
+            placeholder="Search projects…"
             style={{ border: "none", background: "transparent", fontSize: 13.5, color: "#1a1d24", outline: "none", width: 150 }}
           />
         </div>
@@ -478,7 +492,7 @@ export default function DhDashboardClient({
               background: filterRag === r ? (r === "" ? "#e6f4f5" : ragBg(r)) : "#fff",
               color: filterRag === r ? (r === "" ? "#006E74" : ragColor(r)) : "#8a909c",
             }}>
-              {r === "" ? "All" : `â— ${r.charAt(0).toUpperCase() + r.slice(1)}`}
+              {r === "" ? "All" : `● ${r.charAt(0).toUpperCase() + r.slice(1)}`}
             </button>
           ))}
         </div>
@@ -492,7 +506,7 @@ export default function DhDashboardClient({
         )}
       </div>
 
-      {/* â”€â”€ Tab bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Tab bar ────────────────────────────────────────────────────── */}
       <div style={{ background: "#fff", borderBottom: "1.5px solid #e2e5ea", padding: "0 24px", display: "flex", alignItems: "center", gap: 24, flexShrink: 0 }}>
         <button style={tabBtn(tab === "projects")}  onClick={() => setTab("projects")}>Project Information</button>
         <button style={tabBtn(tab === "clusters")} onClick={() => setTab("clusters")}>Cluster Delivery Metrics</button>
@@ -507,10 +521,10 @@ export default function DhDashboardClient({
         </div>
       </div>
 
-      {/* â”€â”€ Scrollable content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+      {/* ── Scrollable content ─────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px 48px", display: "flex", flexDirection: "column", gap: 18 }}>
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â• PROJECT INFORMATION TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* ══════════════ PROJECT INFORMATION TAB ══════════════ */}
         {tab === "projects" && (
           <>
             {/* KPI strip */}
@@ -538,9 +552,9 @@ export default function DhDashboardClient({
                   <div style={{ width: `${kpi.total ? (kpi.red/kpi.total)*100 : 0}%`, background: "#cf3f3a", transition: "width .4s" }} />
                 </div>
                 <div style={{ display: "flex", gap: 14, fontSize: 13, fontWeight: 500 }}>
-                  <span style={{ color: "#158a5a" }}>â— {kpi.green} Green</span>
-                  <span style={{ color: "#c17d12" }}>â— {kpi.amber} Amber</span>
-                  <span style={{ color: "#cf3f3a" }}>â— {kpi.red} Red</span>
+                  <span style={{ color: "#158a5a" }}>● {kpi.green} Green</span>
+                  <span style={{ color: "#c17d12" }}>● {kpi.amber} Amber</span>
+                  <span style={{ color: "#cf3f3a" }}>● {kpi.red} Red</span>
                 </div>
               </div>
 
@@ -562,12 +576,12 @@ export default function DhDashboardClient({
                 <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
                   <div>
                     <div style={{ fontSize: 11, color: "#8a909c" }}>SPI</div>
-                    <div style={{ fontSize: 23, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgSpi) }}>{kpi.avgSpi?.toFixed(2) ?? "â€”"}</div>
+                    <div style={{ fontSize: 23, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgSpi) }}>{kpi.avgSpi?.toFixed(2) ?? "—"}</div>
                   </div>
                   <div style={{ width: 1, background: "#eef0f3" }} />
                   <div>
                     <div style={{ fontSize: 11, color: "#8a909c" }}>CPI</div>
-                    <div style={{ fontSize: 23, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgCpi) }}>{kpi.avgCpi?.toFixed(2) ?? "â€”"}</div>
+                    <div style={{ fontSize: 23, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgCpi) }}>{kpi.avgCpi?.toFixed(2) ?? "—"}</div>
                   </div>
                   <div style={{ width: 1, background: "#eef0f3" }} />
                   <div>
@@ -580,7 +594,7 @@ export default function DhDashboardClient({
               {/* AI alert */}
               <div style={{ flex: 1.2, background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: "1px solid #cfd4f5", borderRadius: 14, padding: "17px 20px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                  <span style={{ color: "#4f5bd5", fontSize: 15 }}>âœ¦</span>
+                  <span style={{ color: "#4f5bd5", fontSize: 15 }}>✦</span>
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Alert</span>
                 </div>
                 <div style={{ fontSize: 13.5, color: "#3a3f52", lineHeight: 1.55 }}>
@@ -616,23 +630,23 @@ export default function DhDashboardClient({
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 19, flexWrap: "wrap", marginTop: 3 }}>
                             <span style={{ fontSize: 12, color: "#8a909c", fontFamily: "monospace" }}>{p.id}</span>
-                            <span style={{ color: "#d3d7de" }}>Â·</span>
+                            <span style={{ color: "#d3d7de" }}>·</span>
                             <span style={{ fontSize: 13, color: "#5b616e" }}>{p.clientName}</span>
-                            <span style={{ color: "#d3d7de" }}>Â·</span>
+                            <span style={{ color: "#d3d7de" }}>·</span>
                             <span style={{ fontSize: 13, color: "#5b616e" }}>{p.programName}</span>
-                            <span style={{ color: "#d3d7de" }}>Â·</span>
+                            <span style={{ color: "#d3d7de" }}>·</span>
                             <span style={{ fontSize: 13, color: "#5b616e" }}>PM: {p.pmName}</span>
                           </div>
                         </div>
                         {/* SPI */}
                         <div style={{ width: 60, textAlign: "center", flexShrink: 0 }}>
                           <div style={{ fontSize: 11, color: "#8a909c", marginBottom: 3 }}>SPI</div>
-                          <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "â€”"}</div>
+                          <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "—"}</div>
                         </div>
                         {/* CPI */}
                         <div style={{ width: 60, textAlign: "center", flexShrink: 0 }}>
                           <div style={{ fontSize: 11, color: "#8a909c", marginBottom: 3 }}>CPI</div>
-                          <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "â€”"}</div>
+                          <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "—"}</div>
                         </div>
                         {/* Schedule bar */}
                         <div style={{ width: 120, flexShrink: 0 }}>
@@ -664,7 +678,7 @@ export default function DhDashboardClient({
                             height: 30, padding: "0 12px", background: "#006E74", color: "#fff",
                             border: "none", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
                             cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center",
-                          }}>Drill in â†’</a>
+                          }}>Drill in →</a>
                           <button style={{ height: 30, padding: "0 12px", background: "#fff", border: "1px solid #d3d7de", color: "#5b616e", borderRadius: 8, fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>
                             Escalate
                           </button>
@@ -720,8 +734,8 @@ export default function DhDashboardClient({
                         <span style={{ width: 100, fontSize: 13, color: "#5b616e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientName}</span>
                         <span style={{ width: 80,  fontSize: 13, color: "#5b616e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.pmName}</span>
                         <span style={{ width: 60 }}><RagPill rag={p.rag} /></span>
-                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "â€”"}</span>
-                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "â€”"}</span>
+                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "—"}</span>
+                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "—"}</span>
                         <div style={{ width: 100 }}>
                           <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 10.5, color: "#8a909c", marginBottom: 3 }}>
                             <span style={{ fontFamily: "monospace" }}>{p.schedPct}%</span>
@@ -736,7 +750,7 @@ export default function DhDashboardClient({
                         </div>
                         <div style={{ width: 110, paddingRight: 10 }}><PmMeter spi={p.spi} cpi={p.cpi} rag={p.rag} /></div>
                         <span style={{ width: 80, fontSize: 12.5, color: "#5b616e", textTransform: "capitalize" }}>{p.phase}</span>
-                        <a href={`/dashboard/projects/${p.id}`} style={{ width: 54, fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View â†’</a>
+                        <a href={`/dashboard/projects/${p.id}`} style={{ width: 54, fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View →</a>
                       </div>
                     ))
                   }
@@ -752,14 +766,14 @@ export default function DhDashboardClient({
                         <span style={{ width: 10, height: 10, borderRadius: "50%", background: ragColor(p.rag), flexShrink: 0, marginTop: 4 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                          <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 1, fontFamily: "monospace" }}>{p.id} Â· {p.clientName}</div>
+                          <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 1, fontFamily: "monospace" }}>{p.id} · {p.clientName}</div>
                         </div>
                         <RagPill rag={p.rag} />
                       </div>
                       <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
                         {[
-                          { label: "SPI", val: p.spi?.toFixed(2) ?? "â€”", col: spiCol(p.spi) },
-                          { label: "CPI", val: p.cpi?.toFixed(2) ?? "â€”", col: spiCol(p.cpi) },
+                          { label: "SPI", val: p.spi?.toFixed(2) ?? "—", col: spiCol(p.spi) },
+                          { label: "CPI", val: p.cpi?.toFixed(2) ?? "—", col: spiCol(p.cpi) },
                           { label: "Phase", val: p.phase, col: "#1a1d24" },
                         ].map(({ label, val, col }) => (
                           <div key={label} style={{ flex: 1, background: "#f7f8fa", borderRadius: 8, padding: "8px 10px" }}>
@@ -784,10 +798,10 @@ export default function DhDashboardClient({
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#5b616e", borderTop: "1px solid #f0f1f4", paddingTop: 10 }}>
                         <span>PM: {p.pmName}</span>
-                        <span style={{ color: "#d3d7de" }}>Â·</span>
+                        <span style={{ color: "#d3d7de" }}>·</span>
                         <span>{p.programName}</span>
                         <div style={{ flex: 1 }} />
-                        <a href={`/dashboard/projects/${p.id}`} style={{ fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View â†’</a>
+                        <a href={`/dashboard/projects/${p.id}`} style={{ fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View →</a>
                       </div>
                     </div>
                   ))}
@@ -822,7 +836,7 @@ export default function DhDashboardClient({
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: "1px solid #cfd4f5", borderRadius: 14, padding: "17px 18px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-                    <span style={{ color: "#4f5bd5", fontSize: 16 }}>âœ¦</span>
+                    <span style={{ color: "#4f5bd5", fontSize: 16 }}>✦</span>
                     <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Portfolio Insights</span>
                   </div>
                   <div style={{ fontSize: 14, color: "#3a3f52", lineHeight: 1.65 }}>
@@ -835,7 +849,7 @@ export default function DhDashboardClient({
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                     <button style={{ height: 32, padding: "0 13px", background: "#4f5bd5", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                      âœ¦ Draft exec summary
+                      ✦ Draft exec summary
                     </button>
                     <button style={{ height: 32, padding: "0 13px", background: "#fff", border: "1px solid #cfd4f5", color: "#4f5bd5", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                       Ask PM Agent
@@ -845,7 +859,7 @@ export default function DhDashboardClient({
 
                 {/* Predictive outlook */}
                 <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "16px 18px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 12 }}>Predictive Â· 6-week outlook</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 12 }}>Predictive · 6-week outlook</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {kpi.red > 0 && (
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -876,7 +890,7 @@ export default function DhDashboardClient({
           </>
         )}
 
-        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â• CLUSTER DELIVERY METRICS TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+        {/* ══════════════ CLUSTER DELIVERY METRICS TAB ══════════════ */}
         {tab === "clusters" && (
           <>
             {/* Cluster KPI strip */}
@@ -908,7 +922,7 @@ export default function DhDashboardClient({
                         <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Best Performing</span>
                         <span style={{ fontSize: 16, fontWeight: 700, color: "#158a5a" }}>{best.name}</span>
                         <span style={{ fontSize: 12.5, color: "#8a909c", display: "block", marginTop: 2 }}>
-                          {best.avgSpi ? `SPI ${best.avgSpi.toFixed(2)} Â· ` : ""}{best.green} green
+                          {best.avgSpi ? `SPI ${best.avgSpi.toFixed(2)} · ` : ""}{best.green} green
                         </span>
                       </div>
                     )}
@@ -917,7 +931,7 @@ export default function DhDashboardClient({
                         <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Most At Risk</span>
                         <span style={{ fontSize: 16, fontWeight: 700, color: "#cf3f3a" }}>{worst.name}</span>
                         <span style={{ fontSize: 12.5, color: "#8a909c", display: "block", marginTop: 2 }}>
-                          {worst.atRisk} at risk Â· {worst.avgSpi ? `SPI ${worst.avgSpi.toFixed(2)}` : "no SPI data"}
+                          {worst.atRisk} at risk · {worst.avgSpi ? `SPI ${worst.avgSpi.toFixed(2)}` : "no SPI data"}
                         </span>
                       </div>
                     )}
@@ -926,7 +940,7 @@ export default function DhDashboardClient({
               })()}
               <div style={{ flex: 1.8, minWidth: 200, background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: "1px solid #cfd4f5", borderRadius: 14, padding: "17px 20px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
-                  <span style={{ color: "#4f5bd5", fontSize: 15 }}>âœ¦</span>
+                  <span style={{ color: "#4f5bd5", fontSize: 15 }}>✦</span>
                   <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Cluster Insight</span>
                 </div>
                 <div style={{ fontSize: 13.5, color: "#3a3f52", lineHeight: 1.55 }}>
@@ -958,7 +972,7 @@ export default function DhDashboardClient({
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5b616e", marginBottom: 5 }}>
                           <span style={{ fontWeight: 600 }}>{name}</span>
                           <span style={{ fontFamily: "monospace", color: spiCol(avg), fontWeight: 700 }}>
-                            {avg ? avg.toFixed(2) : "â€”"}
+                            {avg ? avg.toFixed(2) : "—"}
                           </span>
                         </div>
                         <div style={{ height: 10, background: "#eef0f3", borderRadius: 5, overflow: "hidden" }}>
@@ -976,7 +990,7 @@ export default function DhDashboardClient({
           </>
         )}
 
-        {/* â”€â”€ Escalations Panel â”€â”€ */}
+        {/* ── Escalations Panel ── */}
         {escalations.length > 0 && (
           <div style={{ background: "#fff", border: "1px solid #D7E0E3", borderRadius: 14, padding: "22px 28px", marginTop: 28 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "#003C51", marginBottom: 16 }}>
@@ -1002,8 +1016,8 @@ export default function DhDashboardClient({
                     return (
                       <tr key={e.id} style={{ borderTop: "1px solid #D7E0E3", background: slaBreached ? "#fff8f8" : undefined }}>
                         <td style={{ padding: "10px 14px", fontWeight: 700, color: "#003C51", maxWidth: 220 }}>{e.title}</td>
-                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.name ?? "â€”"}</td>
-                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.program?.name ?? "â€”"}</td>
+                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.name ?? "—"}</td>
+                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.program?.name ?? "—"}</td>
                         <td style={{ padding: "10px 14px", color: "#231F20" }}>{e.raisedBy.fullName}</td>
                         <td style={{ padding: "10px 14px", color: sevColor, fontWeight: 700, textTransform: "capitalize" }}>{e.severity}</td>
                         <td style={{ padding: "10px 14px" }}>
@@ -1014,10 +1028,10 @@ export default function DhDashboardClient({
                         <td style={{ padding: "10px 14px", color: "#7A7480" }}>{days}d</td>
                         <td style={{ padding: "10px 14px" }}>
                           {slaBreached
-                            ? <span style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 13 }}>âš  Breached</span>
+                            ? <span style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 13 }}>⚠ Breached</span>
                             : e.slaDueAt
                               ? <span style={{ fontSize: 13, color: "#7A7480" }}>{new Date(e.slaDueAt).toLocaleDateString()}</span>
-                              : "â€”"}
+                              : "—"}
                         </td>
                       </tr>
                     );

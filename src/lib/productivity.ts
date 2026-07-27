@@ -67,6 +67,29 @@ export function computeProductivityStats(
   };
 }
 
+/** Per-project productivity stats, keyed by projectId. */
+export async function getProductivityStatsForProjects(
+  projectIds: string[]
+): Promise<Record<string, Pick<ProductivityStats, "artifactsGenerated" | "hoursSaved" | "dollarsSaved">>> {
+  if (projectIds.length === 0) return {};
+  const artifacts = await prisma.artifact.groupBy({
+    by: ["projectId", "artifactType"],
+    where: { projectId: { in: projectIds } },
+    _count: { _all: true },
+  });
+  const byProject: Record<string, { artifactType: string; _count: { _all: number } }[]> = {};
+  for (const a of artifacts) {
+    if (!byProject[a.projectId]) byProject[a.projectId] = [];
+    byProject[a.projectId].push({ artifactType: a.artifactType, _count: { _all: a._count._all } });
+  }
+  const result: Record<string, Pick<ProductivityStats, "artifactsGenerated" | "hoursSaved" | "dollarsSaved">> = {};
+  for (const id of projectIds) {
+    const s = computeProductivityStats(byProject[id] ?? []);
+    result[id] = { artifactsGenerated: s.artifactsGenerated, hoursSaved: s.hoursSaved, dollarsSaved: s.dollarsSaved };
+  }
+  return result;
+}
+
 export async function getProductivityStatsForUser(user: { orgId: string; role: string; id: string }): Promise<ProductivityStats & { projectCount: number }> {
   const projects = await prisma.project.findMany({
     where: {

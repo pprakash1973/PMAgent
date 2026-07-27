@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { getProductivityStatsForProjects } from "@/lib/productivity";
 import { DmTriageClient } from "./dm-triage-client";
 
 export const dynamic = "force-dynamic";
@@ -117,6 +118,14 @@ export default async function DmTriagePage() {
     }
   }
 
+  // Fetch per-project productivity stats (artifacts generated × hours saved)
+  let projectProdStats: Record<string, { artifactsGenerated: number; hoursSaved: number; dollarsSaved: number }> = {};
+  try {
+    projectProdStats = await getProductivityStatsForProjects(projects.map((p) => p.id));
+  } catch {
+    // graceful degradation — show 0s if query fails
+  }
+
   type TriageRow = {
     id: string; name: string; accountId: string | null; accountName: string | null;
     programId: string | null; programName: string | null; pmId: string; pmName: string;
@@ -124,6 +133,7 @@ export default async function DmTriagePage() {
     spi: number | null; cpi: number | null; compositeScore: number | null;
     openActionItems: number; highRisks: number; criticalIssues: number;
     nextMilestone: { name: string; dueDate: Date } | null; phase: string; lastReportDate: Date | null;
+    artifactsGenerated: number; hoursSaved: number; dollarsSaved: number;
   };
 
   const rows: TriageRow[] = projects.map((p) => {
@@ -138,6 +148,7 @@ export default async function DmTriagePage() {
     const critI = p._count.issues;
     const band = toBand(p.healthStatus, hasRecentReport);
     const attentionScore = computeAttentionScore({ healthStatus: p.healthStatus, spi, cpi, compositeScore: composite, openActionItems: openAI, highRisks: highR, criticalIssues: critI });
+    const prod = projectProdStats[p.id] ?? { artifactsGenerated: 0, hoursSaved: 0, dollarsSaved: 0 };
     return {
       id: p.id, name: p.name, accountId: p.accountId, accountName: p.account?.name ?? null,
       programId: p.programId, programName: p.program?.name ?? null,
@@ -146,6 +157,9 @@ export default async function DmTriagePage() {
       openActionItems: openAI, highRisks: highR, criticalIssues: critI,
       nextMilestone: p.milestones[0] ? { name: p.milestones[0].name, dueDate: p.milestones[0].dueDate } : null,
       phase: p.currentPhase, lastReportDate: latestReport?.reportDate ?? null,
+      artifactsGenerated: prod.artifactsGenerated,
+      hoursSaved: prod.hoursSaved,
+      dollarsSaved: prod.dollarsSaved,
     };
   });
 
@@ -158,6 +172,12 @@ export default async function DmTriagePage() {
   };
   const counts = { red: bands.red.length, amber: bands.amber.length, no_data: bands.no_data.length, green: bands.green.length, total: rows.length };
 
+  const portfolioProd = {
+    artifactsGenerated: rows.reduce((s, r) => s + r.artifactsGenerated, 0),
+    hoursSaved: Math.round(rows.reduce((s, r) => s + r.hoursSaved, 0) * 10) / 10,
+    dollarsSaved: rows.reduce((s, r) => s + r.dollarsSaved, 0),
+  };
+
   // Serialize dates for client component
   const serialized = {
     bands: {
@@ -168,6 +188,7 @@ export default async function DmTriagePage() {
     },
     counts,
     overdueActionItems,
+    portfolioProd,
   };
 
   return <DmTriageClient data={serialized} userName={user.name ?? user.email} userRole={user.role} />;

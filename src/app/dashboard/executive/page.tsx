@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, methodologyLabel } from "@/lib/utils";
 import { HealthDonut, EVMScatter, SpiDistribution } from "@/components/executive-charts";
-import { getProductivityStatsForUser } from "@/lib/productivity";
+import { getProductivityStatsForUser, getProductivityStatsForProjects } from "@/lib/productivity";
 import { ProductivityMeter } from "@/components/productivity-meter";
 import { SteeringDeckGenerator } from "@/components/steering-deck-generator";
 import DhDashboardClient, { type DhProject, type TrendPoint } from "./dh-dashboard-client";
@@ -98,6 +98,12 @@ export default async function ExecutivePage() {
       },
     });
 
+    // Per-project productivity (artifact hours saved)
+    let projProdStats: Record<string, { artifactsGenerated: number; hoursSaved: number; dollarsSaved: number }> = {};
+    try {
+      projProdStats = await getProductivityStatsForProjects(rawProjects.map((p) => p.id));
+    } catch {}
+
     // Compute live EVM per project (reuse helper below)
     const now = Date.now();
     const dhProjects: DhProject[] = rawProjects.map((p) => {
@@ -145,8 +151,11 @@ export default async function ExecutivePage() {
         cpi:         storedCpi ?? null,
         schedPct,
         budPct,
-        budget:      p.budget ?? null,
-        phase:       (p as any).currentPhase ?? "initiation",
+        budget:           p.budget ?? null,
+        phase:            (p as any).currentPhase ?? "initiation",
+        artifactsGenerated: projProdStats[p.id]?.artifactsGenerated ?? 0,
+        hoursSaved:       projProdStats[p.id]?.hoursSaved ?? 0,
+        dollarsSaved:     projProdStats[p.id]?.dollarsSaved ?? 0,
       };
     });
 
