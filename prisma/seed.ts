@@ -158,6 +158,33 @@ async function main() {
     data: { primaryDmId: dm.id },
   });
 
+  // PGM user and program assignment
+  const pgm = await prisma.user.upsert({
+    where: { email: "PGM@pmAgent.dev" },
+    create: { orgId: org.id, email: "PGM@pmAgent.dev", fullName: "Eve PGM", passwordHash: hash, role: "pgm" },
+    update: { role: "pgm", fullName: "Eve PGM" },
+  });
+
+  const program = await prisma.program.upsert({
+    where: { code: "PRG-DIGITAL-RETAIL" },
+    create: {
+      orgId: org.id,
+      accountId: account.id,
+      name: "Digital Retail Transformation",
+      code: "PRG-DIGITAL-RETAIL",
+      description: "Mega Retail Corp digital transformation programme",
+      status: "active",
+      createdBy: pgm.id,
+    },
+    update: {},
+  });
+
+  await prisma.programAssignment.upsert({
+    where: { programId_userId: { programId: program.id, userId: pgm.id } },
+    create: { programId: program.id, userId: pgm.id, assignedBy: "seed" },
+    update: {},
+  });
+
   const bu = await prisma.businessUnit.upsert({
     where: { id: "seed-bu-1" },
     create: { id: "seed-bu-1", orgId: org.id, name: "Digital Transformation" },
@@ -171,6 +198,7 @@ async function main() {
       buId: bu.id,
       clusterId: cluster.id,
       accountId: account.id,
+      programId: program.id,
       pmOwnerId: pm.id,
       name: "ERP Implementation — Retail",
       code: "ERP-RETAIL-001",
@@ -227,7 +255,7 @@ async function main() {
   }
 
   console.log("\n✅ Seed complete!");
-  console.log("  pm@pmAgent.dev / dm@pmAgent.dev / head@pmAgent.dev / admin@pmAgent.dev");
+  console.log("  pm@pmAgent.dev / dm@pmAgent.dev / PGM@pmAgent.dev / head@pmAgent.dev / admin@pmAgent.dev");
   console.log("  Password: Password123!");
 }
 
