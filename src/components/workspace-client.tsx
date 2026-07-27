@@ -67,6 +67,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
   currentPhase: string;
   onPhaseAdvanced: (newPhase: string) => void;
 }) {
+  const router = useRouter();
   const [gateData, setGateData] = useState<GateData | null>(null);
   const [showGate, setShowGate] = useState(false);
   const [advancing, setAdvancing] = useState(false);
@@ -92,6 +93,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
     const data = await res.json();
     if (res.ok) {
       onPhaseAdvanced(data.current);
+      router.refresh(); // flush Next.js Router Cache so re-navigation reads fresh DB value
       setShowGate(false);
       setOverrideMode(false);
       setJustification("");

@@ -93,7 +93,7 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
 
       {/* Sign out */}
       <button
-        onClick={() => signOut({ callbackUrl: "/login" })}
+        onClick={() => { window.location.href = "/api/auth/logout"; }}
         title="Sign out"
         aria-label="Sign out"
         style={{

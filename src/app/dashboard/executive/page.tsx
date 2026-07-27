@@ -196,7 +196,10 @@ export default async function ExecutivePage() {
       },
       orderBy: { createdAt: "desc" },
       take: 50,
-      include: {
+      select: {
+        id: true, title: true, severity: true, status: true, targetType: true,
+        createdAt: true, slaDueAt: true, slaBreachedAt: true,
+        situation: true, impact: true, supportRequired: true,
         raisedBy: { select: { fullName: true } },
         project:  { select: { name: true, program: { select: { name: true } } } },
       },

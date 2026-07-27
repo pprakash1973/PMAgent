@@ -83,7 +83,7 @@ export function Sidebar({ user }: { user: User }) {
           </div>
         </div>
         <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() => { window.location.href = "/api/auth/logout"; }}
           className="flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-colors w-full"
         >
           <LogOut className="w-3 h-3" />

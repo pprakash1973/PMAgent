@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useCopilot } from "@/components/copilot/CopilotContext";
 
 export interface DhProject {
@@ -325,6 +325,9 @@ export interface DhEscalation {
   createdAt: string;
   slaDueAt: string | null;
   slaBreachedAt: string | null;
+  situation: string;
+  impact: string;
+  supportRequired: string;
   project: { name: string; program: { name: string } | null } | null;
   raisedBy: { fullName: string };
 }
@@ -348,6 +351,30 @@ export default function DhDashboardClient({
   const [filterRag, setFilterRag] = useState("");
   const [search,   setSearch]   = useState("");
   const [view,     setView]     = useState<"table" | "grid">("table");
+
+  // Escalation resolve state
+  const [liveEscalations, setLiveEscalations] = useState<DhEscalation[]>(escalations);
+  const [resolveTarget, setResolveTarget] = useState<DhEscalation | null>(null);
+  const [resolveNote,   setResolveNote]   = useState("");
+  const [resolving,     setResolving]     = useState(false);
+  const [resolveError,  setResolveError]  = useState("");
+
+  const handleResolve = useCallback(async () => {
+    if (!resolveTarget) return;
+    if (resolveNote.trim().length < 20) { setResolveError("Resolution note must be at least 20 characters"); return; }
+    setResolving(true); setResolveError("");
+    try {
+      const res = await fetch(`/api/escalations/${resolveTarget.id}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "resolved", resolutionNote: resolveNote.trim() }),
+      });
+      if (!res.ok) { const d = await res.json(); setResolveError(d.error ?? "Failed"); return; }
+      setLiveEscalations(prev => prev.filter(e => e.id !== resolveTarget.id));
+      setResolveTarget(null); setResolveNote("");
+    } catch { setResolveError("Network error"); }
+    finally { setResolving(false); }
+  }, [resolveTarget, resolveNote]);
 
   // unique filter options
   const clusterOptions = useMemo(() => [...new Set(projects.map(p => p.clusterName))].sort(), [projects]);
@@ -604,6 +631,80 @@ export default function DhDashboardClient({
                   }
                 </div>
               </div>
+            </div>
+
+            {/* ── Escalations Requiring Attention ─────────────────── */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: liveEscalations.length > 0 ? "#c17d12" : "#8a909c", boxShadow: liveEscalations.length > 0 ? "0 0 0 3px rgba(193,125,18,.18)" : "none" }} />
+                <span style={{ fontSize: 15, fontWeight: 700 }}>Escalations Requiring Attention</span>
+                {liveEscalations.length > 0 && (
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#c17d12", background: "#fbf0da", borderRadius: 6, padding: "2px 9px" }}>{liveEscalations.length} open</span>
+                )}
+              </div>
+              {liveEscalations.length === 0 ? (
+                <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 12, padding: "16px 20px", fontSize: 13.5, color: "#158a5a" }}>
+                  ✓ No escalations — all projects under normal management.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {liveEscalations.map(e => {
+                    const sevColor = e.severity === "critical" ? "#cf3f3a" : e.severity === "high" ? "#c17d12" : "#4f5bd5";
+                    const sevBg    = e.severity === "critical" ? "#fbe4e2" : e.severity === "high" ? "#fbf0da" : "#eef0fc";
+                    const daysLeft = e.slaDueAt ? Math.ceil((new Date(e.slaDueAt).getTime() - Date.now()) / 86400000) : null;
+                    const breached = daysLeft !== null && daysLeft < 0;
+                    return (
+                      <div key={e.id} style={{
+                        background: "#fff", border: `1px solid ${sevBg}`,
+                        borderLeft: `4px solid ${sevColor}`, borderRadius: 12, padding: "14px 18px",
+                        display: "flex", gap: 16, alignItems: "flex-start",
+                      }}>
+                        {/* Left: title + meta */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                            <span style={{ fontSize: 15, fontWeight: 700 }}>{e.title}</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: sevColor, background: sevBg, borderRadius: 5, padding: "2px 8px", textTransform: "uppercase" as const }}>{e.severity}</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: e.status === "open" ? "#cf3f3a" : "#c17d12", background: e.status === "open" ? "#fbe4e2" : "#fbf0da", borderRadius: 5, padding: "2px 8px", textTransform: "capitalize" as const }}>{e.status.replace("_", " ")}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: "#8a909c", marginBottom: 8 }}>
+                            {e.project?.name ?? "—"}{e.project?.program ? ` · ${e.project.program.name}` : ""} · Raised by {e.raisedBy.fullName} · {new Date(e.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                            {daysLeft !== null && (
+                              <span style={{ marginLeft: 8, color: breached ? "#cf3f3a" : daysLeft <= 1 ? "#c17d12" : "#8a909c", fontWeight: breached ? 600 : 400 }}>
+                                {breached ? `SLA breached ${Math.abs(daysLeft)}d ago` : `SLA: ${daysLeft}d left`}
+                              </span>
+                            )}
+                          </div>
+                          {/* DM's situation/comment */}
+                          {e.situation && (
+                            <div style={{ background: "#f7f8fa", borderRadius: 8, padding: "10px 14px", marginBottom: 6 }}>
+                              <div style={{ fontSize: 10.5, fontWeight: 700, color: "#8a909c", textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 4 }}>Situation (raised by PM)</div>
+                              <div style={{ fontSize: 13, color: "#3a3f52", lineHeight: 1.55 }}>{e.situation}</div>
+                            </div>
+                          )}
+                          {e.impact && (
+                            <div style={{ background: "#fff8f8", border: "1px solid #fde8e7", borderRadius: 8, padding: "8px 14px", marginBottom: 6 }}>
+                              <div style={{ fontSize: 10.5, fontWeight: 700, color: "#cf3f3a", textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 3 }}>Impact</div>
+                              <div style={{ fontSize: 12.5, color: "#3a3f52", lineHeight: 1.5 }}>{e.impact}</div>
+                            </div>
+                          )}
+                          {e.supportRequired && (
+                            <div style={{ fontSize: 12, color: "#5b616e", marginTop: 2 }}>
+                              <span style={{ fontWeight: 600 }}>Support needed: </span>{e.supportRequired}
+                            </div>
+                          )}
+                        </div>
+                        {/* Right: resolve button */}
+                        <button
+                          onClick={() => { setResolveTarget(e); setResolveNote(""); setResolveError(""); }}
+                          style={{ flexShrink: 0, height: 32, padding: "0 14px", background: "#006E74", color: "#fff", border: "none", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+                        >
+                          Mark Closed
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* At-risk section */}
@@ -990,58 +1091,45 @@ export default function DhDashboardClient({
           </>
         )}
 
-        {/* ── Escalations Panel ── */}
-        {escalations.length > 0 && (
-          <div style={{ background: "#fff", border: "1px solid #D7E0E3", borderRadius: 14, padding: "22px 28px", marginTop: 28 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#003C51", marginBottom: 16 }}>
-              Escalations Requiring Attention ({escalations.filter(e => e.status === "open").length} open)
+      </div>
+
+      {/* ── Resolve Escalation Modal ── */}
+      {resolveTarget && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "28px 32px", width: 500, maxWidth: "95vw", boxShadow: "0 24px 64px rgba(0,0,0,.22)" }}>
+            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>Close Escalation</div>
+            <div style={{ fontSize: 13, color: "#8a909c", marginBottom: 18 }}>
+              <b>{resolveTarget.title}</b> · {resolveTarget.project?.name ?? ""}
             </div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                <thead>
-                  <tr style={{ background: "#F2F7F8" }}>
-                    {["Title","Project","Program","Raised by","Severity","Status","Age","SLA"].map(h => (
-                      <th key={h} style={{ textAlign: "left", padding: "9px 14px", fontSize: 12.5, fontWeight: 700, color: "#7A7480", whiteSpace: "nowrap" }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {escalations.map(e => {
-                    const sevColor = e.severity==="critical"?"#cf3f3a":e.severity==="high"?"#c17d12":"#158a5a";
-                    const statusBg: Record<string,string> = { open:"#fbe4e2",acknowledged:"#fbf0da",in_progress:"#e3f3ea",resolved:"#e3f3ea",withdrawn:"#f7f8fa" };
-                    const statusCol: Record<string,string> = { open:"#cf3f3a",acknowledged:"#c17d12",in_progress:"#158a5a",resolved:"#158a5a",withdrawn:"#8a909c" };
-                    const statusLabel: Record<string,string> = { open:"Open",acknowledged:"Acknowledged",in_progress:"In Progress",resolved:"Resolved",withdrawn:"Withdrawn" };
-                    const days = Math.floor((Date.now()-new Date(e.createdAt).getTime())/86400000);
-                    const slaBreached = e.slaBreachedAt;
-                    return (
-                      <tr key={e.id} style={{ borderTop: "1px solid #D7E0E3", background: slaBreached ? "#fff8f8" : undefined }}>
-                        <td style={{ padding: "10px 14px", fontWeight: 700, color: "#003C51", maxWidth: 220 }}>{e.title}</td>
-                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.name ?? "—"}</td>
-                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.program?.name ?? "—"}</td>
-                        <td style={{ padding: "10px 14px", color: "#231F20" }}>{e.raisedBy.fullName}</td>
-                        <td style={{ padding: "10px 14px", color: sevColor, fontWeight: 700, textTransform: "capitalize" }}>{e.severity}</td>
-                        <td style={{ padding: "10px 14px" }}>
-                          <span style={{ background: statusBg[e.status]??"#f7f8fa", color: statusCol[e.status]??"#8a909c", fontWeight: 700, fontSize: 12.5, padding: "2px 9px", borderRadius: 99 }}>
-                            {statusLabel[e.status] ?? e.status}
-                          </span>
-                        </td>
-                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{days}d</td>
-                        <td style={{ padding: "10px 14px" }}>
-                          {slaBreached
-                            ? <span style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 13 }}>⚠ Breached</span>
-                            : e.slaDueAt
-                              ? <span style={{ fontSize: 13, color: "#7A7480" }}>{new Date(e.slaDueAt).toLocaleDateString()}</span>
-                              : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#5b616e", display: "block", marginBottom: 6 }}>
+              Resolution note <span style={{ color: "#cf3f3a" }}>*</span> <span style={{ fontWeight: 400 }}>(min. 20 characters)</span>
+            </label>
+            <textarea
+              value={resolveNote}
+              onChange={e => { setResolveNote(e.target.value); setResolveError(""); }}
+              placeholder="Describe how this escalation was resolved…"
+              rows={4}
+              style={{ width: "100%", border: "1.5px solid #d3d7de", borderRadius: 10, padding: "10px 13px", fontSize: 13.5, fontFamily: "'Aptos','Calibri',sans-serif", resize: "vertical", outline: "none", boxSizing: "border-box" }}
+            />
+            {resolveError && <div style={{ fontSize: 12.5, color: "#cf3f3a", marginTop: 6 }}>{resolveError}</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+              <button
+                onClick={() => { setResolveTarget(null); setResolveNote(""); setResolveError(""); }}
+                style={{ height: 38, padding: "0 18px", background: "#fff", border: "1.5px solid #d3d7de", borderRadius: 9, fontSize: 13.5, fontWeight: 600, color: "#5b616e", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResolve}
+                disabled={resolving}
+                style={{ height: 38, padding: "0 20px", background: resolving ? "#8a909c" : "#006E74", color: "#fff", border: "none", borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: resolving ? "default" : "pointer" }}
+              >
+                {resolving ? "Closing…" : "Confirm Close"}
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
