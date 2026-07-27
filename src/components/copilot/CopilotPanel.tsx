@@ -454,7 +454,7 @@ export function CopilotPanel() {
           display: "flex", flexDirection: "column", overflow: "hidden",
         }}>
           {/* Header */}
-          <div style={{ padding: "14px 18px 12px", background: C.petrol, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ padding: "14px 18px 12px", background: `linear-gradient(135deg, ${C.darkTeal} 0%, ${C.lightTeal} 100%)`, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
             <div style={{ width: 32, height: 32, borderRadius: "50%", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
                 <path d="M12 3C9.2 3 7 5.2 7 8s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5Z" stroke="#2dd4bf" strokeWidth="1.5"/>
