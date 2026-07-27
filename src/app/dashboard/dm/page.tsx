@@ -40,7 +40,7 @@ export default async function DmTriagePage() {
 
   if (!["dm", "pgm", "admin"].includes(user.role)) redirect("/dashboard");
 
-  // Resolve account + program scope
+  // Resolve scope — hierarchy: DH→Cluster, DM→Account, pgm→Program, PM→Project
   let accountIds: string[] = [];
   let programIds: string[] = [];
 
@@ -48,29 +48,16 @@ export default async function DmTriagePage() {
     const accounts = await prisma.orgAccount.findMany({ where: { orgId: user.orgId, deletedAt: null }, select: { id: true } });
     accountIds = accounts.map((a) => a.id);
   } else if (user.role === "pgm") {
-    const pgmAssignments = await prisma.programAssignment.findMany({
+    // pgm is scoped to their assigned programs only
+    const assignments = await prisma.programAssignment.findMany({
       where: { userId: user.id },
-      include: { program: { select: { id: true, accountId: true } } },
+      select: { programId: true },
     });
-    programIds = pgmAssignments.map((a) => a.program.id);
-    accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId).filter(Boolean))] as string[];
-    // fall back to AccountAssignment if no programs
-    if (accountIds.length === 0 && programIds.length === 0) {
-      const acctAssignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
-      accountIds = acctAssignments.map((a) => a.accountId);
-    }
+    programIds = assignments.map((a) => a.programId);
   } else {
-    // dm role: try AccountAssignment first, fall back to ProgramAssignment
+    // dm is scoped to their assigned accounts (AccountAssignment) — no program fallback
     const assignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
     accountIds = assignments.map((a) => a.accountId);
-    if (accountIds.length === 0) {
-      const pgmAssignments = await prisma.programAssignment.findMany({
-        where: { userId: user.id },
-        include: { program: { select: { id: true, accountId: true } } },
-      });
-      programIds = pgmAssignments.map((a) => a.program.id);
-      accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId).filter(Boolean))] as string[];
-    }
   }
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);

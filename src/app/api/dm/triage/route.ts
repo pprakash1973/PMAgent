@@ -73,45 +73,36 @@ export async function GET(req: NextRequest) {
   const accountFilter = url.searchParams.get("account_id");
   const programFilter = url.searchParams.get("program_id");
 
-  // Resolve DM's assigned accounts
+  // Resolve scope — hierarchy: dm→Account, pgm→Program
   let accountIds: string[] = [];
+  let programIds: string[] = [];
   if (user.role === "admin") {
-    // Admin sees everything — get all accounts in the org
-    const accounts = await prisma.orgAccount.findMany({
-      where: { orgId: user.orgId, deletedAt: null },
-      select: { id: true },
-    });
+    const accounts = await prisma.orgAccount.findMany({ where: { orgId: user.orgId, deletedAt: null }, select: { id: true } });
     accountIds = accounts.map((a) => a.id);
   } else if (user.role === "pgm") {
-    const pgmAssignments = await prisma.programAssignment.findMany({
-      where: { userId: user.id },
-      include: { program: { select: { accountId: true } } },
-    });
-    accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId))];
-    if (accountIds.length === 0) {
-      const acctAssignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
-      accountIds = acctAssignments.map((a) => a.accountId);
-    }
+    const assignments = await prisma.programAssignment.findMany({ where: { userId: user.id }, select: { programId: true } });
+    programIds = assignments.map((a) => a.programId);
   } else {
-    const assignments = await prisma.accountAssignment.findMany({
-      where: { userId: user.id },
-      select: { accountId: true },
-    });
+    const assignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
     accountIds = assignments.map((a) => a.accountId);
   }
 
-  if (accountIds.length === 0) {
+  const hasScope = accountIds.length > 0 || programIds.length > 0;
+  if (!hasScope) {
     return NextResponse.json({ bands: { red: [], amber: [], no_data: [], green: [] }, counts: { red: 0, amber: 0, no_data: 0, green: 0, total: 0 } });
   }
 
   // Build project filter
+  const scopeOr = [
+    ...(accountIds.length > 0 ? [{ accountId: accountFilter ?? { in: accountIds } }] : []),
+    ...(programIds.length > 0 ? [{ programId: programFilter ?? { in: programIds } }] : []),
+  ];
   const projectWhere: any = {
     orgId: user.orgId,
     deletedAt: null,
     status: { not: "closed" },
-    accountId: accountFilter ? accountFilter : { in: accountIds },
+    OR: scopeOr,
   };
-  if (programFilter) projectWhere.programId = programFilter;
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
@@ -229,7 +220,7 @@ export async function GET(req: NextRequest) {
   // Summary stats for the header chips
   const overdueActionItems = await prisma.actionItem.count({
     where: {
-      project: { accountId: { in: accountIds } },
+      project: { OR: scopeOr },
       status: { in: ["open", "acknowledged", "in_progress", "blocked"] },
       dueDate: { lt: new Date() },
     },

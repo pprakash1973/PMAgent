@@ -13,21 +13,25 @@ export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const statusFilter = url.searchParams.get("status");
 
-  // Resolve account scope
-  let accountIds: string[] = [];
+  // Resolve scope — hierarchy: dm→Account, pgm→Program
+  let projectScope: any;
   if (user.role === "admin") {
-    const accounts = await prisma.orgAccount.findMany({ where: { orgId: user.orgId, deletedAt: null }, select: { id: true } });
-    accountIds = accounts.map((a) => a.id);
+    projectScope = { orgId: user.orgId };
+  } else if (user.role === "pgm") {
+    const assignments = await prisma.programAssignment.findMany({ where: { userId: user.id }, select: { programId: true } });
+    const programIds = assignments.map((a) => a.programId);
+    if (programIds.length === 0) return NextResponse.json({ items: [] });
+    projectScope = { programId: { in: programIds } };
   } else {
     const assignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
-    accountIds = assignments.map((a) => a.accountId);
+    const accountIds = assignments.map((a) => a.accountId);
+    if (accountIds.length === 0) return NextResponse.json({ items: [] });
+    projectScope = { accountId: { in: accountIds } };
   }
-
-  if (accountIds.length === 0) return NextResponse.json({ items: [] });
 
   const where: any = {
     raisedById: user.role === "dm" ? user.id : undefined,
-    project: { accountId: { in: accountIds } },
+    project: projectScope,
   };
   if (statusFilter) where.status = { in: statusFilter.split(",") };
 
