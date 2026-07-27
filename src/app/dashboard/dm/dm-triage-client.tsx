@@ -15,18 +15,20 @@ type TriageData = {
   overdueActionItems: number;
 };
 
+// UST brand palette — Dark Teal #006E74 · Light Teal #0097AC · Petrol #003C51
+// RAG: Green #01B27C · Amber (kept) · Red/Orange #FC6A59
 const C = {
-  bg: "#f0f2f5",
-  sidebarBg: "#13151e",
-  tabBar: "#1b1e27",
-  border: "rgba(255,255,255,.08)",
-  borderLight: "#e2e5ea",
-  red: "#cf3f3a", redBg: "rgba(207,63,58,.14)", redBorder: "rgba(207,63,58,.22)",
-  amber: "#c17d12", amberBg: "rgba(193,125,18,.1)", amberBorder: "rgba(193,125,18,.18)",
-  green: "#158a5a", greenBg: "rgba(21,138,90,.1)", greenBorder: "rgba(21,138,90,.18)",
-  noData: "#6b7280", noDataBg: "rgba(107,114,128,.1)", noDataBorder: "rgba(107,114,128,.22)",
-  blue: "#4f5bd5", blueL: "#5b67e0",
-  text: "#1a1d24", textMuted: "#5b616e", textFaint: "#8a909c",
+  bg: "#F2F7F8",           // UST Light Gray Wash
+  sidebarBg: "#003C51",    // UST Petrol
+  tabBar: "#006E74",       // UST Dark Teal
+  border: "rgba(255,255,255,.10)",
+  borderLight: "#D7E0E3",  // UST Mid Gray Wash
+  red: "#FC6A59", redBg: "rgba(252,106,89,.12)", redBorder: "rgba(252,106,89,.28)",
+  amber: "#c17d12", amberBg: "rgba(193,125,18,.10)", amberBorder: "rgba(193,125,18,.20)",
+  green: "#01B27C", greenBg: "rgba(1,178,124,.10)", greenBorder: "rgba(1,178,124,.22)",
+  noData: "#7A7480", noDataBg: "rgba(122,116,128,.10)", noDataBorder: "rgba(122,116,128,.22)",
+  blue: "#0097AC", blueL: "#0097AC",   // UST Light Teal — actions & highlights
+  text: "#231F20", textMuted: "#7A7480", textFaint: "#7A7480",  // UST Soft Black / Dark Gray
   panelBg: "#fff",
   FF: "'Aptos','Calibri',system-ui,sans-serif",
   FM: "'Consolas','Courier New',monospace",
@@ -63,11 +65,11 @@ function SidebarItem({ p, selected, onClick }: { p: TriageRow; selected: boolean
   return (
     <div onClick={onClick} style={{
       padding: "9px 14px", cursor: "pointer",
-      background: selected ? "rgba(79,91,213,.18)" : "transparent",
+      background: selected ? "rgba(0,151,172,.18)" : "transparent",
       borderLeft: selected ? `3px solid ${C.blueL}` : "3px solid transparent",
       transition: "background .12s",
     }}
-      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = "rgba(255,255,255,.04)"; }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = "rgba(0,151,172,.08)"; }}
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = "transparent"; }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
@@ -78,7 +80,7 @@ function SidebarItem({ p, selected, onClick }: { p: TriageRow; selected: boolean
         <span style={{ font: `400 10px ${C.FF}`, color: "rgba(255,255,255,.35)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.pmName}</span>
         <span style={{ font: `600 10.5px ${C.FM}`, color: sc }}>{fmt(p.spi)}</span>
         {issueCount > 0 && (
-          <span style={{ font: `700 8.5px ${C.FF}`, color: "#e07a77", background: "rgba(207,63,58,.18)", borderRadius: 4, padding: "1px 5px" }}>
+          <span style={{ font: `700 8.5px ${C.FF}`, color: C.red, background: C.redBg, borderRadius: 4, padding: "1px 5px" }}>
             {issueCount} issue{issueCount !== 1 ? "s" : ""}
           </span>
         )}
@@ -117,10 +119,10 @@ function ProjectHeader({ p, detail }: { p: TriageRow; detail: any }) {
         {p.band === "red" && (
           <button style={{
             height: 32, padding: "0 13px",
-            background: `linear-gradient(135deg, ${C.red}, #c43a36)`,
+            background: `linear-gradient(135deg, #FC6A59, #e05540)`,
             color: "#fff", border: "none", borderRadius: 8,
             font: `600 11.5px ${C.FF}`, cursor: "pointer",
-            boxShadow: "0 3px 10px rgba(207,63,58,.28)",
+            boxShadow: "0 3px 10px rgba(252,106,89,.28)",
             whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
           }}>
             <span>⚑</span> Escalate
@@ -358,10 +360,10 @@ function IssuesRisks({ detail }: { detail: any }) {
           const isHigh = ["critical", "high", "very_high"].includes(item.sev);
           const borderCol = isHigh ? C.red : C.amber;
           const typeCol = item.type === "issue" ? C.red : C.amber;
-          const typeBg = item.type === "issue" ? "rgba(207,63,58,.1)" : "rgba(193,125,18,.1)";
+          const typeBg = item.type === "issue" ? "rgba(252,106,89,.10)" : "rgba(193,125,18,.1)";
           return (
             <div key={i} style={{
-              background: C.panelBg, border: `1px solid ${isHigh ? "rgba(207,63,58,.2)" : "rgba(193,125,18,.2)"}`,
+              background: C.panelBg, border: `1px solid ${isHigh ? "rgba(252,106,89,.22)" : "rgba(193,125,18,.2)"}`,
               borderLeft: `3px solid ${borderCol}`, borderRadius: 11, padding: "13px 16px",
               boxShadow: "0 1px 3px rgba(0,0,0,.04)",
             }}>
@@ -400,8 +402,8 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
     <div style={{ flex: 1, overflowY: "auto", padding: "22px 28px 48px", background: C.bg }}>
       {/* KPI strip */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" as const }}>
-        {kpiCard("Total Projects", total, null, C.text, C.borderLight, "#1b1e27")}
-        {kpiCard("At Risk", data.counts.red, total ? `${Math.round(data.counts.red / total * 100)}% of portfolio` : null, C.red, "rgba(207,63,58,.25)")}
+        {kpiCard("Total Projects", total, null, "#fff", C.borderLight, "#003C51")}
+        {kpiCard("At Risk", data.counts.red, total ? `${Math.round(data.counts.red / total * 100)}% of portfolio` : null, C.red, "rgba(252,106,89,.28)")}
         {kpiCard("Needs Watch", data.counts.amber, total ? `${Math.round(data.counts.amber / total * 100)}% of portfolio` : null, C.amber, "rgba(193,125,18,.25)")}
         {kpiCard("On Track", data.counts.green, total ? `${Math.round(data.counts.green / total * 100)}% of portfolio` : null, C.green, "rgba(21,138,90,.25)")}
         <div style={{ flex: 1, minWidth: 130, background: C.panelBg, border: `1px solid ${C.borderLight}`, borderRadius: 13, padding: "16px 18px" }}>
@@ -549,9 +551,9 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
         <div style={{ flex: 1 }} />
         {data.counts.total > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, paddingRight: 4 }}>
-            {data.counts.red > 0 && <span style={{ font: `600 10.5px ${C.FF}`, color: "#e07a77", background: "rgba(207,63,58,.16)", borderRadius: 4, padding: "2px 8px" }}>🔴 {data.counts.red} Red</span>}
-            {data.counts.amber > 0 && <span style={{ font: `600 10.5px ${C.FF}`, color: "#c89a44", background: "rgba(193,125,18,.14)", borderRadius: 4, padding: "2px 8px" }}>🟡 {data.counts.amber} Amber</span>}
-            <span style={{ font: `400 10.5px ${C.FF}`, color: "rgba(255,255,255,.3)" }}>{data.counts.total} projects</span>
+            {data.counts.red > 0 && <span style={{ font: `600 10.5px ${C.FF}`, color: C.red, background: C.redBg, borderRadius: 4, padding: "2px 8px" }}>🔴 {data.counts.red} Red</span>}
+            {data.counts.amber > 0 && <span style={{ font: `600 10.5px ${C.FF}`, color: C.amber, background: C.amberBg, borderRadius: 4, padding: "2px 8px" }}>🟡 {data.counts.amber} Amber</span>}
+            <span style={{ font: `400 10.5px ${C.FF}`, color: "rgba(255,255,255,.45)" }}>{data.counts.total} projects</span>
           </div>
         )}
       </div>
@@ -575,19 +577,19 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
               {data.counts.red > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 5, padding: "3px 8px" }}>
                   <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.red }} />
-                  <span style={{ font: `600 9.5px ${C.FF}`, color: "#e07a77" }}>{data.counts.red} Red</span>
+                  <span style={{ font: `600 9.5px ${C.FF}`, color: C.red }}>{data.counts.red} Red</span>
                 </div>
               )}
               {data.counts.amber > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.amberBg, border: `1px solid ${C.amberBorder}`, borderRadius: 5, padding: "3px 8px" }}>
                   <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }} />
-                  <span style={{ font: `600 9.5px ${C.FF}`, color: "#c89a44" }}>{data.counts.amber} Amber</span>
+                  <span style={{ font: `600 9.5px ${C.FF}`, color: C.amber }}>{data.counts.amber} Amber</span>
                 </div>
               )}
               {data.counts.green > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, background: C.greenBg, border: `1px solid ${C.greenBorder}`, borderRadius: 5, padding: "3px 8px" }}>
                   <div style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }} />
-                  <span style={{ font: `600 9.5px ${C.FF}`, color: "#3aad79" }}>{data.counts.green} Green</span>
+                  <span style={{ font: `600 9.5px ${C.FF}`, color: C.green }}>{data.counts.green} Green</span>
                 </div>
               )}
             </div>
@@ -604,7 +606,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
                     <>
                       <div style={{ padding: "6px 14px 5px", display: "flex", alignItems: "center", gap: 7 }}>
                         <div style={{ width: 7, height: 7, borderRadius: "50%", background: C.red, flexShrink: 0 }} />
-                        <span style={{ font: `700 9px ${C.FF}`, letterSpacing: ".09em", textTransform: "uppercase" as const, color: "rgba(207,63,58,.75)" }}>Immediate Attention</span>
+                        <span style={{ font: `700 9px ${C.FF}`, letterSpacing: ".09em", textTransform: "uppercase" as const, color: "rgba(252,106,89,.9)" }}>Immediate Attention</span>
                       </div>
                       {filteredRed.map(p => <SidebarItem key={p.id} p={p} selected={selectedId === p.id} onClick={() => setSelectedId(p.id)} />)}
                     </>
@@ -628,10 +630,10 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
             </div>
 
             {/* AI bar */}
-            <div style={{ padding: "9px 10px", borderTop: "1px solid rgba(255,255,255,.05)", background: "#0e1017" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, height: 32, background: "linear-gradient(135deg,rgba(79,91,213,.1),rgba(91,103,224,.06))", border: "1px solid rgba(79,91,213,.2)", borderRadius: 8, padding: "0 11px", cursor: "pointer" }}>
-                <span style={{ color: "#7b85e8", fontSize: 12 }}>✦</span>
-                <span style={{ font: `400 11.5px ${C.FF}`, color: "rgba(255,255,255,.4)" }}>Ask AI about portfolio…</span>
+            <div style={{ padding: "9px 10px", borderTop: "1px solid rgba(255,255,255,.07)", background: "#002535" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, height: 32, background: "linear-gradient(135deg,rgba(0,151,172,.14),rgba(0,110,116,.08))", border: "1px solid rgba(0,151,172,.28)", borderRadius: 8, padding: "0 11px", cursor: "pointer" }}>
+                <span style={{ color: "#0097AC", fontSize: 12 }}>✦</span>
+                <span style={{ font: `400 11.5px ${C.FF}`, color: "rgba(255,255,255,.45)" }}>Ask AI about portfolio…</span>
               </div>
             </div>
           </div>
