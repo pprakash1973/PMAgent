@@ -28,7 +28,7 @@ export interface TrendPoint {
   healthPct: number | null;
 }
 
-// ─── color helpers ────────────────────────────────────────────────────────────
+// â”€â”€â”€ color helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ragColor(r: string) {
   return r === "red" ? "#cf3f3a" : r === "amber" ? "#c17d12" : "#158a5a";
@@ -53,12 +53,41 @@ function schedCol(v: number) {
   return v > 95 ? "#158a5a" : "#4f5bd5";
 }
 
-// ─── alert text derived from metrics ─────────────────────────────────────────
+function pmScore(spi: number | null, cpi: number | null, rag: string): number {
+  const norm = (v: number) => Math.min(Math.max((v - 0.6) / 0.5, 0), 1);
+  const spiN = spi !== null ? norm(spi) : null;
+  const cpiN = cpi !== null ? norm(cpi) : null;
+  const ragN = rag === "green" ? 1 : rag === "amber" ? 0.5 : 0.1;
+  if (spiN !== null && cpiN !== null) return Math.round((spiN * 0.35 + cpiN * 0.30 + ragN * 0.35) * 100);
+  if (spiN !== null) return Math.round((spiN * 0.5 + ragN * 0.5) * 100);
+  if (cpiN !== null) return Math.round((cpiN * 0.5 + ragN * 0.5) * 100);
+  return Math.round(ragN * 100);
+}
+function pmLabel(s: number) { return s >= 80 ? "High" : s >= 60 ? "Moderate" : s >= 40 ? "Low" : "Critical"; }
+function pmColor(s: number): string { return s >= 80 ? "#01B27C" : s >= 60 ? "#0097AC" : s >= 40 ? "#c17d12" : "#FC6A59"; }
+
+function PmMeter({ spi, cpi, rag }: { spi: number | null; cpi: number | null; rag: string }) {
+  const s = pmScore(spi, cpi, rag);
+  const col = pmColor(s);
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#8a909c", marginBottom: 3 }}>
+        <span>{pmLabel(s)}</span>
+        <span style={{ fontFamily: "monospace", color: col, fontWeight: 600 }}>{s}%</span>
+      </div>
+      <div style={{ height: 5, background: "#eef0f3", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ height: "100%", borderRadius: 3, background: col, width: `${s}%`, transition: "width .4s" }} />
+      </div>
+    </div>
+  );
+}
+
+// â”€â”€â”€ alert text derived from metrics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function alertFor(p: DhProject): { title: string; body: string } {
   if (p.rag === "green") return { title: "", body: "" };
   if (p.spi !== null && p.spi < 0.75) {
-    return { title: "Schedule critical", body: `SPI ${p.spi.toFixed(2)} — significant milestone risk.` };
+    return { title: "Schedule critical", body: `SPI ${p.spi.toFixed(2)} â€” significant milestone risk.` };
   }
   if (p.cpi !== null && p.cpi < 0.8) {
     return { title: "Budget overrun risk", body: `Burn rate exceeding plan; CPI ${p.cpi.toFixed(2)}.` };
@@ -67,23 +96,23 @@ function alertFor(p: DhProject): { title: string; body: string } {
     return { title: "Budget vs. schedule gap", body: `${p.budPct}% budget used, only ${p.schedPct}% schedule complete.` };
   }
   if (p.spi !== null && p.spi < 0.9) {
-    return { title: "Schedule pressure", body: `SPI ${p.spi.toFixed(2)} — monitor closely this sprint.` };
+    return { title: "Schedule pressure", body: `SPI ${p.spi.toFixed(2)} â€” monitor closely this sprint.` };
   }
   return { title: "At risk", body: "Review status with PM this week." };
 }
 
-// ─── RAG pill ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ RAG pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function RagPill({ rag }: { rag: string }) {
   return (
     <span style={{
-      fontSize: 10, fontWeight: 600, color: ragColor(rag), background: ragBg(rag),
+      fontSize: 11, fontWeight: 600, color: ragColor(rag), background: ragBg(rag),
       border: `1px solid ${ragColor(rag)}40`, borderRadius: 6, padding: "2px 8px",
     }}>{ragLabel(rag)}</span>
   );
 }
 
-// ─── mini progress bar ────────────────────────────────────────────────────────
+// â”€â”€â”€ mini progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Bar({ pct, color }: { pct: number; color: string }) {
   return (
@@ -93,10 +122,10 @@ function Bar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-// ─── trend SVG ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ trend SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TrendChart({ trends }: { trends: TrendPoint[] }) {
-  // Map values (0.6–1.1 range) to y coords (20–155)
+  // Map values (0.6â€“1.1 range) to y coords (20â€“155)
   const H = 155, TOP = 20;
   const range = 0.5; // 0.6 to 1.1
   const toY = (v: number) => TOP + ((1.1 - Math.min(Math.max(v, 0.6), 1.1)) / range) * (H - TOP);
@@ -163,7 +192,7 @@ function TrendChart({ trends }: { trends: TrendPoint[] }) {
   );
 }
 
-// ─── Cluster card ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Cluster card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ClusterCard({ name, type, projects }: { name: string; type: string; projects: DhProject[] }) {
   const green = projects.filter(p => p.rag === "green").length;
@@ -198,15 +227,15 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
         <div style={{
           width: 36, height: 36, borderRadius: 10, background: clusterColor,
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0,
+          fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0,
         }}>{initials}</div>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 15, fontWeight: 700 }}>{name}</span>
+            <span style={{ fontSize: 16, fontWeight: 700 }}>{name}</span>
             <RagPill rag={clusterRag} />
-            <span style={{ fontSize: 11, color: "#8a909c", border: "1px solid #e2e5ea", borderRadius: 5, padding: "1px 8px" }}>{type}</span>
+            <span style={{ fontSize: 12, color: "#8a909c", border: "1px solid #e2e5ea", borderRadius: 5, padding: "1px 8px" }}>{type}</span>
           </div>
-          <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 2 }}>
+          <div style={{ fontSize: 12.5, color: "#8a909c", marginTop: 2 }}>
             {[...new Set(projects.map(p => p.clientName))].join(", ")}
           </div>
         </div>
@@ -214,14 +243,14 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
         {[
           { label: "Projects", val: String(total), col: "#1a1d24" },
           { label: "Health", val: `${health}%`, col: ragColor(clusterRag) },
-          { label: "Avg SPI", val: avgSpi?.toFixed(2) ?? "—", col: spiCol(avgSpi) },
-          { label: "Avg CPI", val: avgCpi?.toFixed(2) ?? "—", col: spiCol(avgCpi) },
+          { label: "Avg SPI", val: avgSpi?.toFixed(2) ?? "â€”", col: spiCol(avgSpi) },
+          { label: "Avg CPI", val: avgCpi?.toFixed(2) ?? "â€”", col: spiCol(avgCpi) },
         ].map(({ label, val, col }, i, arr) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: 0 }}>
             {i > 0 && <div style={{ width: 1, background: "#eef0f3", height: 32, marginRight: 20 }} />}
             <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 10, color: "#8a909c", marginBottom: 2 }}>{label}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, fontFamily: "monospace", color: col }}>{val}</div>
+              <div style={{ fontSize: 11, color: "#8a909c", marginBottom: 2 }}>{label}</div>
+              <div style={{ fontSize: 21, fontWeight: 600, fontFamily: "monospace", color: col }}>{val}</div>
             </div>
           </div>
         ))}
@@ -230,29 +259,29 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
       {/* body */}
       <div style={{ display: "flex" }}>
         <div style={{ flex: 1, padding: "16px 20px", borderRight: "1px solid #f0f1f4" }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 10 }}>RAG breakdown</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 10 }}>RAG breakdown</div>
           <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", marginBottom: 10 }}>
             <div style={{ width: `${total ? (green/total)*100 : 0}%`, background: "#158a5a", transition: "width .4s" }} />
             <div style={{ width: `${total ? (amber/total)*100 : 0}%`, background: "#c17d12", transition: "width .4s" }} />
             <div style={{ width: `${total ? (red/total)*100 : 0}%`, background: "#cf3f3a", transition: "width .4s" }} />
           </div>
-          <div style={{ display: "flex", gap: 14, fontSize: 12, fontWeight: 500 }}>
-            <span style={{ color: "#158a5a" }}>● {green} Green</span>
-            <span style={{ color: "#c17d12" }}>● {amber} Amber</span>
-            <span style={{ color: "#cf3f3a" }}>● {red} Red</span>
+          <div style={{ display: "flex", gap: 14, fontSize: 13, fontWeight: 500 }}>
+            <span style={{ color: "#158a5a" }}>â— {green} Green</span>
+            <span style={{ color: "#c17d12" }}>â— {amber} Amber</span>
+            <span style={{ color: "#cf3f3a" }}>â— {red} Red</span>
           </div>
         </div>
         <div style={{ flex: 1, padding: "16px 20px", borderRight: "1px solid #f0f1f4" }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 10 }}>Avg metrics</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 10 }}>Avg metrics</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#5b616e", marginBottom: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "#5b616e", marginBottom: 4 }}>
                 <span>Avg schedule</span><span style={{ fontFamily: "monospace", fontWeight: 600 }}>{avgSched}%</span>
               </div>
               <Bar pct={avgSched} color={schedCol(avgSched)} />
             </div>
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#5b616e", marginBottom: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "#5b616e", marginBottom: 4 }}>
                 <span>Avg budget consumed</span><span style={{ fontFamily: "monospace", fontWeight: 600 }}>{avgBud}%</span>
               </div>
               <Bar pct={avgBud} color={budCol(avgBud)} />
@@ -260,10 +289,10 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
           </div>
         </div>
         <div style={{ flex: 1.4, padding: "16px 20px" }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 10 }}>At-risk projects</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 10 }}>At-risk projects</div>
           {atRisk.length === 0
-            ? <span style={{ fontSize: 12.5, color: "#158a5a" }}>All projects on track</span>
-            : <span style={{ fontSize: 12.5, color: "#cf3f3a", lineHeight: 1.6 }}>{atRisk.join(", ")}</span>
+            ? <span style={{ fontSize: 13.5, color: "#158a5a" }}>All projects on track</span>
+            : <span style={{ fontSize: 13.5, color: "#cf3f3a", lineHeight: 1.6 }}>{atRisk.join(", ")}</span>
           }
         </div>
       </div>
@@ -271,7 +300,7 @@ function ClusterCard({ name, type, projects }: { name: string; type: string; pro
   );
 }
 
-// ─── main component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface DhEscalation {
   id: string;
@@ -381,14 +410,14 @@ export default function DhDashboardClient({
   const tabBtn = (active: boolean) => ({
     height: 44, padding: "0 4px", background: "transparent", border: "none",
     borderBottom: active ? "2.5px solid #006E74" : "2.5px solid transparent",
-    fontSize: 13, fontWeight: active ? 700 : 500,
+    fontSize: 14, fontWeight: active ? 700 : 500,
     color: active ? "#006E74" : "#8a909c", cursor: "pointer",
     fontFamily: "'Aptos','Calibri',sans-serif",
   } as const);
 
   const viewBtn = (active: boolean) => ({
     height: 30, padding: "0 12px", background: active ? "#fff" : "transparent",
-    border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600,
+    border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600,
     color: active ? "#1a1d24" : "#8a909c", cursor: "pointer",
     boxShadow: active ? "0 1px 3px rgba(0,0,0,.08)" : "none",
   } as const);
@@ -396,9 +425,9 @@ export default function DhDashboardClient({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", fontFamily: "'Aptos','Calibri',sans-serif" }}>
 
-      {/* ── Filter bar ──────────────────────────────────────────────────── */}
+      {/* â”€â”€ Filter bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ background: "#fff", borderBottom: "1px solid #e2e5ea", padding: "10px 24px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flexShrink: 0 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase" }}>Filter</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase" }}>Filter</span>
 
         {/* search */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, height: 34, background: "#f7f8fa", border: "1px solid #e2e5ea", borderRadius: 9, padding: "0 12px" }}>
@@ -407,8 +436,8 @@ export default function DhDashboardClient({
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search projects…"
-            style={{ border: "none", background: "transparent", fontSize: 12.5, color: "#1a1d24", outline: "none", width: 150 }}
+            placeholder="Search projectsâ€¦"
+            style={{ border: "none", background: "transparent", fontSize: 13.5, color: "#1a1d24", outline: "none", width: 150 }}
           />
         </div>
 
@@ -445,32 +474,32 @@ export default function DhDashboardClient({
             <button key={r} onClick={() => setFilterRag(r)} style={{
               height: 30, padding: "0 11px", border: "1px solid",
               borderColor: filterRag === r ? (r === "" ? "#006E74" : ragColor(r)) : "#e2e5ea",
-              borderRadius: 20, fontSize: 11.5, fontWeight: 600, cursor: "pointer",
+              borderRadius: 20, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
               background: filterRag === r ? (r === "" ? "#e6f4f5" : ragBg(r)) : "#fff",
               color: filterRag === r ? (r === "" ? "#006E74" : ragColor(r)) : "#8a909c",
             }}>
-              {r === "" ? "All" : `● ${r.charAt(0).toUpperCase() + r.slice(1)}`}
+              {r === "" ? "All" : `â— ${r.charAt(0).toUpperCase() + r.slice(1)}`}
             </button>
           ))}
         </div>
 
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: "#8a909c", fontWeight: 500 }}>{filtered.length} projects</span>
+        <span style={{ fontSize: 13, color: "#8a909c", fontWeight: 500 }}>{filtered.length} projects</span>
         {hasFilter && (
-          <button onClick={clearFilters} style={{ fontSize: 11.5, color: "#8a909c", background: "none", border: "1px solid #e2e5ea", borderRadius: 7, padding: "4px 10px", cursor: "pointer" }}>
+          <button onClick={clearFilters} style={{ fontSize: 12.5, color: "#8a909c", background: "none", border: "1px solid #e2e5ea", borderRadius: 7, padding: "4px 10px", cursor: "pointer" }}>
             Clear filters
           </button>
         )}
       </div>
 
-      {/* ── Tab bar ────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Tab bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ background: "#fff", borderBottom: "1.5px solid #e2e5ea", padding: "0 24px", display: "flex", alignItems: "center", gap: 24, flexShrink: 0 }}>
         <button style={tabBtn(tab === "projects")}  onClick={() => setTab("projects")}>Project Information</button>
         <button style={tabBtn(tab === "clusters")} onClick={() => setTab("clusters")}>Cluster Delivery Metrics</button>
         <div style={{ marginLeft: "auto" }}>
           <button
             onClick={() => openPanel("I'm the Delivery Head. Give me a summary of my portfolio health and flag any at-risk projects.")}
-            style={{ display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 14px", background: "#006E74", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "#fff", cursor: "pointer" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, height: 32, padding: "0 14px", background: "#006E74", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer" }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="currentColor"/><path d="M9 8h6v8H9z" fill="none"/><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" fill="none"/><path d="M8 12h8M12 8l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             AI Copilot
@@ -478,20 +507,20 @@ export default function DhDashboardClient({
         </div>
       </div>
 
-      {/* ── Scrollable content ─────────────────────────────────────────── */}
+      {/* â”€â”€ Scrollable content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px 48px", display: "flex", flexDirection: "column", gap: 18 }}>
 
-        {/* ══════════════ PROJECT INFORMATION TAB ══════════════ */}
+        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â• PROJECT INFORMATION TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {tab === "projects" && (
           <>
             {/* KPI strip */}
             <div style={{ display: "flex", gap: 12 }}>
               {/* Portfolio health */}
               <div style={{ flex: 1, minWidth: 160, background: "#1b1e27", borderRadius: 14, padding: "17px 20px", display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: "rgba(255,255,255,.45)", textTransform: "uppercase" }}>Portfolio Health</span>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "rgba(255,255,255,.45)", textTransform: "uppercase" }}>Portfolio Health</span>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                  <span style={{ fontSize: 32, fontWeight: 600, color: "#3ec98a", fontFamily: "monospace" }}>{kpi.health}%</span>
-                  <span style={{ fontSize: 12, fontWeight: 500, color: "#3ec98a" }}>
+                  <span style={{ fontSize: 33, fontWeight: 600, color: "#3ec98a", fontFamily: "monospace" }}>{kpi.health}%</span>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: "#3ec98a" }}>
                     {kpi.green} of {kpi.total} on track
                   </span>
                 </div>
@@ -502,26 +531,26 @@ export default function DhDashboardClient({
 
               {/* Health distribution */}
               <div style={{ flex: 1, background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "17px 20px" }}>
-                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Health Distribution</span>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Health Distribution</span>
                 <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", marginBottom: 9 }}>
                   <div style={{ width: `${kpi.total ? (kpi.green/kpi.total)*100 : 0}%`, background: "#158a5a", transition: "width .4s" }} />
                   <div style={{ width: `${kpi.total ? (kpi.amber/kpi.total)*100 : 0}%`, background: "#c17d12", transition: "width .4s" }} />
                   <div style={{ width: `${kpi.total ? (kpi.red/kpi.total)*100 : 0}%`, background: "#cf3f3a", transition: "width .4s" }} />
                 </div>
-                <div style={{ display: "flex", gap: 14, fontSize: 12, fontWeight: 500 }}>
-                  <span style={{ color: "#158a5a" }}>● {kpi.green} Green</span>
-                  <span style={{ color: "#c17d12" }}>● {kpi.amber} Amber</span>
-                  <span style={{ color: "#cf3f3a" }}>● {kpi.red} Red</span>
+                <div style={{ display: "flex", gap: 14, fontSize: 13, fontWeight: 500 }}>
+                  <span style={{ color: "#158a5a" }}>â— {kpi.green} Green</span>
+                  <span style={{ color: "#c17d12" }}>â— {kpi.amber} Amber</span>
+                  <span style={{ color: "#cf3f3a" }}>â— {kpi.red} Red</span>
                 </div>
               </div>
 
               {/* Budget consumed */}
               <div style={{ flex: 1, background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "17px 20px" }}>
-                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 5 }}>Avg Budget Consumed</span>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 5 }}>Avg Budget Consumed</span>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 7 }}>
-                  <span style={{ fontSize: 26, fontWeight: 600, fontFamily: "monospace" }}>{kpi.avgBudPct}%</span>
+                  <span style={{ fontSize: 27, fontWeight: 600, fontFamily: "monospace" }}>{kpi.avgBudPct}%</span>
                   {kpi.totalBudget > 0 && (
-                    <span style={{ fontSize: 12, color: "#8a909c" }}>of ${(kpi.totalBudget/1000).toFixed(0)}K total</span>
+                    <span style={{ fontSize: 13, color: "#8a909c" }}>of ${(kpi.totalBudget/1000).toFixed(0)}K total</span>
                   )}
                 </div>
                 <Bar pct={kpi.avgBudPct} color={budCol(kpi.avgBudPct)} />
@@ -529,21 +558,21 @@ export default function DhDashboardClient({
 
               {/* Avg SPI / CPI / Active */}
               <div style={{ flex: 1, background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "17px 20px" }}>
-                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 5 }}>Avg SPI / CPI</span>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 5 }}>Avg SPI / CPI</span>
                 <div style={{ display: "flex", gap: 16, marginTop: 6 }}>
                   <div>
-                    <div style={{ fontSize: 10, color: "#8a909c" }}>SPI</div>
-                    <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgSpi) }}>{kpi.avgSpi?.toFixed(2) ?? "—"}</div>
+                    <div style={{ fontSize: 11, color: "#8a909c" }}>SPI</div>
+                    <div style={{ fontSize: 23, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgSpi) }}>{kpi.avgSpi?.toFixed(2) ?? "â€”"}</div>
                   </div>
                   <div style={{ width: 1, background: "#eef0f3" }} />
                   <div>
-                    <div style={{ fontSize: 10, color: "#8a909c" }}>CPI</div>
-                    <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgCpi) }}>{kpi.avgCpi?.toFixed(2) ?? "—"}</div>
+                    <div style={{ fontSize: 11, color: "#8a909c" }}>CPI</div>
+                    <div style={{ fontSize: 23, fontWeight: 600, fontFamily: "monospace", color: spiCol(kpi.avgCpi) }}>{kpi.avgCpi?.toFixed(2) ?? "â€”"}</div>
                   </div>
                   <div style={{ width: 1, background: "#eef0f3" }} />
                   <div>
-                    <div style={{ fontSize: 10, color: "#8a909c" }}>Active</div>
-                    <div style={{ fontSize: 22, fontWeight: 600, fontFamily: "monospace" }}>{kpi.total}</div>
+                    <div style={{ fontSize: 11, color: "#8a909c" }}>Active</div>
+                    <div style={{ fontSize: 23, fontWeight: 600, fontFamily: "monospace" }}>{kpi.total}</div>
                   </div>
                 </div>
               </div>
@@ -551,10 +580,10 @@ export default function DhDashboardClient({
               {/* AI alert */}
               <div style={{ flex: 1.2, background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: "1px solid #cfd4f5", borderRadius: 14, padding: "17px 20px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                  <span style={{ color: "#4f5bd5", fontSize: 14 }}>✦</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Alert</span>
+                  <span style={{ color: "#4f5bd5", fontSize: 15 }}>âœ¦</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Alert</span>
                 </div>
-                <div style={{ fontSize: 12.5, color: "#3a3f52", lineHeight: 1.55 }}>
+                <div style={{ fontSize: 13.5, color: "#3a3f52", lineHeight: 1.55 }}>
                   {atRisk.length === 0
                     ? `All ${kpi.total} projects healthy. No immediate action required.`
                     : `${kpi.red} project${kpi.red !== 1 ? "s" : ""} critical${kpi.amber > 0 ? `, ${kpi.amber} at risk` : ""}. Review escalations below.`
@@ -568,8 +597,8 @@ export default function DhDashboardClient({
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#cf3f3a", boxShadow: "0 0 0 3px rgba(207,63,58,.18)" }} />
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>Projects at risk</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#cf3f3a", background: "#fbe4e2", borderRadius: 6, padding: "2px 9px" }}>{atRisk.length} need attention</span>
+                  <span style={{ fontSize: 15, fontWeight: 700 }}>Projects at risk</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#cf3f3a", background: "#fbe4e2", borderRadius: 6, padding: "2px 9px" }}>{atRisk.length} need attention</span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {atRisk.map(p => {
@@ -583,55 +612,60 @@ export default function DhDashboardClient({
                         <div style={{ flex: 1.8, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                             <span style={{ width: 10, height: 10, borderRadius: "50%", background: ragColor(p.rag), flexShrink: 0, boxShadow: `0 0 0 3px ${ragGlow(p.rag)}` }} />
-                            <span style={{ fontSize: 14, fontWeight: 700 }}>{p.name}</span>
+                            <span style={{ fontSize: 15, fontWeight: 700 }}>{p.name}</span>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 19, flexWrap: "wrap", marginTop: 3 }}>
-                            <span style={{ fontSize: 11, color: "#8a909c", fontFamily: "monospace" }}>{p.id}</span>
-                            <span style={{ color: "#d3d7de" }}>·</span>
-                            <span style={{ fontSize: 12, color: "#5b616e" }}>{p.clientName}</span>
-                            <span style={{ color: "#d3d7de" }}>·</span>
-                            <span style={{ fontSize: 12, color: "#5b616e" }}>{p.programName}</span>
-                            <span style={{ color: "#d3d7de" }}>·</span>
-                            <span style={{ fontSize: 12, color: "#5b616e" }}>PM: {p.pmName}</span>
+                            <span style={{ fontSize: 12, color: "#8a909c", fontFamily: "monospace" }}>{p.id}</span>
+                            <span style={{ color: "#d3d7de" }}>Â·</span>
+                            <span style={{ fontSize: 13, color: "#5b616e" }}>{p.clientName}</span>
+                            <span style={{ color: "#d3d7de" }}>Â·</span>
+                            <span style={{ fontSize: 13, color: "#5b616e" }}>{p.programName}</span>
+                            <span style={{ color: "#d3d7de" }}>Â·</span>
+                            <span style={{ fontSize: 13, color: "#5b616e" }}>PM: {p.pmName}</span>
                           </div>
                         </div>
                         {/* SPI */}
                         <div style={{ width: 60, textAlign: "center", flexShrink: 0 }}>
-                          <div style={{ fontSize: 10, color: "#8a909c", marginBottom: 3 }}>SPI</div>
-                          <div style={{ fontSize: 17, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "—"}</div>
+                          <div style={{ fontSize: 11, color: "#8a909c", marginBottom: 3 }}>SPI</div>
+                          <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "â€”"}</div>
                         </div>
                         {/* CPI */}
                         <div style={{ width: 60, textAlign: "center", flexShrink: 0 }}>
-                          <div style={{ fontSize: 10, color: "#8a909c", marginBottom: 3 }}>CPI</div>
-                          <div style={{ fontSize: 17, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "—"}</div>
+                          <div style={{ fontSize: 11, color: "#8a909c", marginBottom: 3 }}>CPI</div>
+                          <div style={{ fontSize: 18, fontWeight: 600, fontFamily: "monospace", color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "â€”"}</div>
                         </div>
                         {/* Schedule bar */}
                         <div style={{ width: 120, flexShrink: 0 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#8a909c", marginBottom: 4 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8a909c", marginBottom: 4 }}>
                             <span>Schedule</span><span style={{ fontFamily: "monospace" }}>{p.schedPct}%</span>
                           </div>
                           <Bar pct={p.schedPct} color={schedCol(p.schedPct)} />
                         </div>
                         {/* Budget bar */}
                         <div style={{ width: 120, flexShrink: 0 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#8a909c", marginBottom: 4 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8a909c", marginBottom: 4 }}>
                             <span>Budget</span><span style={{ fontFamily: "monospace" }}>{p.budPct}%</span>
                           </div>
                           <Bar pct={p.budPct} color={budCol(p.budPct)} />
                         </div>
+                        {/* PM Score */}
+                        <div style={{ width: 110, flexShrink: 0 }}>
+                          <div style={{ fontSize: 10, color: "#8a909c", marginBottom: 5 }}>PM Score</div>
+                          <PmMeter spi={p.spi} cpi={p.cpi} rag={p.rag} />
+                        </div>
                         {/* Alert */}
-                        <div style={{ width: 180, flexShrink: 0 }}>
-                          {alert.title && <div style={{ fontSize: 11.5, fontWeight: 600, color: ragColor(p.rag), marginBottom: 4 }}>{alert.title}</div>}
-                          {alert.body  && <div style={{ fontSize: 11, color: "#5b616e", lineHeight: 1.4 }}>{alert.body}</div>}
+                        <div style={{ width: 170, flexShrink: 0 }}>
+                          {alert.title && <div style={{ fontSize: 12.5, fontWeight: 600, color: ragColor(p.rag), marginBottom: 4 }}>{alert.title}</div>}
+                          {alert.body  && <div style={{ fontSize: 12, color: "#5b616e", lineHeight: 1.4 }}>{alert.body}</div>}
                         </div>
                         {/* Actions */}
                         <div style={{ display: "flex", flexDirection: "column", gap: 7, flexShrink: 0 }}>
                           <a href={`/dashboard/projects/${p.id}`} style={{
                             height: 30, padding: "0 12px", background: "#006E74", color: "#fff",
-                            border: "none", borderRadius: 8, fontSize: 11.5, fontWeight: 600,
+                            border: "none", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
                             cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center",
-                          }}>Drill in →</a>
-                          <button style={{ height: 30, padding: "0 12px", background: "#fff", border: "1px solid #d3d7de", color: "#5b616e", borderRadius: 8, fontSize: 11.5, fontWeight: 500, cursor: "pointer" }}>
+                          }}>Drill in â†’</a>
+                          <button style={{ height: 30, padding: "0 12px", background: "#fff", border: "1px solid #d3d7de", color: "#5b616e", borderRadius: 8, fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>
                             Escalate
                           </button>
                         </div>
@@ -645,7 +679,7 @@ export default function DhDashboardClient({
             {/* All projects */}
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 700 }}>All projects</span>
+                <span style={{ fontSize: 15, fontWeight: 700 }}>All projects</span>
                 <div style={{ flex: 1 }} />
                 <div style={{ display: "flex", background: "#f0f1f4", borderRadius: 8, padding: 3, gap: 0 }}>
                   <button style={viewBtn(view === "table")} onClick={() => setView("table")}>Table</button>
@@ -656,7 +690,7 @@ export default function DhDashboardClient({
               {/* TABLE VIEW */}
               {view === "table" && (
                 <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, overflow: "hidden", overflowX: "auto" }}>
-                  <div style={{ display: "flex", alignItems: "center", padding: "10px 18px", background: "#f7f8fa", fontSize: 10, fontWeight: 700, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", borderBottom: "1px solid #eceef2" }}>
+                  <div style={{ display: "flex", alignItems: "center", padding: "10px 18px", background: "#f7f8fa", fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", borderBottom: "1px solid #eceef2" }}>
                     <span style={{ flex: 1, minWidth: 160 }}>Project</span>
                     <span style={{ width: 100 }}>Client</span>
                     <span style={{ width: 80 }}>PM</span>
@@ -665,11 +699,12 @@ export default function DhDashboardClient({
                     <span style={{ width: 54 }}>CPI</span>
                     <span style={{ width: 100 }}>Schedule</span>
                     <span style={{ width: 100 }}>Budget</span>
+                    <span style={{ width: 110 }}>PM Score</span>
                     <span style={{ width: 80 }}>Phase</span>
                     <span style={{ width: 54 }} />
                   </div>
                   {filtered.length === 0
-                    ? <div style={{ padding: "28px 18px", textAlign: "center", color: "#8a909c", fontSize: 13 }}>No projects match the current filters.</div>
+                    ? <div style={{ padding: "28px 18px", textAlign: "center", color: "#8a909c", fontSize: 14 }}>No projects match the current filters.</div>
                     : filtered.map((p, i) => (
                       <div key={p.id} style={{
                         display: "flex", alignItems: "center", padding: "12px 18px",
@@ -678,29 +713,30 @@ export default function DhDashboardClient({
                         <div style={{ flex: 1, minWidth: 160, display: "flex", alignItems: "center", gap: 9 }}>
                           <span style={{ width: 9, height: 9, borderRadius: "50%", background: ragColor(p.rag), flexShrink: 0 }} />
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
-                            <div style={{ fontSize: 10, color: "#8a909c", fontFamily: "monospace" }}>{p.id}</div>
+                            <div style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+                            <div style={{ fontSize: 11, color: "#8a909c", fontFamily: "monospace" }}>{p.id}</div>
                           </div>
                         </div>
-                        <span style={{ width: 100, fontSize: 12, color: "#5b616e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientName}</span>
-                        <span style={{ width: 80,  fontSize: 12, color: "#5b616e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.pmName}</span>
+                        <span style={{ width: 100, fontSize: 13, color: "#5b616e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.clientName}</span>
+                        <span style={{ width: 80,  fontSize: 13, color: "#5b616e", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.pmName}</span>
                         <span style={{ width: 60 }}><RagPill rag={p.rag} /></span>
-                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "—"}</span>
-                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 13, fontWeight: 600, color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "—"}</span>
+                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: spiCol(p.spi) }}>{p.spi?.toFixed(2) ?? "â€”"}</span>
+                        <span style={{ width: 54, fontFamily: "monospace", fontSize: 14, fontWeight: 600, color: spiCol(p.cpi) }}>{p.cpi?.toFixed(2) ?? "â€”"}</span>
                         <div style={{ width: 100 }}>
-                          <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 9.5, color: "#8a909c", marginBottom: 3 }}>
+                          <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 10.5, color: "#8a909c", marginBottom: 3 }}>
                             <span style={{ fontFamily: "monospace" }}>{p.schedPct}%</span>
                           </div>
                           <Bar pct={p.schedPct} color={schedCol(p.schedPct)} />
                         </div>
                         <div style={{ width: 100 }}>
-                          <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 9.5, color: "#8a909c", marginBottom: 3 }}>
+                          <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 10.5, color: "#8a909c", marginBottom: 3 }}>
                             <span style={{ fontFamily: "monospace" }}>{p.budPct}%</span>
                           </div>
                           <Bar pct={p.budPct} color={budCol(p.budPct)} />
                         </div>
-                        <span style={{ width: 80, fontSize: 11.5, color: "#5b616e", textTransform: "capitalize" }}>{p.phase}</span>
-                        <a href={`/dashboard/projects/${p.id}`} style={{ width: 54, fontSize: 12, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View →</a>
+                        <div style={{ width: 110, paddingRight: 10 }}><PmMeter spi={p.spi} cpi={p.cpi} rag={p.rag} /></div>
+                        <span style={{ width: 80, fontSize: 12.5, color: "#5b616e", textTransform: "capitalize" }}>{p.phase}</span>
+                        <a href={`/dashboard/projects/${p.id}`} style={{ width: 54, fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View â†’</a>
                       </div>
                     ))
                   }
@@ -715,39 +751,43 @@ export default function DhDashboardClient({
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
                         <span style={{ width: 10, height: 10, borderRadius: "50%", background: ragColor(p.rag), flexShrink: 0, marginTop: 4 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                          <div style={{ fontSize: 10.5, color: "#8a909c", marginTop: 1, fontFamily: "monospace" }}>{p.id} · {p.clientName}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                          <div style={{ fontSize: 11.5, color: "#8a909c", marginTop: 1, fontFamily: "monospace" }}>{p.id} Â· {p.clientName}</div>
                         </div>
                         <RagPill rag={p.rag} />
                       </div>
                       <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
                         {[
-                          { label: "SPI", val: p.spi?.toFixed(2) ?? "—", col: spiCol(p.spi) },
-                          { label: "CPI", val: p.cpi?.toFixed(2) ?? "—", col: spiCol(p.cpi) },
+                          { label: "SPI", val: p.spi?.toFixed(2) ?? "â€”", col: spiCol(p.spi) },
+                          { label: "CPI", val: p.cpi?.toFixed(2) ?? "â€”", col: spiCol(p.cpi) },
                           { label: "Phase", val: p.phase, col: "#1a1d24" },
                         ].map(({ label, val, col }) => (
                           <div key={label} style={{ flex: 1, background: "#f7f8fa", borderRadius: 8, padding: "8px 10px" }}>
-                            <div style={{ fontSize: 9.5, color: "#8a909c" }}>{label}</div>
-                            <div style={{ fontSize: 16, fontWeight: 600, fontFamily: "monospace", color: col, marginTop: 2, textTransform: "capitalize" }}>{val}</div>
+                            <div style={{ fontSize: 10.5, color: "#8a909c" }}>{label}</div>
+                            <div style={{ fontSize: 17, fontWeight: 600, fontFamily: "monospace", color: col, marginTop: 2, textTransform: "capitalize" }}>{val}</div>
                           </div>
                         ))}
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "#8a909c" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#8a909c" }}>
                           <span>Schedule</span><span style={{ fontFamily: "monospace" }}>{p.schedPct}%</span>
                         </div>
                         <Bar pct={p.schedPct} color={schedCol(p.schedPct)} />
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "#8a909c" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#8a909c" }}>
                           <span>Budget</span><span style={{ fontFamily: "monospace" }}>{p.budPct}%</span>
                         </div>
                         <Bar pct={p.budPct} color={budCol(p.budPct)} />
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: "#5b616e", borderTop: "1px solid #f0f1f4", paddingTop: 10 }}>
+                      <div style={{ background: "#f7f8fa", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+                        <div style={{ fontSize: 10, color: "#8a909c", marginBottom: 5 }}>PM Productivity</div>
+                        <PmMeter spi={p.spi} cpi={p.cpi} rag={p.rag} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "#5b616e", borderTop: "1px solid #f0f1f4", paddingTop: 10 }}>
                         <span>PM: {p.pmName}</span>
-                        <span style={{ color: "#d3d7de" }}>·</span>
+                        <span style={{ color: "#d3d7de" }}>Â·</span>
                         <span>{p.programName}</span>
                         <div style={{ flex: 1 }} />
-                        <a href={`/dashboard/projects/${p.id}`} style={{ fontSize: 12, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View →</a>
+                        <a href={`/dashboard/projects/${p.id}`} style={{ fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View â†’</a>
                       </div>
                     </div>
                   ))}
@@ -760,8 +800,8 @@ export default function DhDashboardClient({
               {/* Trend chart */}
               <div style={{ flex: 1.6, background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "18px 20px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700 }}>Delivery Trends</span>
-                  <div style={{ display: "flex", gap: 12, fontSize: 12 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700 }}>Delivery Trends</span>
+                  <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#8a909c" }}>
                       <span style={{ width: 16, height: 3, background: "#4f5bd5", borderRadius: 2, display: "inline-block" }} />Avg SPI
                     </span>
@@ -773,7 +813,7 @@ export default function DhDashboardClient({
                     </span>
                   </div>
                   <div style={{ flex: 1 }} />
-                  <span style={{ fontSize: 11.5, color: "#8a909c" }}>6-month rolling</span>
+                  <span style={{ fontSize: 12.5, color: "#8a909c" }}>6-month rolling</span>
                 </div>
                 <TrendChart trends={trends} />
               </div>
@@ -782,10 +822,10 @@ export default function DhDashboardClient({
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: "1px solid #cfd4f5", borderRadius: 14, padding: "17px 18px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-                    <span style={{ color: "#4f5bd5", fontSize: 15 }}>✦</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Portfolio Insights</span>
+                    <span style={{ color: "#4f5bd5", fontSize: 16 }}>âœ¦</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Portfolio Insights</span>
                   </div>
-                  <div style={{ fontSize: 13, color: "#3a3f52", lineHeight: 1.65 }}>
+                  <div style={{ fontSize: 14, color: "#3a3f52", lineHeight: 1.65 }}>
                     {kpi.red > 0
                       ? `${kpi.red} project${kpi.red > 1 ? "s are" : " is"} in critical status. Immediate intervention recommended. ${kpi.amber > 0 ? `A further ${kpi.amber} project${kpi.amber > 1 ? "s" : ""} show schedule pressure.` : ""}`
                       : kpi.amber > 0
@@ -794,10 +834,10 @@ export default function DhDashboardClient({
                     }
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                    <button style={{ height: 32, padding: "0 13px", background: "#4f5bd5", color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                      ✦ Draft exec summary
+                    <button style={{ height: 32, padding: "0 13px", background: "#4f5bd5", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                      âœ¦ Draft exec summary
                     </button>
-                    <button style={{ height: 32, padding: "0 13px", background: "#fff", border: "1px solid #cfd4f5", color: "#4f5bd5", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    <button style={{ height: 32, padding: "0 13px", background: "#fff", border: "1px solid #cfd4f5", color: "#4f5bd5", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                       Ask PM Agent
                     </button>
                   </div>
@@ -805,12 +845,12 @@ export default function DhDashboardClient({
 
                 {/* Predictive outlook */}
                 <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "16px 18px" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 12 }}>Predictive · 6-week outlook</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: "#8a909c", textTransform: "uppercase", marginBottom: 12 }}>Predictive Â· 6-week outlook</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {kpi.red > 0 && (
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                         <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#cf3f3a", marginTop: 4, flexShrink: 0 }} />
-                        <div style={{ fontSize: 12.5, color: "#3a3f52", lineHeight: 1.45 }}>
+                        <div style={{ fontSize: 13.5, color: "#3a3f52", lineHeight: 1.45 }}>
                           <b>{kpi.red} project{kpi.red > 1 ? "s" : ""}</b> on current trajectory will miss next milestone.
                         </div>
                       </div>
@@ -818,14 +858,14 @@ export default function DhDashboardClient({
                     {kpi.amber > 0 && (
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                         <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#c17d12", marginTop: 4, flexShrink: 0 }} />
-                        <div style={{ fontSize: 12.5, color: "#3a3f52", lineHeight: 1.45 }}>
+                        <div style={{ fontSize: 13.5, color: "#3a3f52", lineHeight: 1.45 }}>
                           <b>{kpi.amber} project{kpi.amber > 1 ? "s"  : ""}</b> at risk of schedule slippage without intervention.
                         </div>
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#158a5a", marginTop: 4, flexShrink: 0 }} />
-                      <div style={{ fontSize: 12.5, color: "#3a3f52", lineHeight: 1.45 }}>
+                      <div style={{ fontSize: 13.5, color: "#3a3f52", lineHeight: 1.45 }}>
                         <b>{kpi.green} project{kpi.green !== 1 ? "s" : ""}</b> on track and within budget.
                       </div>
                     </div>
@@ -836,15 +876,15 @@ export default function DhDashboardClient({
           </>
         )}
 
-        {/* ══════════════ CLUSTER DELIVERY METRICS TAB ══════════════ */}
+        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â• CLUSTER DELIVERY METRICS TAB â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {tab === "clusters" && (
           <>
             {/* Cluster KPI strip */}
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 160, background: "#1b1e27", borderRadius: 14, padding: "17px 20px" }}>
-                <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: "rgba(255,255,255,.45)", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Clusters</span>
-                <span style={{ fontSize: 32, fontWeight: 600, color: "#fff", fontFamily: "monospace" }}>{Object.keys(clusters).length}</span>
-                <span style={{ fontSize: 12, color: "rgba(255,255,255,.45)", display: "block", marginTop: 3 }}>{projects.length} projects total</span>
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "rgba(255,255,255,.45)", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Clusters</span>
+                <span style={{ fontSize: 33, fontWeight: 600, color: "#fff", fontFamily: "monospace" }}>{Object.keys(clusters).length}</span>
+                <span style={{ fontSize: 13, color: "rgba(255,255,255,.45)", display: "block", marginTop: 3 }}>{projects.length} projects total</span>
               </div>
               {(() => {
                 const entries = Object.entries(clusters);
@@ -865,19 +905,19 @@ export default function DhDashboardClient({
                   <>
                     {best && (
                       <div style={{ flex: 1, minWidth: 160, background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "17px 20px" }}>
-                        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Best Performing</span>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: "#158a5a" }}>{best.name}</span>
-                        <span style={{ fontSize: 11.5, color: "#8a909c", display: "block", marginTop: 2 }}>
-                          {best.avgSpi ? `SPI ${best.avgSpi.toFixed(2)} · ` : ""}{best.green} green
+                        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Best Performing</span>
+                        <span style={{ fontSize: 16, fontWeight: 700, color: "#158a5a" }}>{best.name}</span>
+                        <span style={{ fontSize: 12.5, color: "#8a909c", display: "block", marginTop: 2 }}>
+                          {best.avgSpi ? `SPI ${best.avgSpi.toFixed(2)} Â· ` : ""}{best.green} green
                         </span>
                       </div>
                     )}
                     {worst && worst.name !== best?.name && (
                       <div style={{ flex: 1, minWidth: 160, background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "17px 20px" }}>
-                        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Most At Risk</span>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: "#cf3f3a" }}>{worst.name}</span>
-                        <span style={{ fontSize: 11.5, color: "#8a909c", display: "block", marginTop: 2 }}>
-                          {worst.atRisk} at risk · {worst.avgSpi ? `SPI ${worst.avgSpi.toFixed(2)}` : "no SPI data"}
+                        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", color: "#8a909c", textTransform: "uppercase", display: "block", marginBottom: 7 }}>Most At Risk</span>
+                        <span style={{ fontSize: 16, fontWeight: 700, color: "#cf3f3a" }}>{worst.name}</span>
+                        <span style={{ fontSize: 12.5, color: "#8a909c", display: "block", marginTop: 2 }}>
+                          {worst.atRisk} at risk Â· {worst.avgSpi ? `SPI ${worst.avgSpi.toFixed(2)}` : "no SPI data"}
                         </span>
                       </div>
                     )}
@@ -886,10 +926,10 @@ export default function DhDashboardClient({
               })()}
               <div style={{ flex: 1.8, minWidth: 200, background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: "1px solid #cfd4f5", borderRadius: 14, padding: "17px 20px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
-                  <span style={{ color: "#4f5bd5", fontSize: 14 }}>✦</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Cluster Insight</span>
+                  <span style={{ color: "#4f5bd5", fontSize: 15 }}>âœ¦</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "#4f5bd5", textTransform: "uppercase" }}>AI Cluster Insight</span>
                 </div>
-                <div style={{ fontSize: 12.5, color: "#3a3f52", lineHeight: 1.55 }}>
+                <div style={{ fontSize: 13.5, color: "#3a3f52", lineHeight: 1.55 }}>
                   {Object.keys(clusters).length > 0
                     ? `Across ${Object.keys(clusters).length} cluster${Object.keys(clusters).length > 1 ? "s" : ""}, portfolio health is ${kpi.health}%. ${kpi.red > 0 ? `${kpi.red} critical project${kpi.red > 1 ? "s" : ""} require escalation.` : "No critical escalations."}`
                     : "No cluster data available."
@@ -908,17 +948,17 @@ export default function DhDashboardClient({
             {/* Cluster comparison chart (avg SPI per cluster as horizontal bars) */}
             {clusterTrendData.length > 0 && (
               <div style={{ background: "#fff", border: "1px solid #e2e5ea", borderRadius: 14, padding: "18px 20px" }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>Cluster Avg SPI Comparison</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Cluster Avg SPI Comparison</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {clusterTrendData.map(({ name, spiVals }) => {
                     const avg = spiVals.length ? spiVals.reduce((a,b) => a+b,0)/spiVals.length : null;
                     const pct = avg ? Math.min(Math.max((avg - 0.6) / 0.5, 0), 1) * 100 : 0;
                     return (
                       <div key={name}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#5b616e", marginBottom: 5 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#5b616e", marginBottom: 5 }}>
                           <span style={{ fontWeight: 600 }}>{name}</span>
                           <span style={{ fontFamily: "monospace", color: spiCol(avg), fontWeight: 700 }}>
-                            {avg ? avg.toFixed(2) : "—"}
+                            {avg ? avg.toFixed(2) : "â€”"}
                           </span>
                         </div>
                         <div style={{ height: 10, background: "#eef0f3", borderRadius: 5, overflow: "hidden" }}>
@@ -928,7 +968,7 @@ export default function DhDashboardClient({
                     );
                   })}
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#b8bcc6", fontFamily: "monospace", marginTop: 8, padding: "0 2px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#b8bcc6", fontFamily: "monospace", marginTop: 8, padding: "0 2px" }}>
                   <span>0.60</span><span>0.70</span><span>0.80</span><span>0.90</span><span>1.00</span><span>1.10</span>
                 </div>
               </div>
@@ -936,18 +976,18 @@ export default function DhDashboardClient({
           </>
         )}
 
-        {/* ── Escalations Panel ── */}
+        {/* â”€â”€ Escalations Panel â”€â”€ */}
         {escalations.length > 0 && (
           <div style={{ background: "#fff", border: "1px solid #D7E0E3", borderRadius: 14, padding: "22px 28px", marginTop: 28 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#003C51", marginBottom: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#003C51", marginBottom: 16 }}>
               Escalations Requiring Attention ({escalations.filter(e => e.status === "open").length} open)
             </div>
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                 <thead>
                   <tr style={{ background: "#F2F7F8" }}>
                     {["Title","Project","Program","Raised by","Severity","Status","Age","SLA"].map(h => (
-                      <th key={h} style={{ textAlign: "left", padding: "9px 14px", fontSize: 11.5, fontWeight: 700, color: "#7A7480", whiteSpace: "nowrap" }}>{h}</th>
+                      <th key={h} style={{ textAlign: "left", padding: "9px 14px", fontSize: 12.5, fontWeight: 700, color: "#7A7480", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -962,22 +1002,22 @@ export default function DhDashboardClient({
                     return (
                       <tr key={e.id} style={{ borderTop: "1px solid #D7E0E3", background: slaBreached ? "#fff8f8" : undefined }}>
                         <td style={{ padding: "10px 14px", fontWeight: 700, color: "#003C51", maxWidth: 220 }}>{e.title}</td>
-                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.name ?? "—"}</td>
-                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.program?.name ?? "—"}</td>
+                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.name ?? "â€”"}</td>
+                        <td style={{ padding: "10px 14px", color: "#7A7480" }}>{e.project?.program?.name ?? "â€”"}</td>
                         <td style={{ padding: "10px 14px", color: "#231F20" }}>{e.raisedBy.fullName}</td>
                         <td style={{ padding: "10px 14px", color: sevColor, fontWeight: 700, textTransform: "capitalize" }}>{e.severity}</td>
                         <td style={{ padding: "10px 14px" }}>
-                          <span style={{ background: statusBg[e.status]??"#f7f8fa", color: statusCol[e.status]??"#8a909c", fontWeight: 700, fontSize: 11.5, padding: "2px 9px", borderRadius: 99 }}>
+                          <span style={{ background: statusBg[e.status]??"#f7f8fa", color: statusCol[e.status]??"#8a909c", fontWeight: 700, fontSize: 12.5, padding: "2px 9px", borderRadius: 99 }}>
                             {statusLabel[e.status] ?? e.status}
                           </span>
                         </td>
                         <td style={{ padding: "10px 14px", color: "#7A7480" }}>{days}d</td>
                         <td style={{ padding: "10px 14px" }}>
                           {slaBreached
-                            ? <span style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 12 }}>⚠ Breached</span>
+                            ? <span style={{ color: "#cf3f3a", fontWeight: 700, fontSize: 13 }}>âš  Breached</span>
                             : e.slaDueAt
-                              ? <span style={{ fontSize: 12, color: "#7A7480" }}>{new Date(e.slaDueAt).toLocaleDateString()}</span>
-                              : "—"}
+                              ? <span style={{ fontSize: 13, color: "#7A7480" }}>{new Date(e.slaDueAt).toLocaleDateString()}</span>
+                              : "â€”"}
                         </td>
                       </tr>
                     );
