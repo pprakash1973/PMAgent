@@ -76,6 +76,11 @@ model User {
   copilotEnabled         Boolean                   @default(false)
   assistantName          String                    @default("Copilot")
   assistantConversations AssistantConversation[]
+  raisedActionItems      ActionItem[]              @relation("ActionItemRaisedBy")
+  assignedActionItems    ActionItem[]              @relation("ActionItemAssignedTo")
+  closedActionItems      ActionItem[]              @relation("ActionItemClosedBy")
+  actionItemEvents       ActionItemEvent[]
+  dmReviewNotes          DmReviewNote[]
 }
 
 // NextAuth OAuth provider accounts (credentials-based auth uses this table too)
@@ -297,6 +302,8 @@ model Project {
   gaps               Gap[]
   assistantConversations AssistantConversation[]
   advisories         Advisory[]
+  actionItems        ActionItem[]
+  dmReviewNotes      DmReviewNote[]
 
   @@unique([orgId, code])
 }
@@ -811,4 +818,84 @@ model AdvisoryAction {
   createdAt       DateTime @default(now())
 
   advisory Advisory @relation(fields: [advisoryId], references: [id], onDelete: Cascade)
+}
+
+// ── Delivery Manager ───────────────────────────────────────────────────────────
+
+model ActionItem {
+  id              String    @id @default(cuid())
+  reference       String    @unique  // e.g. AI-PRJ014-007
+  projectId       String
+  title           String
+  description     String?
+  category        String    @default("schedule")
+  // schedule | cost | scope_change | risk | issue | quality | stakeholder
+  // resource | governance | artifact | data_hygiene
+  priority        String    @default("p2")
+  // p1 (≤2 working days) | p2 (≤5) | p3 (≤15)
+  dueDate         DateTime?
+  originalDueDate DateTime?
+  assignedToId    String
+  raisedById      String
+  source          String    @default("manual")
+  // manual | status_review | gate_rejection | escalation_followup | threshold_alert
+  expectedOutcome String?
+  status          String    @default("open")
+  // open | acknowledged | in_progress | blocked | submitted | closed | cancelled
+  blockedReason   String?
+  pmResponse      String?
+  closedById      String?
+  closureNote     String?
+  acknowledgedAt  DateTime?
+  submittedAt     DateTime?
+  closedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  project    Project          @relation(fields: [projectId], references: [id])
+  assignedTo User             @relation("ActionItemAssignedTo", fields: [assignedToId], references: [id])
+  raisedBy   User             @relation("ActionItemRaisedBy", fields: [raisedById], references: [id])
+  closedBy   User?            @relation("ActionItemClosedBy", fields: [closedById], references: [id])
+  events     ActionItemEvent[]
+
+  @@index([projectId, status])
+  @@index([assignedToId, status])
+  @@index([raisedById])
+  @@map("action_items")
+}
+
+model ActionItemEvent {
+  id           String   @id @default(cuid())
+  actionItemId String
+  actorId      String
+  fromStatus   String
+  toStatus     String
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  actionItem ActionItem @relation(fields: [actionItemId], references: [id])
+  actor      User       @relation(fields: [actorId], references: [id])
+
+  @@index([actionItemId])
+  @@map("action_item_events")
+}
+
+model DmReviewNote {
+  id          String   @id @default(cuid())
+  projectId   String
+  authorId    String
+  reviewType  String   @default("ad_hoc")
+  // weekly_review | ad_hoc | escalation_prep | gate_review | handover_review
+  body        String
+  visibility  String   @default("shared_with_pm")
+  // shared_with_pm | dm_only
+  lockedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([projectId])
+  @@map("dm_review_notes")
 }

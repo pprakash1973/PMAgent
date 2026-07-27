@@ -7,6 +7,7 @@ import { useState } from "react";
 const CAN_PORTFOLIO = ["dh", "admin"];
 const CAN_EXECUTIVE = ["dh", "admin"];
 const CAN_PROGRAM   = ["pgm"];
+const CAN_DM        = ["dm"];
 
 // UST brand tokens
 const UST_PETROL    = "#003C51";
@@ -28,9 +29,12 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
   const isWorkspace = path.includes("/projects/") && !path.includes("/new");
   const isPortfolio = path.includes("/portfolio");
   const isExec = path.includes("/executive");
+  const isDmTriage = path === "/dashboard/dm" || (path.startsWith("/dashboard/dm") && !path.includes("/action-items"));
+  const isDmActions = path.includes("/dashboard/dm/action-items");
   const showPortfolio = CAN_PORTFOLIO.includes(role);
   const showExecutive = CAN_EXECUTIVE.includes(role);
   const showProgram   = CAN_PROGRAM.includes(role);
+  const showDm        = CAN_DM.includes(role);
 
   function railBtn(active: boolean, href: string, icon: React.ReactNode, label: string) {
     return (
@@ -66,7 +70,15 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
         </svg>
       </div>
 
-      {role !== "dh" && role !== "pgm" && railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
+      {showDm && railBtn(isDmTriage, "/dashboard/dm",
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3 5h18M3 12h14M3 19h10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="19" cy="19" r="3" stroke="currentColor" strokeWidth="1.7"/><path d="M21 21l1.5 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>,
+        "Triage"
+      )}
+      {showDm && railBtn(isDmActions, "/dashboard/dm/action-items",
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+        "Actions"
+      )}
+      {role !== "dh" && role !== "pgm" && role !== "dm" && railBtn(isWorkspace || (!isPortfolio && !isExec), "/dashboard/projects",
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.7"/></svg>,
         "Projects"
       )}
@@ -140,6 +152,7 @@ const PORTFOLIO_SUGGESTIONS: Record<string, string[]> = {
   pgm: ["Which projects are trending red and why?", "Where are we over budget across my programs?", "Summarize open risks needing escalation"],
   dh: ["Give me the portfolio health summary in 3 bullets", "What decisions need my sign-off this week?", "Which projects are the biggest cost risk?"],
   admin: ["Give me a portfolio-wide health and budget summary", "Which projects have the most open risks?", "Summarize this week's biggest delivery concerns"],
+  dm: ["Which of my projects need attention right now?", "Summarize overdue action items across all my accounts", "Which PMs have the most open issues this week?"],
 };
 
 function DockedAIBar({ role }: { role: string }) {

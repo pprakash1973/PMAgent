@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatCurrency } from "@/lib/utils";
-import { FolderKanban, Plus, Clock, CheckSquare } from "lucide-react";
+import { FolderKanban, Plus, Clock, CheckSquare, AlertCircle } from "lucide-react";
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -14,6 +14,7 @@ export default async function DashboardPage() {
 
   if (user.role === "dh") redirect("/dashboard/executive");
   if (user.role === "pgm") redirect("/dashboard/program");
+  if (user.role === "dm") redirect("/dashboard/dm");
 
   const projects = await prisma.project.findMany({
     where: {
@@ -31,6 +32,19 @@ export default async function DashboardPage() {
     orderBy: { updatedAt: "desc" },
     take: 20,
   });
+
+  // Fetch action items assigned to this PM
+  const now = new Date();
+  const myActionItems = user.role === "pm" ? await prisma.actionItem.findMany({
+    where: { assignedToId: user.id, status: { in: ["open", "acknowledged", "in_progress", "blocked"] } },
+    orderBy: [{ dueDate: "asc" }, { priority: "asc" }],
+    include: {
+      project: { select: { id: true, name: true } },
+      raisedBy: { select: { fullName: true } },
+    },
+    take: 10,
+  }) : [];
+  const overdueCount = myActionItems.filter(i => i.dueDate && i.dueDate < now).length;
 
   return (
     <div className="p-8 space-y-8">
@@ -132,20 +146,66 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Assigned Action Items */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <CheckSquare className="w-5 h-5 text-slate-600" />
-          <h2 className="text-lg font-semibold text-slate-900">Assigned Action Items</h2>
+      {/* Assigned Action Items (PM only) */}
+      {user.role === "pm" && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <CheckSquare className="w-5 h-5 text-slate-600" />
+            <h2 className="text-lg font-semibold text-slate-900">My Action Items</h2>
+            {overdueCount > 0 && (
+              <span className="ml-1 flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+                <AlertCircle className="w-3 h-3" /> {overdueCount} overdue
+              </span>
+            )}
+          </div>
+
+          {myActionItems.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center">
+                <CheckSquare className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+                <p className="text-sm text-slate-400">No open action items from your Delivery Manager</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {myActionItems.map((item) => {
+                const isOverdue = item.dueDate && item.dueDate < now;
+                const priorityColors: Record<string, string> = { p1: "text-red-600 bg-red-50 border-red-200", p2: "text-amber-700 bg-amber-50 border-amber-200", p3: "text-slate-600 bg-slate-50 border-slate-200" };
+                const statusColors: Record<string, string> = { open: "text-amber-700 bg-amber-50 border-amber-200", acknowledged: "text-teal-700 bg-teal-50 border-teal-200", in_progress: "text-indigo-700 bg-indigo-50 border-indigo-200", blocked: "text-red-600 bg-red-50 border-red-200" };
+                return (
+                  <Card key={item.id} className={`${isOverdue ? "border-red-300 bg-red-50/30" : ""}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            {isOverdue && <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
+                            <span className={`text-xs font-bold border rounded-full px-2 py-0.5 ${priorityColors[item.priority] ?? "text-slate-600 bg-slate-50 border-slate-200"}`}>
+                              {item.priority.toUpperCase()}
+                            </span>
+                            <Badge variant="outline" className={`text-xs ${statusColors[item.status] ?? ""}`}>
+                              {item.status.replace(/_/g, " ")}
+                            </Badge>
+                            <span className="text-xs font-mono text-slate-400">{item.reference}</span>
+                          </div>
+                          <p className="font-semibold text-slate-900 text-sm">{item.title}</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {item.project.name} · from {item.raisedBy.fullName}
+                            {item.dueDate && (
+                              <span className={`ml-2 font-medium ${isOverdue ? "text-red-600" : "text-slate-600"}`}>
+                                · Due {formatDate(item.dueDate)}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <Card>
-          <CardContent className="py-10 text-center">
-            <CheckSquare className="w-10 h-10 text-slate-200 mx-auto mb-3" />
-            <p className="text-sm text-slate-400">Action items assigned to you will appear here</p>
-            <p className="text-xs text-slate-300 mt-1">Coming soon — managed from the Program view</p>
-          </CardContent>
-        </Card>
-      </div>
+      )}
     </div>
   );
 }
