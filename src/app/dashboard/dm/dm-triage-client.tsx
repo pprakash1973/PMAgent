@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
 type TriageRow = {
   id: string; name: string; accountId: string | null; accountName: string | null;
@@ -218,6 +218,169 @@ function ProjectHeader({ p, detail, onEscalate, escalated }: { p: TriageRow; det
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Escalate modal ────────────────────────────────────────────────────────────
+
+type EscalateSeverity = "critical" | "high" | "medium";
+
+function EscalateModal({ project, onClose, onSuccess }: {
+  project: TriageRow;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [severity, setSeverity] = useState<EscalateSeverity>("high");
+  const [title, setTitle] = useState(`${project.name} — escalation required`);
+  const [situation, setSituation] = useState("");
+  const [impact, setImpact] = useState("");
+  const [support, setSupport] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const SELS: { value: EscalateSeverity; label: string; color: string }[] = [
+    { value: "critical", label: "Critical", color: C.red },
+    { value: "high",     label: "High",     color: C.amber },
+    { value: "medium",   label: "Medium",   color: C.blue },
+  ];
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/escalations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetType: "project",
+          projectId: project.id,
+          severity,
+          title: title.trim(),
+          situation: situation.trim(),
+          impact: impact.trim(),
+          supportRequired: support.trim(),
+          contextSnapshot: { spi: project.spi, cpi: project.cpi, rag: project.band, pmName: project.pmName },
+        }),
+      });
+      if (res.status === 409) {
+        setError("This project already has an open escalation. It will appear in the DH Escalations tab.");
+        return;
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setError(d.error ?? "Failed to raise escalation");
+        return;
+      }
+      onSuccess();
+    } catch {
+      setError("Network error — please try again");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const field = (label: string, required = true) => ({
+    style: { font: `600 11px ${C.FF}`, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.textFaint, display: "block", marginBottom: 5 } as const,
+    children: label + (required ? " *" : ""),
+  });
+  const inputStyle: React.CSSProperties = {
+    width: "100%", boxSizing: "border-box", border: `1px solid ${C.borderLight}`,
+    borderRadius: 8, padding: "9px 12px", font: `400 13.5px ${C.FF}`, color: C.text,
+    outline: "none", resize: "vertical" as const,
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center",
+    }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        width: 540, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 48px)",
+        background: "#fff", borderRadius: 18, boxShadow: "0 24px 80px rgba(0,0,0,.22)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        {/* header */}
+        <div style={{ background: "linear-gradient(135deg,#FC6A59,#e05540)", padding: "18px 22px", display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>⚑</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ font: `700 15px ${C.FF}`, color: "#fff" }}>Raise Escalation</div>
+            <div style={{ font: `400 12px ${C.FF}`, color: "rgba(255,255,255,.75)", marginTop: 1 }}>{project.name}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 16, lineHeight: "28px", textAlign: "center" }}>×</button>
+        </div>
+
+        {/* body */}
+        <form onSubmit={submit} style={{ flex: 1, overflowY: "auto", padding: "20px 22px", display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* severity */}
+          <div>
+            <label style={field("Severity").style}>{field("Severity").children}</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              {SELS.map(s => (
+                <button key={s.value} type="button" onClick={() => setSeverity(s.value)} style={{
+                  flex: 1, height: 34, border: `2px solid ${severity === s.value ? s.color : C.borderLight}`,
+                  borderRadius: 8, background: severity === s.value ? `${s.color}14` : "#fff",
+                  font: `${severity === s.value ? 700 : 500} 12.5px ${C.FF}`, color: severity === s.value ? s.color : C.textMuted,
+                  cursor: "pointer", transition: "all .15s",
+                }}>{s.label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* title */}
+          <div>
+            <label style={field("Title").style}>{field("Title").children}</label>
+            <input required value={title} onChange={e => setTitle(e.target.value)} maxLength={120}
+              style={{ ...inputStyle, height: 38, resize: "none" as const }} />
+          </div>
+
+          {/* situation */}
+          <div>
+            <label style={field("Situation").style}>{field("Situation").children}</label>
+            <textarea required minLength={30} rows={3} value={situation} onChange={e => setSituation(e.target.value)}
+              placeholder="What is happening? Include key metrics, timeline, and context…"
+              style={inputStyle} />
+          </div>
+
+          {/* impact */}
+          <div>
+            <label style={field("Business Impact").style}>{field("Business Impact").children}</label>
+            <textarea required minLength={10} rows={2} value={impact} onChange={e => setImpact(e.target.value)}
+              placeholder="What is the business impact if not resolved?"
+              style={inputStyle} />
+          </div>
+
+          {/* support */}
+          <div>
+            <label style={field("Support Required from DH").style}>{field("Support Required from DH").children}</label>
+            <textarea required minLength={10} rows={2} value={support} onChange={e => setSupport(e.target.value)}
+              placeholder="What decision or action do you need from the Delivery Head?"
+              style={inputStyle} />
+          </div>
+
+          {error && (
+            <div style={{ background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: 8, padding: "10px 14px", font: `400 13px ${C.FF}`, color: C.red }}>
+              {error}
+            </div>
+          )}
+
+          {/* footer */}
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 4 }}>
+            <button type="button" onClick={onClose} style={{
+              height: 36, padding: "0 16px", border: `1px solid ${C.borderLight}`, borderRadius: 8,
+              background: "#fff", font: `500 13px ${C.FF}`, color: C.textMuted, cursor: "pointer",
+            }}>Cancel</button>
+            <button type="submit" disabled={submitting} style={{
+              height: 36, padding: "0 20px", border: "none", borderRadius: 8,
+              background: submitting ? "#ccc" : "linear-gradient(135deg,#FC6A59,#e05540)",
+              font: `600 13px ${C.FF}`, color: "#fff", cursor: submitting ? "not-allowed" : "pointer",
+              boxShadow: submitting ? "none" : "0 3px 10px rgba(252,106,89,.28)",
+            }}>{submitting ? "Raising…" : "Raise Escalation"}</button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -572,6 +735,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
   const [detailLoading, setDetailLoading] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [escalatedIds, setEscalatedIds] = useState<Set<string>>(new Set());
+  const [escalateTarget, setEscalateTarget] = useState<TriageRow | null>(null);
 
   const allProjects = [...data.bands.red, ...data.bands.amber, ...data.bands.no_data, ...data.bands.green];
 
@@ -724,7 +888,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
                   p={sel}
                   detail={detail}
                   escalated={escalatedIds.has(sel.id)}
-                  onEscalate={() => setEscalatedIds(prev => new Set([...prev, sel.id]))}
+                  onEscalate={() => setEscalateTarget(sel)}
                 />
                 {detailLoading ? (
                   <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -751,6 +915,18 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
       {/* ── Health Overview tab ─────────────────────────── */}
       {tab === "health" && (
         <HealthOverview data={data} onSelect={selectAndView} userRole={userRole} />
+      )}
+
+      {/* ── Escalation modal ─────────────────────────────── */}
+      {escalateTarget && (
+        <EscalateModal
+          project={escalateTarget}
+          onClose={() => setEscalateTarget(null)}
+          onSuccess={() => {
+            setEscalatedIds(prev => new Set([...prev, escalateTarget.id]));
+            setEscalateTarget(null);
+          }}
+        />
       )}
     </div>
   );
