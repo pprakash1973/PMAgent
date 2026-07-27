@@ -346,7 +346,7 @@ function IssuesRisks({ detail }: { detail: any }) {
 
 // ── Health Overview tab ───────────────────────────────────────────────────────
 
-function HealthOverview({ data, onSelect }: { data: TriageData; onSelect: (id: string) => void }) {
+function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSelect: (id: string) => void; userRole?: string }) {
   const all = [...data.bands.red, ...data.bands.amber, ...data.bands.no_data, ...data.bands.green];
   const total = data.counts.total;
   const avgSpi = all.length > 0 ? all.filter(p => p.spi !== null).reduce((s, p) => s + (p.spi ?? 0), 0) / Math.max(1, all.filter(p => p.spi !== null).length) : null;
@@ -644,7 +644,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
 
       {/* ── Health Overview tab ─────────────────────────── */}
       {tab === "health" && (
-        <HealthOverview data={data} onSelect={selectAndView} />
+        <HealthOverview data={data} onSelect={selectAndView} userRole={userRole} />
       )}
     </div>
   );
