@@ -58,8 +58,16 @@ export default async function DmTriagePage() {
       accountIds = acctAssignments.map((a) => a.accountId);
     }
   } else {
+    // dm role: try AccountAssignment first, fall back to ProgramAssignment
     const assignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
     accountIds = assignments.map((a) => a.accountId);
+    if (accountIds.length === 0) {
+      const pgmAssignments = await prisma.programAssignment.findMany({
+        where: { userId: user.id },
+        include: { program: { select: { accountId: true } } },
+      });
+      accountIds = [...new Set(pgmAssignments.map((a) => a.program.accountId).filter(Boolean))] as string[];
+    }
   }
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);

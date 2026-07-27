@@ -29,19 +29,17 @@ export async function GET(
 
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  // Scope check: DM must be assigned to this project's account
+  // Scope check: DM/PGM must be assigned to this project's account (direct or via program)
   if (user.role === "dm" || user.role === "pgm") {
-    const assignment = await prisma.accountAssignment.findFirst({
-      where: { userId: user.id, accountId: project.accountId ?? "" },
+    const accountId = project.accountId ?? "";
+    const directAssignment = await prisma.accountAssignment.findFirst({
+      where: { userId: user.id, accountId },
     });
-    // pgm fallback: check via program assignment if no direct account assignment
-    if (!assignment && user.role === "pgm") {
+    if (!directAssignment) {
       const pgmAssignment = await prisma.programAssignment.findFirst({
-        where: { userId: user.id, program: { accountId: project.accountId ?? "" } },
+        where: { userId: user.id, program: { accountId } },
       });
       if (!pgmAssignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-    } else if (!assignment) {
-      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     }
   }
 
