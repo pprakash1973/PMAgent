@@ -40,7 +40,8 @@ export default async function DmTriagePage() {
 
   if (!["dm", "pgm", "admin"].includes(user.role)) redirect("/dashboard");
 
-  // Resolve scope — hierarchy: DH→Cluster, DM→Account, pgm→Program, PM→Project
+  // Resolve scope — program and account are both optional on a project.
+  // Any project with neither set is visible to all dm/pgm in the org.
   let accountIds: string[] = [];
   let programIds: string[] = [];
 
@@ -48,27 +49,29 @@ export default async function DmTriagePage() {
     const accounts = await prisma.orgAccount.findMany({ where: { orgId: user.orgId, deletedAt: null }, select: { id: true } });
     accountIds = accounts.map((a) => a.id);
   } else if (user.role === "pgm") {
-    // pgm is scoped to their assigned programs only
-    const assignments = await prisma.programAssignment.findMany({
-      where: { userId: user.id },
-      select: { programId: true },
-    });
-    programIds = assignments.map((a) => a.programId);
+    // pgm checks both ProgramAssignment and AccountAssignment (union)
+    const [progAssign, acctAssign] = await Promise.all([
+      prisma.programAssignment.findMany({ where: { userId: user.id }, select: { programId: true } }),
+      prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } }),
+    ]);
+    programIds = progAssign.map((a) => a.programId);
+    accountIds = acctAssign.map((a) => a.accountId);
   } else {
-    // dm is scoped to their assigned accounts (AccountAssignment) — no program fallback
+    // dm is scoped to their assigned accounts
     const assignments = await prisma.accountAssignment.findMany({ where: { userId: user.id }, select: { accountId: true } });
     accountIds = assignments.map((a) => a.accountId);
   }
 
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
-  const hasScope = accountIds.length > 0 || programIds.length > 0;
-  const projects = !hasScope ? [] : await prisma.project.findMany({
+  // Projects with no account and no program are unassigned — visible to any dm/pgm in the org
+  const projects = await prisma.project.findMany({
     where: {
       orgId: user.orgId, deletedAt: null, status: { not: "closed" },
       OR: [
         ...(accountIds.length > 0 ? [{ accountId: { in: accountIds } }] : []),
         ...(programIds.length > 0 ? [{ programId: { in: programIds } }] : []),
+        ...(user.role !== "admin" ? [{ accountId: null, programId: null }] : []),
       ],
     },
     include: {
@@ -105,6 +108,7 @@ export default async function DmTriagePage() {
         project: { OR: [
           ...(accountIds.length > 0 ? [{ accountId: { in: accountIds } }] : []),
           ...(programIds.length > 0 ? [{ programId: { in: programIds } }] : []),
+          ...(user.role !== "admin" ? [{ accountId: null, programId: null }] : []),
         ]},
       };
       overdueActionItems = await prisma.actionItem.count({ where: overdueWhere });
