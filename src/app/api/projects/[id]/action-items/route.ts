@@ -93,35 +93,51 @@ export async function POST(
     ? new Date(dueDate)
     : addWorkingDays(new Date(), DEFAULT_WORKING_DAYS[priority ?? "p2"] ?? 5);
 
-  const reference = await generateReference(id);
+  let reference: string;
+  try {
+    reference = await generateReference(id);
+  } catch (err: any) {
+    console.error("[action-items] generateReference failed:", err?.message);
+    return NextResponse.json({ error: "Database error generating reference — run prisma db push if tables are missing." }, { status: 500 });
+  }
 
-  const actionItem = await prisma.actionItem.create({
-    data: {
-      reference,
-      projectId: id,
-      title: title.trim(),
-      description: description?.trim() ?? null,
-      category: category ?? "schedule",
-      priority: priority ?? "p2",
-      dueDate: resolvedDueDate,
-      originalDueDate: resolvedDueDate,
-      assignedToId,
-      raisedById: user.id,
-      source: "manual",
-      expectedOutcome: expectedOutcome?.trim() ?? null,
-      status: "open",
-    },
-  });
+  let actionItem: any;
+  try {
+    actionItem = await prisma.actionItem.create({
+      data: {
+        reference,
+        projectId: id,
+        title: title.trim(),
+        description: description?.trim() ?? null,
+        category: category ?? "schedule",
+        priority: priority ?? "p2",
+        dueDate: resolvedDueDate,
+        originalDueDate: resolvedDueDate,
+        assignedToId,
+        raisedById: user.id,
+        source: "manual",
+        expectedOutcome: expectedOutcome?.trim() ?? null,
+        status: "open",
+      },
+    });
+  } catch (err: any) {
+    console.error("[action-items] create failed:", err?.message);
+    return NextResponse.json({ error: `Failed to create action item: ${err?.message ?? "unknown error"}` }, { status: 500 });
+  }
 
-  // Write initial event
-  await prisma.actionItemEvent.create({
-    data: {
-      actionItemId: actionItem.id,
-      actorId: user.id,
-      fromStatus: "created",
-      toStatus: "open",
-    },
-  });
+  // Write initial event (non-fatal if event table isn't migrated yet)
+  try {
+    await prisma.actionItemEvent.create({
+      data: {
+        actionItemId: actionItem.id,
+        actorId: user.id,
+        fromStatus: "created",
+        toStatus: "open",
+      },
+    });
+  } catch {
+    // Non-fatal — action item was created successfully
+  }
 
   return NextResponse.json({ actionItem }, { status: 201 });
 }

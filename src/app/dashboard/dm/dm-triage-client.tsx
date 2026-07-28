@@ -393,6 +393,7 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
   const [priority, setPriority] = useState("p2");
   const [due, setDue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
 
   const projectId = detail?.project?.id;
   const items: any[] = detail?.actionItems ?? [];
@@ -402,15 +403,23 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
   async function add() {
     if (!projectId || !newText.trim()) return;
     setSaving(true);
+    setAssignError(null);
     try {
-      await fetch(`/api/projects/${projectId}/action-items`, {
+      const res = await fetch(`/api/projects/${projectId}/action-items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: newText.trim(), priority, dueDate: due || null, category: "delivery" }),
       });
-      setNewText(""); setDue("");
-      onRefresh();
-    } catch {}
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setAssignError(data.error ?? `Server error (${res.status}) — try again`);
+      } else {
+        setNewText(""); setDue("");
+        onRefresh();
+      }
+    } catch {
+      setAssignError("Network error — check your connection and try again");
+    }
     setSaving(false);
   }
 
@@ -543,6 +552,11 @@ function ActionItemsSection({ detail, pmName, onRefresh }: { detail: any; pmName
             {saving ? "Saving…" : "Assign →"}
           </button>
         </div>
+        {assignError && (
+          <div style={{ marginTop: 8, font: `400 12px ${C.FF}`, color: C.red, background: "#fff1f0", border: `1px solid ${C.redBorder}`, borderRadius: 7, padding: "7px 11px" }}>
+            {assignError}
+          </div>
+        )}
       </div>
     </div>
   );

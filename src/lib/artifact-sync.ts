@@ -220,7 +220,8 @@ function normaliseSeverity(val: any): string {
 function normaliseStatus(val: any): string {
   if (!val) return "open";
   const v = String(val).toLowerCase();
-  if (v.includes("close") || v.includes("resolved") || v.includes("complete")) return "closed";
+  if (v.includes("close") || v.includes("complete")) return "closed";
+  if (v.includes("resolved")) return "resolved";
   if (v.includes("progress") || v.includes("active")) return "in_progress";
   return "open";
 }

@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 
+export const dynamic = "force-dynamic";
+
 // Re-syncs the latest issue_register or raid_register artifact into the Issue table.
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -15,7 +17,23 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
 
   if (!artifact?.content) {
-    return NextResponse.json({ error: "No issue register artifact found. Generate or upload one in the Artifacts tab first." }, { status: 404 });
+    return NextResponse.json({
+      error: "No issue register artifact found. Go to the Artifacts tab and generate or upload an Issue Register first.",
+    }, { status: 404 });
+  }
+
+  // Inspect artifact content to detect empty issues array early
+  const rawContent = artifact.content as any;
+  const issueArray =
+    rawContent?.issues ??
+    rawContent?.issueRegister ??
+    rawContent?.issueItems ??
+    rawContent?.issueLog;
+
+  if (!Array.isArray(issueArray) || issueArray.length === 0) {
+    return NextResponse.json({
+      error: "The Issue Register artifact was found but contains no issues. Try regenerating it in the Artifacts tab.",
+    }, { status: 422 });
   }
 
   try {
@@ -26,8 +44,5 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const issues = await prisma.issue.findMany({ where: { projectId: id }, orderBy: { createdAt: "asc" } });
-  if (issues.length === 0) {
-    return NextResponse.json({ error: "Artifact was found but contained no issues. Check the Issue Register artifact content." }, { status: 422 });
-  }
   return NextResponse.json({ imported: issues.length, issues });
 }

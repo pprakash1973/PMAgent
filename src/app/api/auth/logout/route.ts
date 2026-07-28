@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { cookies } from "next/headers";
+
+export const dynamic = "force-dynamic";
 
 // Auth.js v5 cookie names (dev vs prod)
 const AUTH_COOKIES = [
@@ -30,16 +31,23 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Explicitly clear all auth cookies server-side
-  const jar = await cookies();
+  const loginUrl = new URL("/login", req.url);
+  const response = NextResponse.redirect(loginUrl);
+
+  // Set cookies to expired on the response object — this is the reliable way to
+  // clear cookies in a Route Handler. cookies().delete() from next/headers does
+  // not propagate its Set-Cookie headers into a NextResponse.redirect() object.
   for (const name of AUTH_COOKIES) {
-    try {
-      jar.delete(name);
-    } catch {
-      // Cookie may not exist — ignore
+    const opts: Parameters<typeof response.cookies.set>[2] = {
+      maxAge: 0,
+      path: "/",
+    };
+    // __Secure- and __Host- prefixed cookies require the Secure attribute
+    if (name.startsWith("__Secure-") || name.startsWith("__Host-")) {
+      opts.secure = true;
     }
+    response.cookies.set(name, "", opts);
   }
 
-  const loginUrl = new URL("/login", req.url);
-  return NextResponse.redirect(loginUrl);
+  return response;
 }
