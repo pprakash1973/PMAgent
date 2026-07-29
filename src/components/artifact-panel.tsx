@@ -54,6 +54,43 @@ const ARTIFACT_ICON: Record<string, any> = {
 
 const GOVERNANCE_LOCKED = new Set(["wbs", "resource_plan", "cost_plan", "raci_matrix", "traceability_matrix"]);
 
+// ── Lifecycle stepper ──────────────────────────────────────────────────────
+// Four governance stages. `stage` is how many segments are filled, so
+// 0 = nothing started, 4 = approved.
+const STAGE_LABELS = ["Draft", "Generated", "Reviewed", "Approved"];
+
+function stageOf(artifact: Artifact | undefined, isGen: boolean): number {
+  if (isGen) return 1;
+  if (!artifact) return 0;
+  const s = (artifact.status ?? "draft").toLowerCase();
+  if (s === "approved") return 4;
+  if (s === "reviewed" || s === "in_review") return 3;
+  return 2; // "draft" — the only value the API writes today
+}
+
+function stageText(stage: number, isGen: boolean): { label: string; color: string } {
+  if (isGen) return { label: "Generating…", color: C.primaryAlt };
+  switch (stage) {
+    case 4: return { label: "✓ Approved", color: C.green };
+    case 3: return { label: "◐ In review", color: C.primaryAlt };
+    case 2: return { label: "✓ Generated", color: C.green };
+    default: return { label: "Not started", color: C.text3 };
+  }
+}
+
+const PANEL_CSS = `
+.art-panel{container-type:inline-size}
+.art-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;padding:12px 16px}
+@container (max-width:900px){.art-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container (max-width:680px){.art-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:420px){.art-grid{grid-template-columns:1fr}}
+.art-card{transition:box-shadow .18s,transform .18s,border-color .18s}
+.art-card:hover{box-shadow:0 2px 6px rgba(16,38,48,.09),0 10px 24px rgba(16,38,48,.09);transform:translateY(-2px)}
+@keyframes art-pulse{0%,100%{opacity:1}50%{opacity:.28}}
+.art-seg-now{animation:art-pulse 1.3s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.art-card:hover{transform:none}.art-seg-now{animation:none}}
+`;
+
 function triggerDownload(url: string) {
   const a = document.createElement("a");
   a.href = url; a.rel = "noopener";
@@ -267,15 +304,22 @@ export function ArtifactPanel({
     );
   }
 
-  // Shared card — mode "rec" shows star badge, mode "opt" shows checkbox
+  // Lifecycle-stepper card — mode "rec" shows star badge, mode "opt" shows checkbox
   function ArtifactMiniCard({ entry, mode }: { entry: CatalogEntry; mode: "rec" | "opt" }) {
     const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
     const isGen = generating.has(entry.type);
-    const isMandatory = entry.mandatory;
+    const isDel = deleting === entry.type;
+    const isUp = uploading === entry.type;
     const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
     const Icon = ARTIFACT_ICON[entry.type] ?? FileText;
     const isExpandedCard = expanded === entry.type;
     const isSelected = selectedOptional.has(entry.type);
+    const isLocked = engagementMode === "high_level" && GOVERNANCE_LOCKED.has(entry.type);
+    const stage = stageOf(artifact, isGen);
+    const status = stageText(stage, isGen);
+    const rail = PHASES.find((p) => p.id === entry.phase)?.dot ?? C.primary;
+    const idle = !artifact && !isGen;
+    const guardrail = guardrailErrors[entry.type];
 
     function toggleSelect(ev: React.MouseEvent) {
       ev.stopPropagation();
@@ -286,78 +330,119 @@ export function ArtifactPanel({
       });
     }
 
+    const segStyle = (i: number): React.CSSProperties => {
+      const base: React.CSSProperties = { flex: 1, height: 4, borderRadius: 99, background: "#e5e7eb", transition: "background .4s" };
+      if (isGen && i === 1) return { ...base, background: C.primaryAlt };
+      if (i < stage) return { ...base, background: stage === 4 ? C.green : C.primary };
+      return base;
+    };
+
     return (
       <div
+        className="art-card"
         style={{
-          borderRadius: 10, padding: "12px 10px 11px",
-          display: "flex", flexDirection: "column", alignItems: "center",
-          textAlign: "center", gap: 5, position: "relative", cursor: isGen ? "default" : "pointer",
-          background: isGen ? "#f5f4ff" : C.surface,
-          border: artifact && !isGen ? `1.5px solid #1a1d24`
-            : isMandatory ? `1.5px dashed #374151`
-            : isSelected ? `1.5px solid ${C.primary}`
-            : `1.5px dashed #d1d5db`,
-          borderLeft: `3px solid ${artifact && !isGen ? C.primaryAlt : isSelected ? C.primary : "#cbd5e1"}`,
+          display: "grid", gridTemplateColumns: "4px minmax(0,1fr)",
+          borderRadius: 12, position: "relative",
+          background: idle && !isSelected ? "transparent" : C.surface,
+          border: isSelected ? `1.5px solid ${C.primary}`
+            : idle ? `1.5px dashed ${C.border}`
+            : `1.5px solid ${C.border}`,
+          boxShadow: idle && !isSelected ? "none" : "0 1px 2px rgba(16,38,48,.06), 0 3px 10px rgba(16,38,48,.05)",
           outline: isExpandedCard ? `2px solid ${C.primary}` : "none", outlineOffset: 2,
+          opacity: isDel ? 0.5 : 1,
         }}
-        onClick={(ev) => { if (isGen) return; if (mode === "opt") toggleSelect(ev); else if (artifact) setExpanded(isExpandedCard ? null : entry.type); }}
       >
-        {/* Format badge top-right */}
-        <span style={{ position: "absolute", top: 5, right: 6, fontSize: 9, fontWeight: 700, padding: "1px 4px", borderRadius: 3, background: artifact ? C.primary : "#e5e7eb", color: artifact ? "#fff" : "#9ca3af" }}>{format}</span>
+        <div style={{ background: idle ? C.border : rail, borderRadius: "10px 0 0 10px" }} />
 
-        {/* Top-left: star (rec) or checkbox (opt) */}
-        {mode === "rec" ? (
-          <span style={{ position: "absolute", top: 4, left: 6, fontSize: 13, color: "#F59E0B", lineHeight: 1 }}>★</span>
-        ) : (
-          <div
-            onClick={toggleSelect}
-            style={{ position: "absolute", top: 5, left: 6, width: 14, height: 14, borderRadius: 3, border: isSelected ? `1.5px solid ${C.primary}` : "1.5px solid #d1d5db", background: isSelected ? C.primary : C.surface, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          >
-            {isSelected && <span style={{ color: "#fff", fontSize: 9, fontWeight: 700, lineHeight: 1 }}>✓</span>}
-          </div>
-        )}
-
-        {isGen ? (
-          <div style={{ marginTop: 6 }}><GenerationProgress label={entry.label} isRegen={!!artifact} /></div>
-        ) : (
-          <>
-            <div style={{ width: 34, height: 34, borderRadius: 8, marginTop: 6, display: "flex", alignItems: "center", justifyContent: "center", background: artifact ? "#e8f4f4" : "#f3f4f6" }}>
-              <Icon style={{ width: 17, height: 17, color: artifact ? C.primary : isMandatory ? "#6b7280" : "#9ca3af" }} />
-            </div>
-            <div style={{ fontSize: 11.5, fontWeight: 700, lineHeight: 1.3, color: artifact ? C.text : isMandatory ? "#374151" : "#6b7280" }}>{entry.label}</div>
-            {phasePill(entry.phase)}
-            {artifact ? (
-              <>
-                <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: C.primary, color: "#fff" }}>Generated</span>
-                <div style={{ display: "flex", gap: 3, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => setExpanded(isExpandedCard ? null : entry.type)} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, border: `1px solid ${C.primary}`, background: "transparent", color: C.primary, cursor: "pointer" }}>View</button>
-                  <button onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>↓</button>
-                  <button onClick={() => generate(entry.type)} style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, border: "none", background: C.primaryAlt, color: "#fff", cursor: "pointer" }}>↺</button>
-                  <button onClick={(ev) => { setMenuFor(menuFor === entry.type ? null : entry.type); }} style={{ fontSize: 13, padding: "1px 4px", borderRadius: 4, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer", lineHeight: 1 }}>⋯</button>
-                </div>
-                {menuFor === entry.type && (
-                  <>
-                    <div onClick={(e) => { e.stopPropagation(); setMenuFor(null); }} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                    <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 41, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, boxShadow: "0 6px 20px rgba(0,0,0,.12)", padding: 5, minWidth: 152, textAlign: "left", marginBottom: 4 }}>
-                      <button onClick={(e) => { e.stopPropagation(); handleUploadClick(entry.type); setMenuFor(null); }} disabled={!!uploading} style={{ width: "100%", display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", background: "none", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12, color: C.text2, textAlign: "left" as const }}>
-                        <Upload style={{ width: 13, height: 13 }} /> Upload new version
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); deleteArtifact(entry.type); }} disabled={!!deleting} style={{ width: "100%", display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", background: "none", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12, color: C.red, textAlign: "left" as const }}>
-                        <Trash2 style={{ width: 13, height: 13 }} /> Delete
-                      </button>
-                    </div>
-                  </>
-                )}
-              </>
+        <div style={{ padding: "11px 12px 10px", minWidth: 0 }}>
+          {/* Row 1 — select/star, icon, title, format */}
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
+            {mode === "opt" ? (
+              <button
+                type="button" role="checkbox" aria-checked={isSelected}
+                aria-label={`Select ${entry.label}`}
+                onClick={toggleSelect}
+                style={{
+                  width: 15, height: 15, flexShrink: 0, padding: 0, borderRadius: 4, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  border: isSelected ? `1.5px solid ${C.primary}` : `1.5px solid ${C.border}`,
+                  background: isSelected ? C.primary : C.surface,
+                }}
+              >
+                {isSelected && <Check style={{ width: 9, height: 9, color: "#fff" }} />}
+              </button>
             ) : (
-              <>
-                <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: isMandatory ? C.petrol : "#e5e7eb", color: isMandatory ? "#fff" : "#9ca3af" }}>{isMandatory ? "Required" : "Optional"}</span>
-                {guardrailErrors[entry.type] && <div style={{ fontSize: 10, color: C.red, lineHeight: 1.3 }}>{guardrailErrors[entry.type]}</div>}
-                <button onClick={(ev) => { ev.stopPropagation(); generate(entry.type); }} style={{ fontSize: 10, padding: "3px 9px", borderRadius: 5, border: isMandatory ? "none" : `1px solid ${C.primaryAlt}`, background: isMandatory ? C.primary : "transparent", color: isMandatory ? "#fff" : C.primaryAlt, cursor: "pointer", fontWeight: 500 }}>Generate</button>
-              </>
+              <span aria-hidden style={{ fontSize: 12, color: "#F59E0B", lineHeight: 1, flexShrink: 0 }}>★</span>
             )}
-          </>
-        )}
+            <div style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: idle ? C.surface2 : "rgba(0,110,116,.09)" }}>
+              <Icon style={{ width: 15, height: 15, color: idle ? C.text3 : C.primary }} />
+            </div>
+            <span
+              title={entry.label}
+              style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.25, flex: 1, minWidth: 0, color: idle ? C.text2 : C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+            >{entry.label}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, flexShrink: 0, padding: "2px 4px", borderRadius: 3, background: artifact ? C.primary : "#e5e7eb", color: artifact ? "#fff" : C.text3 }}>{format}</span>
+          </div>
+
+          {/* Lifecycle stepper */}
+          <div
+            style={{ display: "flex", gap: 4, marginBottom: 6 }}
+            role="img"
+            aria-label={isLocked ? "Governance locked" : `${STAGE_LABELS[Math.max(0, stage - 1)]} — stage ${stage} of 4`}
+          >
+            {[0, 1, 2, 3].map((i) => (
+              <i key={i} className={isGen && i === 1 ? "art-seg-now" : undefined} style={segStyle(i)} />
+            ))}
+          </div>
+
+          {/* Status line — replaces the four stage labels at this density */}
+          <div style={{ fontSize: 10.5, fontWeight: 600, marginBottom: 9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: isLocked ? C.amber : status.color }}>
+            {isLocked ? "🔒 Governance locked" : isUp ? "Merging upload…" : <>{isGen ? <GeneratingLine /> : status.label}</>}
+          </div>
+
+          {guardrail && (
+            <div style={{ fontSize: 10, color: C.red, lineHeight: 1.35, marginBottom: 8 }}>{guardrail}</div>
+          )}
+
+          {/* Footer — phase pill + actions */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            {phasePill(entry.phase)}
+            <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              {isLocked ? (
+                <button disabled style={{ fontSize: 10.5, padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "not-allowed" }}>Locked</button>
+              ) : isGen ? (
+                <Loader2 className="animate-spin" style={{ width: 14, height: 14, color: C.primaryAlt }} />
+              ) : artifact ? (
+                <>
+                  <button onClick={() => setExpanded(isExpandedCard ? null : entry.type)} style={{ fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.primary}`, background: "transparent", color: C.primary, cursor: "pointer" }}>{isExpandedCard ? "Hide" : "View"}</button>
+                  <button title="Download" aria-label="Download" onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)} style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}><Download style={{ width: 12, height: 12 }} /></button>
+                  <span style={{ position: "relative", display: "flex" }}>
+                    <button
+                      title="More" aria-label="More actions" aria-expanded={menuFor === entry.type}
+                      onClick={() => setMenuFor(menuFor === entry.type ? null : entry.type)}
+                      style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer" }}
+                    ><MoreHorizontal style={{ width: 12, height: 12 }} /></button>
+                    {menuFor === entry.type && (
+                      <>
+                        <div onClick={() => setMenuFor(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                        <div style={{ position: "absolute", right: 0, bottom: "calc(100% + 6px)", zIndex: 41, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, boxShadow: "0 8px 26px rgba(0,0,0,.14)", padding: 5, minWidth: 178, textAlign: "left" }}>
+                          <MenuItem icon={<Upload style={{ width: 13, height: 13 }} />} label={isUp ? "Merging…" : "Upload new version"} onClick={() => handleUploadClick(entry.type)} disabled={!!uploading} />
+                          <MenuItem icon={<RefreshCw style={{ width: 13, height: 13 }} />} label="Regenerate" onClick={() => generate(entry.type)} />
+                          <MenuItem icon={<Trash2 style={{ width: 13, height: 13 }} />} label="Delete" onClick={() => deleteArtifact(entry.type)} disabled={!!deleting} danger />
+                        </div>
+                      </>
+                    )}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => generate(entry.type)} style={{ fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 5, border: entry.mandatory ? "none" : `1px solid ${C.primary}`, background: entry.mandatory ? C.primary : "transparent", color: entry.mandatory ? "#fff" : C.primary, cursor: "pointer" }}>Generate</button>
+                  <button title="Upload existing" aria-label="Upload existing" disabled={!!uploading} onClick={() => handleUploadClick(entry.type)} style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: uploading ? "default" : "pointer", opacity: uploading ? 0.5 : 1 }}><Upload style={{ width: 12, height: 12 }} /></button>
+                </>
+              )}
+            </span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -367,7 +452,8 @@ export function ArtifactPanel({
   const selCount = selectedOptional.size;
 
   return (
-    <div ref={panelRef} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", position: "relative" }}>
+    <div ref={panelRef} className="art-panel" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, position: "relative" }}>
+      <style>{PANEL_CSS}</style>
       <input ref={fileInputRef} type="file" style={{ display: "none" }} accept=".xlsx,.xls,.csv,.pdf,.docx,.pptx,.txt" onChange={handleFileChange} />
 
       {/* Header */}
@@ -383,7 +469,7 @@ export function ArtifactPanel({
           <span style={{ fontSize: 13, fontWeight: 600, color: "#006E74" }}>Recommended</span>
           <span style={{ fontSize: 11, color: "rgba(0,110,116,.5)", marginLeft: "auto" }}>Move Up optional artifacts to add them here</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "12px 16px" }}>
+        <div className="art-grid">
           {recEntries.map((entry) => <ArtifactMiniCard key={entry.type} entry={entry} mode="rec" />)}
         </div>
         {expanded && recEntries.some((e) => e.type === expanded) && <ExpandedViewer entryType={expanded} />}
@@ -415,7 +501,7 @@ export function ArtifactPanel({
         {optionalEntries.length === 0 ? (
           <div style={{ textAlign: "center", padding: "24px 0", fontSize: 13, color: C.textMuted }}>All optional artifacts have been moved to recommended.</div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "12px 16px" }}>
+          <div className="art-grid">
             {optionalEntries.map((entry) => <ArtifactMiniCard key={entry.type} entry={entry} mode="opt" />)}
           </div>
         )}
@@ -433,6 +519,21 @@ const GEN_STAGES = [
   { key: "saving",     label: "Saving",               icon: "💾", delay: 300  },
   { key: "done",       label: "Done",                 icon: "✓",  delay: null },
 ];
+
+// Single-line variant of GenerationProgress, for the lifecycle-stepper card
+function GeneratingLine() {
+  const [stage, setStage] = useState(0);
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let acc = 0;
+    for (let i = 1; i < GEN_STAGES.length - 2; i++) {
+      acc += GEN_STAGES[i - 1].delay ?? 0;
+      timers.push(setTimeout(() => setStage(i), acc));
+    }
+    return () => timers.forEach(clearTimeout);
+  }, []);
+  return <>{GEN_STAGES[stage].label}…</>;
+}
 
 function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolean }) {
   const [stage, setStage] = useState(0); // index into GEN_STAGES
