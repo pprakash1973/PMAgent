@@ -7,9 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertCircle, Loader2 } from "lucide-react";
 
-// Team collaborating around a table (Unsplash, stable CDN asset)
-const TEAM_PHOTO =
-  "https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1400&q=80";
+// Team collaborating around a table with the AI copilot — served from /public
+const TEAM_PHOTO = "/login-hero.jpg";
+const TEAM_PHOTO_WEBP = "/login-hero.webp";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -53,27 +53,32 @@ export default function LoginPage() {
         className="login-photo-panel"
       >
         {photoOk && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={TEAM_PHOTO}
-            alt="A project team collaborating around a table"
-            onError={() => setPhotoOk(false)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
-          />
+          <picture>
+            <source srcSet={TEAM_PHOTO_WEBP} type="image/webp" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={TEAM_PHOTO}
+              alt="A project team gathered around a table, reviewing a project plan with an AI copilot"
+              onError={() => setPhotoOk(false)}
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                objectPosition: "center 42%",
+              }}
+            />
+          </picture>
         )}
-        {/* readability overlay */}
+        {/* readability overlay — light through the middle so the photo reads,
+            stronger top and bottom where the brand mark and headline sit */}
         <div
           style={{
             position: "absolute",
             inset: 0,
             background:
-              "linear-gradient(155deg, rgba(0,60,81,0.72) 0%, rgba(0,60,81,0.45) 40%, rgba(0,110,116,0.72) 100%)",
+              "linear-gradient(180deg, rgba(0,60,81,0.62) 0%, rgba(0,60,81,0.16) 30%, rgba(0,60,81,0.42) 62%, rgba(0,60,81,0.88) 100%)",
           }}
         />
 

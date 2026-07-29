@@ -3,7 +3,11 @@ import type { NextRequest } from "next/server";
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  // Static files under public/ are served through this matcher, so exempt them —
+  // otherwise an image on the login page redirects to /login and never loads.
+  const isStaticAsset = /\.(png|jpe?g|webp|avif|gif|svg|ico|woff2?|ttf|mp4)$/i.test(pathname);
   const isPublic =
+    isStaticAsset ||
     pathname === "/login" ||
     pathname === "/register" ||
     pathname.startsWith("/api/auth");
