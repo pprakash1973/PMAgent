@@ -1166,6 +1166,10 @@ function ScheduleTab({ project }: { project: any }) {
   const [applyingDiff, setApplyingDiff] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // View mode and phase collapse
+  const [viewMode, setViewMode] = useState<"list" | "gantt">("list");
+  const [collapsedPhases, setCollapsedPhases] = useState<Record<string, boolean>>({});
+
   // Scroll sync refs
   const gridScrollRef = useRef<HTMLDivElement>(null);
   const ganttScrollRef = useRef<HTMLDivElement>(null);
@@ -1374,6 +1378,29 @@ function ScheduleTab({ project }: { project: any }) {
     setAiCmd("");
   }
 
+  // Phase colors and list-view helpers
+  const PHASE_COLORS: Record<string, string> = { "Initiation": "#006E74", "Planning": "#0097AC", "Execution": "#003C51", "Monitoring": "#0097AC", "Closure": "#01B27C" };
+  function phaseColor(p: string) { return PHASE_COLORS[p] ?? "#7A7480"; }
+  function cycleTaskStatus(taskId: string) {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const order = ["not_started", "in_progress", "complete"];
+    const idx = order.indexOf(task.status ?? "not_started");
+    patchTask(taskId, { status: order[(idx + 1) % order.length] });
+  }
+  function statusChipProps(status: string, pct: number) {
+    if (status === "complete" || pct === 100) return { label: "Complete", color: C.green, bg: C.greenLight };
+    if (status === "in_progress") return { label: "In progress", color: "#0097AC", bg: "#e0f3f7" };
+    if (status === "on_hold") return { label: "On hold", color: C.amber, bg: C.amberLight };
+    return { label: "Not started", color: C.text3, bg: C.surface2 };
+  }
+  function resAvatarColor(name: string) {
+    const palette = [C.primary, "#006E74", "#0097AC", "#003C51", "#01B27C", "#881E87"];
+    if (!name) return C.text3;
+    let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+    return palette[Math.abs(h) % palette.length];
+  }
+
   // Gantt geometry
   const minStart = tasks.length ? new Date(Math.min(...tasks.map(t => new Date(t.baselineStart).getTime()))) : new Date();
   const maxFinish = tasks.length ? new Date(Math.max(...tasks.map(t => new Date(t.baselineFinish).getTime()))) : new Date();
@@ -1396,49 +1423,49 @@ function ScheduleTab({ project }: { project: any }) {
 
   return (
     <div>
-      {/* ── Header bar ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Project Schedule</div>
-        {tasks.length > 0 && (
-          <span style={{ fontSize: "11.5px", color: C.text3 }}>
-            {tasks.length} tasks · {phases.length} phases
-          </span>
-        )}
+      {/* ── Header ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" as const }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.text }}>Project Schedule</div>
+          {tasks.length > 0 && <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>{tasks.length} tasks · {phases.length} phases</div>}
+        </div>
         <div style={{ flex: 1 }} />
         {tasks.length > 0 && (
-          <>
-            <button
-              onClick={() => setShowCritical(v => !v)}
-              style={{
-                height: 32, padding: "0 12px",
-                background: showCritical ? C.redLight : C.surface,
-                color: showCritical ? C.red : C.text2,
-                border: `1px solid ${showCritical ? C.red : C.border}`,
-                borderRadius: 8, font: `600 12px 'IBM Plex Sans'`, cursor: "pointer",
-              }}
-            >
-              {showCritical ? "✕ Critical Path" : "⚑ Critical Path"}
-            </button>
-            <a href={`/api/projects/${project.id}/schedule/export`} download
-              style={{ height: 32, padding: "0 14px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
-              ↓ Export XLSX
-            </a>
-          </>
+          <div style={{ display: "flex", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+            {(["list", "gantt"] as const).map(v => (
+              <button key={v} onClick={() => setViewMode(v)}
+                style={{ height: 30, padding: "0 12px", background: viewMode === v ? C.primary : C.surface, color: viewMode === v ? "#fff" : C.text2, border: "none", font: `500 12px 'IBM Plex Sans'`, cursor: "pointer" }}>
+                {v === "list" ? "☰ List" : "≡ Timeline"}
+              </button>
+            ))}
+          </div>
+        )}
+        {tasks.length > 0 && viewMode === "gantt" && (
+          <button onClick={() => setShowCritical(v => !v)}
+            style={{ height: 30, padding: "0 11px", background: showCritical ? C.redLight : C.surface, color: showCritical ? C.red : C.text2, border: `1px solid ${showCritical ? C.red : C.border}`, borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, cursor: "pointer" }}>
+            {showCritical ? "✕ Critical" : "⚑ Critical"}
+          </button>
+        )}
+        {tasks.length > 0 && (
+          <a href={`/api/projects/${project.id}/schedule/export`} download
+            style={{ height: 30, padding: "0 12px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, cursor: "pointer", display: "flex", alignItems: "center", textDecoration: "none" }}>
+            ↓ Export
+          </a>
         )}
         <button onClick={generate} disabled={generating}
-          style={{ height: 32, padding: "0 14px", background: generating ? C.surface2 : C.primary, color: generating ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: generating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 7 }}>
+          style={{ height: 30, padding: "0 12px", background: generating ? C.surface2 : C.primary, color: generating ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, cursor: generating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
           {generating
-            ? <><span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
-            : tasks.length > 0 ? "↺ Regenerate from WBS" : "✦ Generate from WBS"}
+            ? <><span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
+            : tasks.length > 0 ? "↺ Regenerate" : "✦ Generate from WBS"}
         </button>
       </div>
 
       {error && <div style={{ padding: "10px 14px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 9, fontSize: 13, color: C.red, marginBottom: 14 }}>{error}</div>}
 
       {tasks.length === 0 && !error && (
-        <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "32px 24px", textAlign: "center" as const }}>
-          <div style={{ fontSize: 36, marginBottom: 14 }}>📅</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.primary, marginBottom: 8 }}>No schedule yet</div>
+        <div style={{ background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "32px 24px", textAlign: "center" as const }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>📅</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: C.primary, marginBottom: 8 }}>No schedule yet</div>
           <div style={{ fontSize: 13, color: C.text2, maxWidth: 480, margin: "0 auto 18px" }}>
             Generate a schedule from your WBS artifact. The AI will sequence all work packages using critical-path scheduling, respecting dependencies and a 5-day working week.
           </div>
@@ -1449,51 +1476,226 @@ function ScheduleTab({ project }: { project: any }) {
       {tasks.length > 0 && (
         <>
           {/* ── EVM KPI strip ── */}
-          <div style={{ display: "flex", gap: 12, marginBottom: 18 }}>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
             {(() => {
               const sv = kpi?.ev != null && kpi?.pv != null ? kpi.ev - kpi.pv : null;
               const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
               return [
-                { label: "PV",  value: kpi?.pv  != null ? `${kpi.pv.toFixed(1)}d`  : "—", sub: "Planned Value — budgeted cost of work scheduled",   color: C.text2,       bg: C.surface2   },
-                { label: "EV",  value: kpi?.ev  != null ? `${kpi.ev.toFixed(1)}d`  : "—", sub: "Earned Value — budgeted cost of work performed",     color: C.primary,     bg: C.primaryLight },
-                { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${sv.toFixed(1)}d` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead of schedule ✓" : "Behind schedule", color: svColor, bg: svBg },
-                { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "Ahead of schedule ✓" : kpi.spi >= 0.9 ? "Slightly behind schedule" : "Behind schedule", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.9 ? C.amberLight : C.redLight },
+                { label: "PV",  value: kpi?.pv  != null ? `${kpi.pv.toFixed(1)}d`  : "—", sub: "Planned value",   color: C.text2, bg: C.surface2 },
+                { label: "EV",  value: kpi?.ev  != null ? `${kpi.ev.toFixed(1)}d`  : "—", sub: "Earned value",    color: C.primary, bg: C.primaryLight },
+                { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${sv.toFixed(1)}d` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead ✓" : "Behind", color: svColor, bg: svBg },
+                { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "On track ✓" : kpi.spi >= 0.9 ? "Slightly behind" : "Behind", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.9 ? C.amberLight : C.redLight },
               ];
             })().map(k => (
-              <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 12, padding: "13px 15px" }}>
-                <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 24, fontWeight: 700, color: k.color }}>{k.value}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: k.color, marginTop: 2 }}>{k.label}</div>
-                <div style={{ fontSize: 13, color: C.text3, marginTop: 2 }}>{k.sub}</div>
+              <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 10, padding: "11px 13px" }}>
+                <div style={{ fontSize: 20, fontWeight: 600, color: k.color, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: k.color, textTransform: "uppercase" as const, letterSpacing: ".06em", marginTop: 2 }}>{k.label}</div>
+                <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{k.sub}</div>
               </div>
             ))}
           </div>
 
           {kpi?.spi != null && kpi.spi < 0.8 && <RecoveryPanel projectId={project.id} spi={kpi.spi} />}
 
-          {/* ── Schedule filters ── */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" as const, marginBottom: 10 }}>
-            <input value={nameFilter} onChange={e => setNameFilter(e.target.value)} placeholder="🔍 Filter by task name…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface2, color: C.text, width: 200 }} />
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }}>
-              <option value="all">All Status</option>
-              <option value="not_started">Not Started</option>
-              <option value="in_progress">In Progress</option>
+          {/* ── Summary strip ── */}
+          {(() => {
+            const done = tasks.filter(t => t.status === "complete" || t.percentComplete === 100).length;
+            const inprog = tasks.filter(t => t.status === "in_progress" && t.percentComplete < 100).length;
+            const notstarted = tasks.filter(t => (!t.status || t.status === "not_started") && t.percentComplete === 0).length;
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, flexWrap: "wrap" as const }}>
+                {done > 0 && <span style={{ padding: "3px 9px", borderRadius: 20, background: C.greenLight, color: C.green, fontSize: 11, fontWeight: 500 }}>✓ {done} done</span>}
+                {inprog > 0 && <span style={{ padding: "3px 9px", borderRadius: 20, background: C.primaryLight, color: C.primary, fontSize: 11, fontWeight: 500 }}>◑ {inprog} in progress</span>}
+                {notstarted > 0 && <span style={{ padding: "3px 9px", borderRadius: 20, background: C.surface2, color: C.text3, fontSize: 11, fontWeight: 500 }}>○ {notstarted} not started</span>}
+              </div>
+            );
+          })()}
+
+          {/* ── Filters ── */}
+          <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" as const, marginBottom: 14 }}>
+            <input value={nameFilter} onChange={e => setNameFilter(e.target.value)} placeholder="🔍 Filter tasks…"
+              style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface2, color: C.text, width: 180, outline: "none" }} />
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+              style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }}>
+              <option value="all">All statuses</option>
+              <option value="not_started">Not started</option>
+              <option value="in_progress">In progress</option>
               <option value="complete">Complete</option>
-              <option value="on_hold">On Hold</option>
+              <option value="on_hold">On hold</option>
             </select>
-            <span style={{ fontSize: 11, color: C.text3 }}>From</span>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }} />
-            <span style={{ fontSize: 11, color: C.text3 }}>To</span>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }} />
+            {viewMode === "gantt" && (
+              <>
+                <span style={{ fontSize: 11, color: C.text3 }}>From</span>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }} />
+                <span style={{ fontSize: 11, color: C.text3 }}>To</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, background: C.surface, color: C.text }} />
+              </>
+            )}
             {(nameFilter || statusFilter !== "all" || dateFrom || dateTo) && (
-              <button onClick={() => { setNameFilter(""); setStatusFilter("all"); setDateFrom(""); setDateTo(""); }} style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 11, background: "transparent", color: C.text3, cursor: "pointer" }}>✕ Clear</button>
+              <button onClick={() => { setNameFilter(""); setStatusFilter("all"); setDateFrom(""); setDateTo(""); }}
+                style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 11, background: "transparent", color: C.text3, cursor: "pointer" }}>✕ Clear</button>
             )}
             {filteredTasks.length !== tasks.length && (
-              <span style={{ fontSize: 11, color: C.text3, marginLeft: 4 }}>Showing {filteredTasks.length} of {tasks.length} tasks</span>
+              <span style={{ fontSize: 11, color: C.text3 }}>Showing {filteredTasks.length} of {tasks.length}</span>
             )}
           </div>
 
-          {/* ── Split-pane Gantt ── */}
+          {/* ── List view ── */}
+          {viewMode === "list" && (
+            <div>
+              {phases.map(phase => {
+                const phaseTasks = filteredTasks.filter(t => t.phase === phase);
+                const totalForPhase = tasks.filter(t => t.phase === phase).length;
+                const doneForPhase = tasks.filter(t => t.phase === phase && (t.status === "complete" || t.percentComplete === 100)).length;
+                const isCollapsed = !!collapsedPhases[phase];
+                const pColor = phaseColor(phase);
+                const doneBg = doneForPhase === totalForPhase && totalForPhase > 0 ? C.greenLight : doneForPhase > 0 ? C.primaryLight : C.surface2;
+                const doneC  = doneForPhase === totalForPhase && totalForPhase > 0 ? C.green : doneForPhase > 0 ? C.primary : C.text3;
+                return (
+                  <div key={phase} style={{ marginBottom: 6 }}>
+                    <div onClick={() => setCollapsedPhases(prev => ({ ...prev, [phase]: !prev[phase] }))}
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: isCollapsed ? 8 : "8px 8px 0 0", border: `1px solid ${C.border}`, borderBottom: isCollapsed ? `1px solid ${C.border}` : "none", background: C.surface2, cursor: "pointer", userSelect: "none" as const }}
+                      onMouseEnter={e => (e.currentTarget.style.background = C.surface)}
+                      onMouseLeave={e => (e.currentTarget.style.background = C.surface2)}>
+                      <span style={{ fontSize: 10, color: C.text3, display: "inline-block", transition: "transform .17s", transform: isCollapsed ? "none" : "rotate(90deg)" }}>▶</span>
+                      <div style={{ width: 9, height: 9, borderRadius: "50%", background: pColor, flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text }}>{phase}</span>
+                      <span style={{ fontSize: 11, color: C.text3 }}>{totalForPhase} task{totalForPhase !== 1 ? "s" : ""}</span>
+                      <span style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 500, padding: "2px 8px", borderRadius: 20, background: doneBg, color: doneC }}>{doneForPhase}/{totalForPhase} done</span>
+                      <button onClick={e => { e.stopPropagation(); addTask(phase); }}
+                        style={{ height: 24, padding: "0 9px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, font: `500 11px 'IBM Plex Sans'`, color: C.text3, cursor: "pointer" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = C.primaryLight; (e.currentTarget as HTMLElement).style.color = C.primary; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = C.surface; (e.currentTarget as HTMLElement).style.color = C.text3; }}>
+                        + Add
+                      </button>
+                    </div>
+                    {!isCollapsed && (
+                      <div style={{ border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden", background: C.surface }}>
+                        <div style={{ display: "flex", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
+                          <div style={{ width: 36, flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0, paddingRight: 8 }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Task name</span></div>
+                          <div style={{ width: 108, flexShrink: 0, textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Dates</span></div>
+                          <div style={{ width: 90, flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Status</span></div>
+                          <div style={{ width: 110, flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Assignee</span></div>
+                          <div style={{ width: 42, flexShrink: 0, textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Days</span></div>
+                          <div style={{ width: 46, flexShrink: 0, textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>%</span></div>
+                          <div style={{ width: 40, flexShrink: 0 }} />
+                        </div>
+                        {phaseTasks.map((t, rowIdx) => {
+                          const chip = statusChipProps(t.status, t.percentComplete);
+                          const isCrit = showCritical && criticalIds.has(t.id);
+                          const isHover = hoverRowId === t.id;
+                          const isEditName = editCell?.taskId === t.id && editCell?.field === "name";
+                          const isEditDays = editCell?.taskId === t.id && editCell?.field === "baselineDays";
+                          const isEditPct  = editCell?.taskId === t.id && editCell?.field === "percentComplete";
+                          const avc = t.resource ? resAvatarColor(t.resource.name) : C.text3;
+                          const avatarInitial = t.resource?.name?.charAt(0).toUpperCase() ?? "?";
+                          return (
+                            <div key={t.id} onMouseEnter={() => setHoverRowId(t.id)} onMouseLeave={() => setHoverRowId(null)}
+                              style={{ display: "flex", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : "transparent"}`, background: isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
+                              <div style={{ width: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <div style={{ width: 13, height: 13, borderRadius: "50%", border: `1.5px solid ${chip.color}`, background: chip.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                  {(t.status === "complete" || t.percentComplete === 100) && <span style={{ fontSize: 7, color: C.green, fontWeight: 700 }}>✓</span>}
+                                  {t.status === "in_progress" && t.percentComplete < 100 && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#0097AC" }} />}
+                                </div>
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0, padding: "8px 8px 8px 0" }}>
+                                {isEditName ? (
+                                  <input ref={inputRef} autoFocus value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
+                                    onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                    style={{ width: "100%", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "'IBM Plex Sans',sans-serif", color: C.text }} />
+                                ) : (
+                                  <div onClick={() => { setEditCell({ taskId: t.id, field: "name" }); setEditVal(t.name); }}
+                                    style={{ fontSize: 13, fontWeight: 500, color: isCrit ? C.red : C.text, cursor: "text", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }} title={t.name}>
+                                    {t.name}
+                                  </div>
+                                )}
+                                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5 }}>
+                                  <div style={{ flex: 1, height: 3, borderRadius: 3, background: C.border, overflow: "hidden", maxWidth: 180 }}>
+                                    <div style={{ height: "100%", borderRadius: 3, width: `${t.percentComplete}%`, background: t.status === "complete" || t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.border, transition: "width .3s" }} />
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ width: 108, flexShrink: 0, padding: "0 6px", fontSize: 11, color: C.text2, textAlign: "center" as const, lineHeight: 1.5 }}>
+                                {fmt(t.baselineStart)}<br /><span style={{ fontSize: 10, color: C.text3 }}>→ {fmt(t.baselineFinish)}</span>
+                              </div>
+                              <div style={{ width: 90, flexShrink: 0, padding: "0 5px" }}>
+                                <button onClick={() => cycleTaskStatus(t.id)} title="Click to advance status"
+                                  style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", borderRadius: 20, fontSize: 10.5, fontWeight: 500, border: "none", cursor: "pointer", color: chip.color, background: chip.bg }}>
+                                  {chip.label}
+                                </button>
+                              </div>
+                              <div style={{ width: 110, flexShrink: 0, padding: "0 4px", display: "flex", alignItems: "center", gap: 5 }}>
+                                {assignEditId === t.id ? (
+                                  <select autoFocus defaultValue={t.resource?.id ?? ""}
+                                    onBlur={e => saveAssignee(t.id, e.target.value || null)}
+                                    onChange={e => saveAssignee(t.id, e.target.value || null)}
+                                    style={{ fontSize: 11, height: 22, border: `1px solid ${C.primary}`, borderRadius: 4, width: "100%", background: C.surface }}>
+                                    <option value="">— Unassigned —</option>
+                                    {resources.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                  </select>
+                                ) : (
+                                  <>
+                                    <div onClick={() => resources.length > 0 && setAssignEditId(t.id)} title="Click to assign"
+                                      style={{ width: 22, height: 22, borderRadius: "50%", background: avc, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 600, color: "#fff", flexShrink: 0, cursor: resources.length > 0 ? "pointer" : "default" }}>
+                                      {avatarInitial}
+                                    </div>
+                                    <span onClick={() => resources.length > 0 && setAssignEditId(t.id)}
+                                      style={{ fontSize: 11, color: t.resource ? C.text2 : C.text3, cursor: resources.length > 0 ? "pointer" : "default", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", maxWidth: 76 }}>
+                                      {t.resource ? t.resource.name : resources.length > 0 ? "+ Assign" : ""}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                              <div style={{ width: 42, flexShrink: 0, textAlign: "center" as const, cursor: "text" }}
+                                onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.baselineDays)); }}>
+                                {isEditDays ? (
+                                  <input autoFocus type="number" min={1} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
+                                    onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                    style={{ width: 36, height: 22, textAlign: "center", fontSize: 12, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                                ) : (
+                                  <span style={{ fontSize: 11, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.baselineDays}d</span>
+                                )}
+                              </div>
+                              <div style={{ width: 46, flexShrink: 0, textAlign: "center" as const, cursor: "text" }}
+                                onClick={() => { setEditCell({ taskId: t.id, field: "percentComplete" }); setEditVal(String(t.percentComplete)); }}>
+                                {isEditPct ? (
+                                  <input autoFocus type="number" min={0} max={100} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
+                                    onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                    style={{ width: 36, height: 22, textAlign: "center", fontSize: 12, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                                ) : (
+                                  <span style={{ fontSize: 11, fontWeight: 500, color: t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.text3, fontVariantNumeric: "tabular-nums" }}>
+                                    {savingId === t.id ? "…" : `${t.percentComplete}%`}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ width: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: isHover ? 1 : 0, transition: "opacity .12s" }}>
+                                <button onClick={() => deleteTask(t.id)} disabled={deletingId === t.id} title="Delete task"
+                                  style={{ width: 22, height: 22, background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 5, cursor: "pointer", color: C.red, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {phaseTasks.length === 0 && (
+                          <div style={{ padding: "12px 12px 12px 36px", fontSize: 12, color: C.text3, fontStyle: "italic" }}>No tasks match the current filter.</div>
+                        )}
+                        <div onClick={() => addTask(phase)}
+                          style={{ display: "flex", alignItems: "center", padding: "8px 12px 8px 36px", borderTop: `1px solid ${C.borderLight}`, cursor: "pointer", color: C.text3, fontSize: 12 }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = C.surface2; (e.currentTarget as HTMLElement).style.color = C.primary; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; (e.currentTarget as HTMLElement).style.color = C.text3; }}>
+                          + Add task to {phase}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Timeline (Gantt) view ── */}
+          {viewMode === "gantt" && (
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden" }}>
 
             {/* Column headers */}
@@ -1772,6 +1974,7 @@ function ScheduleTab({ project }: { project: any }) {
               <span style={{ fontSize: 12.5, color: C.text3 }}>Click cells to edit · drag right edge of bar to resize</span>
             </div>
           </div>
+          )}
 
           {/* ── AI Command Bar ── */}
           <div style={{ marginTop: 16, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
