@@ -36,7 +36,7 @@ export async function PATCH(
 
     if (action.actionType === "BULK_CLOSE_TASKS") {
       const taskIds = (payload.tasks as { id: string }[]).map((t) => t.id);
-      await prisma.scheduleTask.updateMany({ where: { id: { in: taskIds } }, data: { status: "done", percentComplete: 100 } });
+      await prisma.scheduleTask.updateMany({ where: { id: { in: taskIds } }, data: { status: "complete", percentComplete: 100 } });
       await prisma.assistantAction.update({ where: { id }, data: { status: "confirmed", confirmedAt: new Date() } });
       return NextResponse.json({ action: { ...action, status: "confirmed" }, count: taskIds.length });
     }

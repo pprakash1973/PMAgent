@@ -1572,15 +1572,15 @@ function ScheduleTab({ project }: { project: any }) {
                     </div>
                     {!isCollapsed && (
                       <div style={{ border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden", background: C.surface }}>
-                        <div style={{ display: "flex", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
-                          <div style={{ width: 36, flexShrink: 0 }} />
-                          <div style={{ flex: 1, minWidth: 0, paddingRight: 8 }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Task name</span></div>
-                          <div style={{ width: 108, flexShrink: 0, textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Dates</span></div>
-                          <div style={{ width: 90, flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Status</span></div>
-                          <div style={{ width: 110, flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Assignee</span></div>
-                          <div style={{ width: 42, flexShrink: 0, textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Days</span></div>
-                          <div style={{ width: 46, flexShrink: 0, textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>%</span></div>
-                          <div style={{ width: 40, flexShrink: 0 }} />
+                        <div style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
+                          <div />
+                          <div style={{ minWidth: 0, paddingRight: 8 }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Task name</span></div>
+                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Dates</span></div>
+                          <div><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Status</span></div>
+                          <div><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Assignee</span></div>
+                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Days</span></div>
+                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>%</span></div>
+                          <div />
                         </div>
                         {phaseTasks.map((t, rowIdx) => {
                           const chip = statusChipProps(t.status, t.percentComplete);
@@ -1593,14 +1593,14 @@ function ScheduleTab({ project }: { project: any }) {
                           const avatarInitial = t.resource?.name?.charAt(0).toUpperCase() ?? "?";
                           return (
                             <div key={t.id} onMouseEnter={() => setHoverRowId(t.id)} onMouseLeave={() => setHoverRowId(null)}
-                              style={{ display: "flex", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : "transparent"}`, background: isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
-                              <div style={{ width: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : "transparent"}`, background: isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                                 <div style={{ width: 13, height: 13, borderRadius: "50%", border: `1.5px solid ${chip.color}`, background: chip.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
                                   {(t.status === "complete" || t.percentComplete === 100) && <span style={{ fontSize: 7, color: C.green, fontWeight: 700 }}>✓</span>}
                                   {t.status === "in_progress" && t.percentComplete < 100 && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#0097AC" }} />}
                                 </div>
                               </div>
-                              <div style={{ flex: 1, minWidth: 0, padding: "8px 8px 8px 0" }}>
+                              <div style={{ minWidth: 0, padding: "8px 8px 8px 0" }}>
                                 {isEditName ? (
                                   <input ref={inputRef} autoFocus value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
                                     onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
@@ -1617,16 +1617,16 @@ function ScheduleTab({ project }: { project: any }) {
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ width: 108, flexShrink: 0, padding: "0 6px", fontSize: 11, color: C.text2, textAlign: "center" as const, lineHeight: 1.5 }}>
+                              <div style={{ padding: "0 6px", fontSize: 11, color: C.text2, textAlign: "center" as const, lineHeight: 1.5 }}>
                                 {fmt(t.baselineStart)}<br /><span style={{ fontSize: 10, color: C.text3 }}>→ {fmt(t.baselineFinish)}</span>
                               </div>
-                              <div style={{ width: 90, flexShrink: 0, padding: "0 5px" }}>
+                              <div style={{ padding: "0 5px" }}>
                                 <button onClick={() => cycleTaskStatus(t.id)} title="Click to advance status"
                                   style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", borderRadius: 20, fontSize: 10.5, fontWeight: 500, border: "none", cursor: "pointer", color: chip.color, background: chip.bg }}>
                                   {chip.label}
                                 </button>
                               </div>
-                              <div style={{ width: 110, flexShrink: 0, padding: "0 4px", display: "flex", alignItems: "center", gap: 5 }}>
+                              <div style={{ padding: "0 4px", display: "flex", alignItems: "center", gap: 5 }}>
                                 {assignEditId === t.id ? (
                                   <select autoFocus defaultValue={t.resource?.id ?? ""}
                                     onBlur={e => saveAssignee(t.id, e.target.value || null)}
@@ -1648,7 +1648,7 @@ function ScheduleTab({ project }: { project: any }) {
                                   </>
                                 )}
                               </div>
-                              <div style={{ width: 42, flexShrink: 0, textAlign: "center" as const, cursor: "text" }}
+                              <div style={{ textAlign: "center" as const, cursor: "text" }}
                                 onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.baselineDays)); }}>
                                 {isEditDays ? (
                                   <input autoFocus type="number" min={1} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
@@ -1658,7 +1658,7 @@ function ScheduleTab({ project }: { project: any }) {
                                   <span style={{ fontSize: 11, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.baselineDays}d</span>
                                 )}
                               </div>
-                              <div style={{ width: 46, flexShrink: 0, textAlign: "center" as const, cursor: "text" }}
+                              <div style={{ textAlign: "center" as const, cursor: "text" }}
                                 onClick={() => { setEditCell({ taskId: t.id, field: "percentComplete" }); setEditVal(String(t.percentComplete)); }}>
                                 {isEditPct ? (
                                   <input autoFocus type="number" min={0} max={100} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
@@ -1670,7 +1670,7 @@ function ScheduleTab({ project }: { project: any }) {
                                   </span>
                                 )}
                               </div>
-                              <div style={{ width: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: isHover ? 1 : 0, transition: "opacity .12s" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", opacity: isHover ? 1 : 0, transition: "opacity .12s" }}>
                                 <button onClick={() => deleteTask(t.id)} disabled={deletingId === t.id} title="Delete task"
                                   style={{ width: 22, height: 22, background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 5, cursor: "pointer", color: C.red, fontSize: 12, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>×</button>
                               </div>

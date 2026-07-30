@@ -609,19 +609,42 @@ export async function POST(req: NextRequest) {
 
     if (intent.type === "BULK_CLOSE_TASKS") {
       try {
-        const tasks = await prisma.scheduleTask.findMany({
-          where: { projectId, status: { not: "done" } },
-          select: { id: true, name: true, status: true, percentComplete: true },
-          orderBy: { name: "asc" },
+        const allTasks = await prisma.scheduleTask.findMany({
+          where: { projectId, status: { not: "complete" } },
+          select: { id: true, name: true, phase: true, status: true, percentComplete: true },
+          orderBy: { sortOrder: "asc" },
         });
-        if (tasks.length > 0) {
-          actionRecord = await prisma.assistantAction.create({
-            data: {
-              conversationId, actionType: "BULK_CLOSE_TASKS", tier: "c",
-              payload: { projectId, tasks: tasks.map((t) => ({ id: t.id, name: t.name, status: t.status })), count: tasks.length },
-              status: "proposed",
-            },
+        if (allTasks.length > 0) {
+          // Ask Claude which tasks match the user's filter (phase names, "all", etc.)
+          const filterMsg = intent.params.filter;
+          const taskListJson = JSON.stringify(
+            allTasks.map((t) => ({ id: t.id, name: t.name, phase: t.phase, status: t.status }))
+          );
+          const filterResp = await anthropic.messages.create({
+            model: "claude-sonnet-4-6",
+            max_tokens: 400,
+            messages: [{
+              role: "user",
+              content: `The PM wants to bulk-close tasks with this request: "${filterMsg}"\n\nCandidate tasks (JSON):\n${taskListJson}\n\nReturn a JSON array of task IDs that match the request. If the request says "all" with no phase filter, return all IDs. Return only a valid JSON array, no other text.`,
+            }],
           });
+          const filterText = filterResp.content[0].type === "text" ? filterResp.content[0].text : "[]";
+          let selectedIds: string[] = [];
+          try {
+            const match = filterText.match(/\[[\s\S]*?\]/);
+            selectedIds = JSON.parse(match ? match[0] : "[]");
+          } catch { selectedIds = allTasks.map((t) => t.id); }
+
+          const selectedTasks = allTasks.filter((t) => selectedIds.includes(t.id));
+          if (selectedTasks.length > 0) {
+            actionRecord = await prisma.assistantAction.create({
+              data: {
+                conversationId, actionType: "BULK_CLOSE_TASKS", tier: "c",
+                payload: { projectId, tasks: selectedTasks.map((t) => ({ id: t.id, name: t.name, status: t.status })), count: selectedTasks.length },
+                status: "proposed",
+              },
+            });
+          }
         }
       } catch (e: any) { actionRecord = { error: e.message }; }
     }
