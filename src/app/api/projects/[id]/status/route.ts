@@ -113,6 +113,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       summary: aiResult.summary,
       ragStatus: aiResult.ragStatus,
       healthScore: aiResult.healthScore,
+      spi: computedSpi ?? aiResult.spi ?? null,
+      cpi: computedCpi ?? aiResult.cpi ?? null,
     });
   }
 
