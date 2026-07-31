@@ -1,8 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/admin-auth";
+import { getSystemSettings, setSystemSetting } from "@/lib/system-settings";
 import { invalidateApiKey, type Provider } from "@/lib/providers/get-api-key";
 import { z } from "zod";
 
@@ -22,28 +21,18 @@ export async function GET() {
   const { error } = await requireAdmin();
   if (error) return error;
 
-  let dbRows: { key: string; value: string }[] = [];
+  let dbMap = new Map<string, string>();
   try {
-    dbRows = await prisma.$queryRaw<{ key: string; value: string }[]>(
-      Prisma.sql`SELECT key, value FROM "SystemSetting"
-                 WHERE key IN ('api_key.anthropic', 'api_key.openai', 'api_key.deepseek')`
-    );
-  } catch {
-    // Table may not exist yet
-  }
-  const dbMap = new Map(dbRows.map((r) => [r.key, r.value]));
+    dbMap = await getSystemSettings(PROVIDERS.map((p) => `api_key.${p}`));
+  } catch { /* table may not exist yet */ }
 
   const keys: Record<string, { source: "db" | "env" | "none"; masked: string | null }> = {};
   for (const p of PROVIDERS) {
-    const dbVal = dbMap.get(`api_key.${p}`);
+    const dbVal  = dbMap.get(`api_key.${p}`);
     const envVal = process.env[ENV_VARS[p]];
-    if (dbVal) {
-      keys[p] = { source: "db", masked: maskKey(dbVal) };
-    } else if (envVal) {
-      keys[p] = { source: "env", masked: maskKey(envVal) };
-    } else {
-      keys[p] = { source: "none", masked: null };
-    }
+    if (dbVal)       keys[p] = { source: "db",   masked: maskKey(dbVal) };
+    else if (envVal) keys[p] = { source: "env",  masked: maskKey(envVal) };
+    else             keys[p] = { source: "none",  masked: null };
   }
 
   return NextResponse.json({ keys });
@@ -63,24 +52,9 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const { provider, apiKey } = putSchema.parse(body);
 
-    const dbKey  = `api_key.${provider}`;
-    const now    = new Date();
-    const byUser = admin?.email ?? "admin";
-
-    // Raw SQL upsert — works with both SQLite (local) and PostgreSQL (production)
-    // without depending on the Prisma-generated model bindings being current.
-    await prisma.$executeRaw(
-      Prisma.sql`
-        INSERT INTO "SystemSetting" ("key", "value", "updatedAt", "updatedBy")
-        VALUES (${dbKey}, ${apiKey}, ${now}, ${byUser})
-        ON CONFLICT ("key") DO UPDATE
-          SET "value"     = EXCLUDED."value",
-              "updatedAt" = EXCLUDED."updatedAt",
-              "updatedBy" = EXCLUDED."updatedBy"
-      `
-    );
-
+    await setSystemSetting(`api_key.${provider}`, apiKey, admin?.email);
     invalidateApiKey(provider);
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof z.ZodError) {

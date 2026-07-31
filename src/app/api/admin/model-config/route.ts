@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/admin-auth";
+import { getSystemSettings } from "@/lib/system-settings";
 import { AGENTS, AVAILABLE_MODELS, DEFAULT_MODEL, DEFAULT_MAX_TOKENS, DEFAULT_PROVIDER, invalidateCache } from "@/lib/model-router";
 import { z } from "zod";
 
@@ -15,19 +15,15 @@ const putSchema = z.object({
 });
 
 async function providerKeyStatus() {
-  let dbRows: { key: string }[] = [];
+  let dbMap = new Map<string, string>();
   try {
-    dbRows = await prisma.$queryRaw<{ key: string }[]>(
-      Prisma.sql`SELECT key FROM "SystemSetting"
-                 WHERE key IN ('api_key.anthropic', 'api_key.openai', 'api_key.deepseek')`
-    );
+    dbMap = await getSystemSettings(["api_key.anthropic", "api_key.openai", "api_key.deepseek"]);
   } catch { /* table may not exist yet */ }
-  const dbSet = new Set(dbRows.map((r) => r.key));
 
   return {
-    anthropic: dbSet.has("api_key.anthropic") || !!process.env.ANTHROPIC_API_KEY,
-    openai:    dbSet.has("api_key.openai")    || !!process.env.OPENAI_API_KEY,
-    deepseek:  dbSet.has("api_key.deepseek")  || !!process.env.DEEPSEEK_API_KEY,
+    anthropic: dbMap.has("api_key.anthropic") || !!process.env.ANTHROPIC_API_KEY,
+    openai:    dbMap.has("api_key.openai")    || !!process.env.OPENAI_API_KEY,
+    deepseek:  dbMap.has("api_key.deepseek")  || !!process.env.DEEPSEEK_API_KEY,
   };
 }
 
