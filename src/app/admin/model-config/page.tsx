@@ -49,6 +49,7 @@ export default function ModelConfigPage() {
   const [models, setModels]       = useState<ModelOption[]>([]);
   const [keyStatus, setKeyStatus] = useState<ProviderKeyStatus>({ anthropic: true, openai: false, deepseek: false });
   const [loading, setLoading]     = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [edits, setEdits]         = useState<Record<string, { model: string; provider: Provider; maxTokens: number; notes: string }>>({});
   const [saving, setSaving]       = useState<Record<string, boolean>>({});
 
@@ -82,9 +83,13 @@ export default function ModelConfigPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const { ok, data } = await safeFetch("/api/admin/model-config");
-      if (!ok || !data) return;
+      if (!ok || !data) {
+        setLoadError(data?.error?.message || "Failed to load model config. Check server logs.");
+        return;
+      }
       setAgents(data.agents ?? []);
       setModels(data.availableModels ?? []);
       setKeyStatus(data.providerKeyStatus ?? { anthropic: true, openai: false, deepseek: false });
@@ -93,8 +98,8 @@ export default function ModelConfigPage() {
         initial[a.agent] = { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" };
       }
       setEdits(initial);
-    } catch {
-      // silent on refresh errors
+    } catch (err: any) {
+      setLoadError(err.message || "Unexpected error loading model config.");
     } finally {
       setLoading(false);
     }
@@ -179,7 +184,16 @@ export default function ModelConfigPage() {
   }, {});
   const providerOrder: Provider[] = ["anthropic", "openai", "deepseek"];
 
-  const missingKeys = (Object.keys(keyStatus) as Provider[]).filter((p) => !keyStatus[p]);
+  // Derive key presence from apiKeys (always accurate) — fall back to keyStatus from model-config GET
+  const effectiveKeyStatus: ProviderKeyStatus = apiKeys
+    ? {
+        anthropic: apiKeys.anthropic?.source !== "none",
+        openai:    apiKeys.openai?.source    !== "none",
+        deepseek:  apiKeys.deepseek?.source  !== "none",
+      }
+    : keyStatus;
+
+  const missingKeys = (Object.keys(effectiveKeyStatus) as Provider[]).filter((p) => !effectiveKeyStatus[p]);
 
   return (
     <div className="p-8 max-w-5xl">
@@ -304,6 +318,12 @@ export default function ModelConfigPage() {
         <div className="flex items-center gap-2 text-slate-400 py-12">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
+      ) : loadError ? (
+        <div className="py-8 text-center space-y-3">
+          <AlertTriangle className="w-6 h-6 text-amber-500 mx-auto" />
+          <p className="text-sm text-slate-600">{loadError}</p>
+          <Button size="sm" variant="outline" onClick={load}>Retry</Button>
+        </div>
       ) : (
         <div className="space-y-3">
           {agents.map((a) => {
@@ -311,7 +331,7 @@ export default function ModelConfigPage() {
             const meta = models.find((m) => m.id === e.model);
             const tier = meta?.tier ?? "";
             const dirty = isDirty(a);
-            const keyMissing = !keyStatus[e.provider];
+            const keyMissing = !effectiveKeyStatus[e.provider];
 
             return (
               <div

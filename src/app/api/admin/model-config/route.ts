@@ -32,34 +32,39 @@ export async function GET() {
   const { error } = await requireAdmin();
   if (error) return error;
 
-  const rows = await prisma.modelConfig.findMany();
-  const rowMap = new Map(rows.map((r) => [r.agent, r]));
-  const validModelIds = new Set(AVAILABLE_MODELS.map((m) => m.id));
+  try {
+    const rows = await prisma.modelConfig.findMany();
+    const rowMap = new Map(rows.map((r) => [r.agent, r]));
+    const validModelIds = new Set(AVAILABLE_MODELS.map((m) => m.id));
 
-  const result = AGENTS.map((agent) => {
-    const row = rowMap.get(agent.id);
-    const modelId = row?.model && validModelIds.has(row.model) ? row.model : DEFAULT_MODEL;
-    const modelMeta = AVAILABLE_MODELS.find((m) => m.id === modelId);
-    const provider = (row as any)?.provider ?? modelMeta?.provider ?? DEFAULT_PROVIDER;
-    return {
-      agent:       agent.id,
-      label:       agent.label,
-      description: agent.description,
-      model:       modelId,
-      provider,
-      maxTokens:   row?.maxTokens ?? DEFAULT_MAX_TOKENS,
-      notes:       row?.notes ?? "",
-      updatedAt:   row?.updatedAt ?? null,
-      updatedBy:   row?.updatedBy ?? null,
-      isDefault:   !row,
-    };
-  });
+    const result = AGENTS.map((agent) => {
+      const row = rowMap.get(agent.id);
+      const modelId = row?.model && validModelIds.has(row.model) ? row.model : DEFAULT_MODEL;
+      const modelMeta = AVAILABLE_MODELS.find((m) => m.id === modelId);
+      const provider = (row as any)?.provider ?? modelMeta?.provider ?? DEFAULT_PROVIDER;
+      return {
+        agent:       agent.id,
+        label:       agent.label,
+        description: agent.description,
+        model:       modelId,
+        provider,
+        maxTokens:   row?.maxTokens ?? DEFAULT_MAX_TOKENS,
+        notes:       row?.notes ?? "",
+        updatedAt:   row?.updatedAt ?? null,
+        updatedBy:   row?.updatedBy ?? null,
+        isDefault:   !row,
+      };
+    });
 
-  return NextResponse.json({
-    agents:          result,
-    availableModels: AVAILABLE_MODELS,
-    providerKeyStatus: await providerKeyStatus(),
-  });
+    return NextResponse.json({
+      agents:            result,
+      availableModels:   AVAILABLE_MODELS,
+      providerKeyStatus: await providerKeyStatus(),
+    });
+  } catch (err) {
+    console.error("[model-config GET]", err);
+    return NextResponse.json({ error: { code: "SERVER_ERROR", message: (err as Error).message } }, { status: 500 });
+  }
 }
 
 // PUT — upsert a single agent config, then bust the in-process cache
