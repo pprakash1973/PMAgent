@@ -306,6 +306,7 @@ model Project {
   dmReviewNotes      DmReviewNote[]
   pmbSnapshots       PmbSnapshot[]
   comparisonRuns     ComparisonRun[]
+  impactReports      ImpactReport[]
 
   @@unique([orgId, code])
 }
@@ -514,6 +515,27 @@ model PmbSnapshotMember {
   @@map("pmb_snapshot_members")
 }
 
+// ── BL-P5: Impact Reports ─────────────────────────────────────────────────────
+
+model ImpactReport {
+  id           String   @id @default(cuid())
+  runId        String   @unique
+  projectId    String
+  scopeScore   Float?   // 0–1: proportion of scope items changed
+  scheduleScore Float?  // 0–1: proportion of milestone items changed
+  costScore    Float?   // 0–1: proportion of cost items changed
+  overallRisk  String   @default("low") // low | medium | high | critical
+  confidence   Float?   // 0–1: extraction coverage × match quality
+  findings     Json     @default("[]")  // structured finding objects
+  createdAt    DateTime @default(now())
+
+  run     ComparisonRun @relation(fields: [runId], references: [id])
+  project Project       @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+  @@map("impact_reports")
+}
+
 // ── BL-P4: Comparison Engine ──────────────────────────────────────────────────
 
 model ComparisonRun {
@@ -530,8 +552,9 @@ model ComparisonRun {
   unchangedCount   Int      @default(0)
   createdAt        DateTime @default(now())
 
-  project Project         @relation(fields: [projectId], references: [id])
-  pairs   ComparisonPair[]
+  project      Project         @relation(fields: [projectId], references: [id])
+  pairs        ComparisonPair[]
+  impactReport ImpactReport?
 
   @@index([projectId, artifactType])
   @@map("comparison_runs")

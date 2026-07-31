@@ -531,6 +531,24 @@ async function main() {
         ON "pmb_snapshot_members" ("snapshotId")
     `, "pmb_snapshot_members table");
 
+    // ── BL-P5: Impact Reports ─────────────────────────────────────────────────────
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "impact_reports" (
+        "id"            TEXT        NOT NULL PRIMARY KEY,
+        "runId"         TEXT        NOT NULL UNIQUE REFERENCES "comparison_runs"("id") ON DELETE CASCADE,
+        "projectId"     TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "scopeScore"    FLOAT,
+        "scheduleScore" FLOAT,
+        "costScore"     FLOAT,
+        "overallRisk"   TEXT        NOT NULL DEFAULT 'low',
+        "confidence"    FLOAT,
+        "findings"      JSONB       NOT NULL DEFAULT '[]',
+        "createdAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "impact_reports_projectId_idx" ON "impact_reports"("projectId")
+    `, "impact_reports table");
+
     // ── BL-P4: Comparison Engine tables ──────────────────────────────────────────
 
     await run(pool, `
