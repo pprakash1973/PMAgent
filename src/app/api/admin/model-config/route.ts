@@ -13,11 +13,19 @@ const putSchema = z.object({
   notes:     z.string().optional(),
 });
 
-function providerKeyStatus() {
+async function providerKeyStatus() {
+  let dbRows: { key: string; value: string }[] = [];
+  try {
+    dbRows = await (prisma as any).systemSetting.findMany({
+      where: { key: { in: ["api_key.anthropic", "api_key.openai", "api_key.deepseek"] } },
+    });
+  } catch { /* table may not exist yet */ }
+  const dbMap = new Map(dbRows.map((r) => [r.key, !!r.value]));
+
   return {
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
-    openai:    !!process.env.OPENAI_API_KEY,
-    deepseek:  !!process.env.DEEPSEEK_API_KEY,
+    anthropic: dbMap.get("api_key.anthropic") || !!process.env.ANTHROPIC_API_KEY,
+    openai:    dbMap.get("api_key.openai")    || !!process.env.OPENAI_API_KEY,
+    deepseek:  dbMap.get("api_key.deepseek")  || !!process.env.DEEPSEEK_API_KEY,
   };
 }
 
@@ -52,7 +60,7 @@ export async function GET() {
   return NextResponse.json({
     agents:          result,
     availableModels: AVAILABLE_MODELS,
-    providerKeyStatus: providerKeyStatus(),
+    providerKeyStatus: await providerKeyStatus(),
   });
 }
 

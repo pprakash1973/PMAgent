@@ -1,14 +1,14 @@
 import OpenAI from "openai";
 import type { LLMCallOptions, LLMResponse } from "./types";
+import { getApiKey } from "./get-api-key";
 
-let _client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!_client) _client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _client;
+async function getClient(): Promise<OpenAI> {
+  const apiKey = await getApiKey("openai");
+  return new OpenAI({ apiKey });
 }
 
 export async function callOpenAI(opts: LLMCallOptions): Promise<LLMResponse> {
-  const client = getClient();
+  const client = await getClient();
   const response = await client.chat.completions.create({
     model: opts.model,
     max_tokens: opts.maxTokens,
@@ -25,6 +25,4 @@ export async function callOpenAI(opts: LLMCallOptions): Promise<LLMResponse> {
   return { text, stopReason };
 }
 
-// OpenAI supports streaming but for simplicity we fall back to non-streaming.
-// Artifact generation still works — just no incremental flush.
 export const streamOpenAI = callOpenAI;

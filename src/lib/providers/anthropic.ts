@@ -1,9 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { LLMCallOptions, LLMResponse } from "./types";
+import { getApiKey } from "./get-api-key";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+async function getClient(): Promise<Anthropic> {
+  const apiKey = await getApiKey("anthropic");
+  return new Anthropic({ apiKey });
+}
 
 export async function callAnthropic(opts: LLMCallOptions): Promise<LLMResponse> {
+  const client = await getClient();
   const message = await client.messages.create({
     model: opts.model,
     max_tokens: opts.maxTokens,
@@ -21,6 +26,7 @@ export async function callAnthropic(opts: LLMCallOptions): Promise<LLMResponse> 
 }
 
 export async function streamAnthropic(opts: LLMCallOptions): Promise<LLMResponse> {
+  const client = await getClient();
   const stream = client.messages.stream({
     model: opts.model,
     max_tokens: opts.maxTokens,

@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, Save, RotateCcw, Cpu, AlertTriangle } from "lucide-react";
+import { Loader2, Save, RotateCcw, Cpu, AlertTriangle, Key, Eye, EyeOff, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Provider = "anthropic" | "openai" | "deepseek";
@@ -22,8 +22,10 @@ interface AgentRow {
 }
 
 interface ModelOption { id: string; label: string; provider: Provider; tier: string }
-
 type ProviderKeyStatus = Record<Provider, boolean>;
+
+interface ApiKeyInfo { source: "db" | "env" | "none"; masked: string | null }
+type ApiKeyState = Record<Provider, ApiKeyInfo>;
 
 const TIER_STYLE: Record<string, { color: string }> = {
   "Fast":     { color: "bg-green-100 text-green-700" },
@@ -39,13 +41,34 @@ const PROVIDER_STYLE: Record<Provider, { label: string; color: string }> = {
   deepseek:  { label: "DeepSeek", color: "bg-blue-100 text-blue-800" },
 };
 
+const PROVIDER_LIST: Provider[] = ["anthropic", "openai", "deepseek"];
+
 export default function ModelConfigPage() {
+  // ── Agent model config state ────────────────────────────────────────────────
   const [agents, setAgents]       = useState<AgentRow[]>([]);
   const [models, setModels]       = useState<ModelOption[]>([]);
   const [keyStatus, setKeyStatus] = useState<ProviderKeyStatus>({ anthropic: true, openai: false, deepseek: false });
   const [loading, setLoading]     = useState(true);
   const [edits, setEdits]         = useState<Record<string, { model: string; provider: Provider; maxTokens: number; notes: string }>>({});
   const [saving, setSaving]       = useState<Record<string, boolean>>({});
+
+  // ── API Keys state ───────────────────────────────────────────────────────────
+  const [apiKeys, setApiKeys]       = useState<ApiKeyState | null>(null);
+  const [keyInputs, setKeyInputs]   = useState<Record<Provider, string>>({ anthropic: "", openai: "", deepseek: "" });
+  const [keyVisible, setKeyVisible] = useState<Record<Provider, boolean>>({ anthropic: false, openai: false, deepseek: false });
+  const [keySaving, setKeySaving]   = useState<Record<Provider, boolean>>({ anthropic: false, openai: false, deepseek: false });
+  const [keysLoading, setKeysLoading] = useState(true);
+
+  const loadApiKeys = useCallback(async () => {
+    setKeysLoading(true);
+    try {
+      const res  = await fetch("/api/admin/api-keys");
+      const data = await res.json();
+      setApiKeys(data.keys);
+    } finally {
+      setKeysLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,8 +85,35 @@ export default function ModelConfigPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    loadApiKeys();
+  }, [load, loadApiKeys]);
 
+  async function saveApiKey(provider: Provider) {
+    const val = keyInputs[provider].trim();
+    if (!val) return;
+    setKeySaving((s) => ({ ...s, [provider]: true }));
+    try {
+      const res = await fetch("/api/admin/api-keys", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, apiKey: val }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || "Save failed");
+      toast({ title: "API key saved", description: `${PROVIDER_STYLE[provider].label} key stored securely.` });
+      setKeyInputs((prev) => ({ ...prev, [provider]: "" }));
+      await loadApiKeys();
+      await load(); // refresh key status badges on agent rows
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setKeySaving((s) => ({ ...s, [provider]: false }));
+    }
+  }
+
+  // ── Agent config helpers ────────────────────────────────────────────────────
   function patchModel(agent: string, modelId: string) {
     const meta = models.find((m) => m.id === modelId);
     setEdits((prev) => ({
@@ -107,7 +157,6 @@ export default function ModelConfigPage() {
     setEdits((prev) => ({ ...prev, [a.agent]: { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" } }));
   }
 
-  // Group models by provider for the <select> optgroup display
   const modelsByProvider = models.reduce<Record<string, ModelOption[]>>((acc, m) => {
     (acc[m.provider] ??= []).push(m);
     return acc;
@@ -118,6 +167,7 @@ export default function ModelConfigPage() {
 
   return (
     <div className="p-8 max-w-5xl">
+      {/* ── Header ── */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <Cpu className="w-5 h-5 text-[#006E74]" />
@@ -128,24 +178,112 @@ export default function ModelConfigPage() {
         </p>
       </div>
 
-      {/* Provider key warnings */}
+      {/* ── API Keys panel ── */}
+      <div className="mb-6 bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100 bg-slate-50">
+          <Key className="w-4 h-4 text-[#006E74]" />
+          <span className="font-semibold text-slate-900 text-sm">API Keys</span>
+          <span className="text-xs text-slate-400 ml-1">— keys saved here take priority over environment variables</span>
+        </div>
+
+        {keysLoading ? (
+          <div className="flex items-center gap-2 text-slate-400 px-5 py-4 text-sm">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {PROVIDER_LIST.map((provider) => {
+              const info    = apiKeys?.[provider];
+              const isSaving = keySaving[provider];
+              const inputVal = keyInputs[provider];
+              const visible  = keyVisible[provider];
+
+              return (
+                <div key={provider} className="px-5 py-4 flex items-center gap-4 flex-wrap">
+                  {/* Provider badge */}
+                  <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 w-24 text-center", PROVIDER_STYLE[provider].color)}>
+                    {PROVIDER_STYLE[provider].label}
+                  </span>
+
+                  {/* Current key status */}
+                  <div className="flex items-center gap-1.5 min-w-[200px]">
+                    {info?.source === "db" && (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="text-xs font-mono text-slate-600">{info.masked}</span>
+                        <span className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-medium">DB</span>
+                      </>
+                    )}
+                    {info?.source === "env" && (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <span className="text-xs font-mono text-slate-600">{info.masked}</span>
+                        <span className="text-xs bg-blue-50 text-blue-600 border border-blue-200 px-1.5 py-0.5 rounded font-medium">ENV</span>
+                      </>
+                    )}
+                    {info?.source === "none" && (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span className="text-xs text-slate-400 italic">Not configured</span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Key input */}
+                  <div className="flex items-center gap-2 flex-1 min-w-[260px]">
+                    <div className="relative flex-1">
+                      <Input
+                        type={visible ? "text" : "password"}
+                        placeholder={info?.source !== "none" ? "Paste new key to replace…" : "Paste API key…"}
+                        value={inputVal}
+                        onChange={(ev) => setKeyInputs((prev) => ({ ...prev, [provider]: ev.target.value }))}
+                        className="text-sm pr-9 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setKeyVisible((prev) => ({ ...prev, [provider]: !prev[provider] }))}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        tabIndex={-1}
+                      >
+                        {visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-9 bg-[#006E74] hover:bg-[#004f54] shrink-0"
+                      disabled={!inputVal.trim() || isSaving}
+                      onClick={() => saveApiKey(provider)}
+                    >
+                      {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1" />}
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Missing key warnings (only for providers with no key at all) ── */}
       {missingKeys.length > 0 && (
         <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div className="text-sm text-amber-800">
-            <p className="font-semibold mb-1">API keys not configured</p>
+            <p className="font-semibold mb-1">Providers without API keys — agents using these will fail</p>
             {missingKeys.map((p) => (
               <p key={p} className="text-xs">
                 <span className={cn("inline-block px-2 py-0.5 rounded-full text-xs font-semibold mr-1", PROVIDER_STYLE[p].color)}>
                   {PROVIDER_STYLE[p].label}
                 </span>
-                Set <code className="bg-amber-100 px-1 rounded text-xs">{p === "openai" ? "OPENAI_API_KEY" : p === "deepseek" ? "DEEPSEEK_API_KEY" : "ANTHROPIC_API_KEY"}</code> in your environment to enable this provider.
+                Paste the key in the API Keys panel above.
               </p>
             ))}
           </div>
         </div>
       )}
 
+      {/* ── Agent list ── */}
       {loading ? (
         <div className="flex items-center gap-2 text-slate-400 py-12">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
@@ -197,7 +335,7 @@ export default function ModelConfigPage() {
                 </div>
 
                 <div className="grid grid-cols-12 gap-3 items-end">
-                  {/* Model selector — grouped by provider */}
+                  {/* Model selector */}
                   <div className="col-span-5 space-y-1">
                     <label className="text-xs font-medium text-slate-600">Model</label>
                     <select
@@ -285,7 +423,7 @@ export default function ModelConfigPage() {
       <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 space-y-1">
         <p className="font-medium text-slate-700">How it works</p>
         <p>Each save writes to the database and immediately invalidates the in-process cache. The next AI call for that agent picks up the new model — no restart or redeploy needed.</p>
-        <p>Selecting a model automatically sets its provider. The provider adapter handles routing (Anthropic uses prompt caching; OpenAI/DeepSeek use standard chat completions).</p>
+        <p>API keys saved above are stored in the database and take priority over environment variables. Selecting a model automatically sets its provider.</p>
       </div>
     </div>
   );

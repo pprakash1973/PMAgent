@@ -1,21 +1,14 @@
 import OpenAI from "openai";
 import type { LLMCallOptions, LLMResponse } from "./types";
+import { getApiKey } from "./get-api-key";
 
-// DeepSeek exposes an OpenAI-compatible API — same request/response shape,
-// different base URL and key.
-let _client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!_client) {
-    _client = new OpenAI({
-      baseURL: "https://api.deepseek.com/v1",
-      apiKey: process.env.DEEPSEEK_API_KEY,
-    });
-  }
-  return _client;
+async function getClient(): Promise<OpenAI> {
+  const apiKey = await getApiKey("deepseek");
+  return new OpenAI({ baseURL: "https://api.deepseek.com/v1", apiKey });
 }
 
 export async function callDeepSeek(opts: LLMCallOptions): Promise<LLMResponse> {
-  const client = getClient();
+  const client = await getClient();
   const response = await client.chat.completions.create({
     model: opts.model,
     max_tokens: opts.maxTokens,

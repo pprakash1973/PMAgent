@@ -666,6 +666,13 @@ model ModelConfig {
   updatedBy String?
 }
 
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}
+
 model ProjectPmAssignment {
   id            String    @id @default(cuid())
   projectId     String
