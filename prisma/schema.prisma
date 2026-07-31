@@ -307,6 +307,8 @@ model Project {
   pmbSnapshots       PmbSnapshot[]
   comparisonRuns     ComparisonRun[]
   impactReports      ImpactReport[]
+  goldEntries        ComparisonGoldEntry[]
+  accuracyReports    AccuracyReport[]
 
   @@unique([orgId, code])
 }
@@ -515,6 +517,45 @@ model PmbSnapshotMember {
   @@map("pmb_snapshot_members")
 }
 
+// ── BL-P7: Accuracy Hardening ─────────────────────────────────────────────────
+
+model ComparisonGoldEntry {
+  id                    String   @id @default(cuid())
+  projectId             String
+  artifactType          String
+  leftItemTitle         String
+  rightItemTitle        String?
+  expectedMatchDecision String   // match | no_match
+  expectedTemporalClass String?  // ADDED | UNCHANGED | MODIFIED | DELETED
+  notes                 String?
+  createdById           String?
+  createdAt             DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, artifactType])
+  @@map("comparison_gold_entries")
+}
+
+model AccuracyReport {
+  id             String   @id @default(cuid())
+  runId          String   @unique
+  projectId      String
+  goldEntryCount Int      @default(0)
+  truePositives  Int      @default(0)
+  falsePositives Int      @default(0)
+  falseNegatives Int      @default(0)
+  precision      Float?
+  recall         Float?
+  f1Score        Float?
+  computedAt     DateTime @default(now())
+
+  project Project       @relation(fields: [projectId], references: [id])
+  run     ComparisonRun @relation(fields: [runId], references: [id])
+
+  @@map("accuracy_reports")
+}
+
 // ── BL-P5: Impact Reports ─────────────────────────────────────────────────────
 
 model ImpactReport {
@@ -552,9 +593,10 @@ model ComparisonRun {
   unchangedCount   Int      @default(0)
   createdAt        DateTime @default(now())
 
-  project      Project         @relation(fields: [projectId], references: [id])
-  pairs        ComparisonPair[]
-  impactReport ImpactReport?
+  project        Project         @relation(fields: [projectId], references: [id])
+  pairs          ComparisonPair[]
+  impactReport   ImpactReport?
+  accuracyReport AccuracyReport?
 
   @@index([projectId, artifactType])
   @@map("comparison_runs")

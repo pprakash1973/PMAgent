@@ -531,6 +531,41 @@ async function main() {
         ON "pmb_snapshot_members" ("snapshotId")
     `, "pmb_snapshot_members table");
 
+    // ── BL-P7: Accuracy Hardening ─────────────────────────────────────────────────
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "comparison_gold_entries" (
+        "id"                    TEXT        NOT NULL PRIMARY KEY,
+        "projectId"             TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "artifactType"          TEXT        NOT NULL,
+        "leftItemTitle"         TEXT        NOT NULL,
+        "rightItemTitle"        TEXT,
+        "expectedMatchDecision" TEXT        NOT NULL,
+        "expectedTemporalClass" TEXT,
+        "notes"                 TEXT,
+        "createdById"           TEXT,
+        "createdAt"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "comparison_gold_entries_projectId_artifactType_idx"
+        ON "comparison_gold_entries" ("projectId","artifactType")
+    `, "comparison_gold_entries table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "accuracy_reports" (
+        "id"             TEXT        NOT NULL PRIMARY KEY,
+        "runId"          TEXT        NOT NULL UNIQUE REFERENCES "comparison_runs"("id") ON DELETE CASCADE,
+        "projectId"      TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "goldEntryCount" INT         NOT NULL DEFAULT 0,
+        "truePositives"  INT         NOT NULL DEFAULT 0,
+        "falsePositives" INT         NOT NULL DEFAULT 0,
+        "falseNegatives" INT         NOT NULL DEFAULT 0,
+        "precision"      FLOAT,
+        "recall"         FLOAT,
+        "f1Score"        FLOAT,
+        "computedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `, "accuracy_reports table");
+
     // ── BL-P5: Impact Reports ─────────────────────────────────────────────────────
 
     await run(pool, `
