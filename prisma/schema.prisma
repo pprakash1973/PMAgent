@@ -304,6 +304,7 @@ model Project {
   advisories         Advisory[]
   actionItems        ActionItem[]
   dmReviewNotes      DmReviewNote[]
+  pmbSnapshots       PmbSnapshot[]
 
   @@unique([orgId, code])
 }
@@ -467,9 +468,49 @@ model ArtifactVersion {
   parentVersion ArtifactVersion? @relation("VersionLineage", fields: [parentVersionId], references: [id])
   childVersions ArtifactVersion[] @relation("VersionLineage")
   items         ArtifactVersionItem[]
+  snapshotMembers PmbSnapshotMember[]
 
   @@unique([artifactId, versionNumber])
   @@index([artifactId, approvalStatus])
+}
+
+// ── BL-P3: PMB Snapshots ──────────────────────────────────────────────────────
+
+model PmbSnapshot {
+  id              String   @id @default(cuid())
+  projectId       String
+  snapshotNumber  Int
+  label           String
+  trigger         String   @default("ad_hoc") // gate_approved | ad_hoc | auto_eom
+  isCurrent       Boolean  @default(false)
+  baselinedAt     DateTime @default(now())
+  notes           String?
+  createdById     String?
+  createdAt       DateTime @default(now())
+
+  project  Project              @relation(fields: [projectId], references: [id])
+  members  PmbSnapshotMember[]
+
+  @@unique([projectId, snapshotNumber])
+  @@index([projectId, isCurrent])
+  @@map("pmb_snapshots")
+}
+
+model PmbSnapshotMember {
+  id                String   @id @default(cuid())
+  snapshotId        String
+  artifactVersionId String
+  artifactType      String
+  dimension         String   // scope | schedule | cost | context
+  isRequired        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  snapshot        PmbSnapshot     @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  artifactVersion ArtifactVersion @relation(fields: [artifactVersionId], references: [id])
+
+  @@unique([snapshotId, artifactVersionId])
+  @@index([snapshotId])
+  @@map("pmb_snapshot_members")
 }
 
 model ArtifactVersionItem {

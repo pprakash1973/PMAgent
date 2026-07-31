@@ -496,6 +496,41 @@ async function main() {
       CREATE INDEX IF NOT EXISTS "Gap_status_idx"     ON "Gap"("status")
     `, "Gap table");
 
+    // ── BL-P3: PMB Snapshot tables ───────────────────────────────────────────────
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "pmb_snapshots" (
+        "id"             TEXT        NOT NULL PRIMARY KEY,
+        "projectId"      TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "snapshotNumber" INT         NOT NULL,
+        "label"          TEXT        NOT NULL,
+        "trigger"        TEXT        NOT NULL DEFAULT 'ad_hoc',
+        "isCurrent"      BOOLEAN     NOT NULL DEFAULT false,
+        "baselinedAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "notes"          TEXT,
+        "createdById"    TEXT,
+        "createdAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("projectId","snapshotNumber")
+      );
+      CREATE INDEX IF NOT EXISTS "pmb_snapshots_projectId_isCurrent_idx"
+        ON "pmb_snapshots" ("projectId","isCurrent")
+    `, "pmb_snapshots table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "pmb_snapshot_members" (
+        "id"                TEXT        NOT NULL PRIMARY KEY,
+        "snapshotId"        TEXT        NOT NULL REFERENCES "pmb_snapshots"("id") ON DELETE CASCADE,
+        "artifactVersionId" TEXT        NOT NULL REFERENCES "ArtifactVersion"("id"),
+        "artifactType"      TEXT        NOT NULL,
+        "dimension"         TEXT        NOT NULL,
+        "isRequired"        BOOLEAN     NOT NULL DEFAULT false,
+        "createdAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("snapshotId","artifactVersionId")
+      );
+      CREATE INDEX IF NOT EXISTS "pmb_snapshot_members_snapshotId_idx"
+        ON "pmb_snapshot_members" ("snapshotId")
+    `, "pmb_snapshot_members table");
+
     // ── 3. Seed data ─────────────────────────────────────────────────────────────
 
     const orgId = "seed-org-1";
