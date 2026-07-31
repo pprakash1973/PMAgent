@@ -59,12 +59,22 @@ export default function ModelConfigPage() {
   const [keySaving, setKeySaving]   = useState<Record<Provider, boolean>>({ anthropic: false, openai: false, deepseek: false });
   const [keysLoading, setKeysLoading] = useState(true);
 
+  // Safe JSON fetch — never throws on empty/non-JSON body, returns null instead
+  async function safeFetch(url: string, opts?: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
+    const res  = await fetch(url, opts);
+    const text = await res.text();
+    let data: any = null;
+    try { if (text) data = JSON.parse(text); } catch { /* swallow parse errors */ }
+    return { ok: res.ok, status: res.status, data };
+  }
+
   const loadApiKeys = useCallback(async () => {
     setKeysLoading(true);
     try {
-      const res  = await fetch("/api/admin/api-keys");
-      const data = await res.json();
-      setApiKeys(data.keys);
+      const { ok, data } = await safeFetch("/api/admin/api-keys");
+      if (ok && data?.keys) setApiKeys(data.keys);
+    } catch {
+      // silent — display is best-effort
     } finally {
       setKeysLoading(false);
     }
@@ -72,17 +82,22 @@ export default function ModelConfigPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res  = await fetch("/api/admin/model-config");
-    const data = await res.json();
-    setAgents(data.agents ?? []);
-    setModels(data.availableModels ?? []);
-    setKeyStatus(data.providerKeyStatus ?? { anthropic: true, openai: false, deepseek: false });
-    const initial: typeof edits = {};
-    for (const a of (data.agents ?? [])) {
-      initial[a.agent] = { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" };
+    try {
+      const { ok, data } = await safeFetch("/api/admin/model-config");
+      if (!ok || !data) return;
+      setAgents(data.agents ?? []);
+      setModels(data.availableModels ?? []);
+      setKeyStatus(data.providerKeyStatus ?? { anthropic: true, openai: false, deepseek: false });
+      const initial: typeof edits = {};
+      for (const a of (data.agents ?? [])) {
+        initial[a.agent] = { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" };
+      }
+      setEdits(initial);
+    } catch {
+      // silent on refresh errors
+    } finally {
+      setLoading(false);
     }
-    setEdits(initial);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -95,22 +110,24 @@ export default function ModelConfigPage() {
     if (!val) return;
     setKeySaving((s) => ({ ...s, [provider]: true }));
     try {
-      const res = await fetch("/api/admin/api-keys", {
+      const { ok, data } = await safeFetch("/api/admin/api-keys", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, apiKey: val }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || "Save failed");
+      if (!ok) throw new Error(data?.error?.message || "Save failed");
+
+      // Update UI immediately — don't wait for refresh to clear the input and badges
       toast({ title: "API key saved", description: `${PROVIDER_STYLE[provider].label} key stored securely.` });
       setKeyInputs((prev) => ({ ...prev, [provider]: "" }));
-      await loadApiKeys();
-      await load(); // refresh key status badges on agent rows
+      setKeyStatus((prev) => ({ ...prev, [provider]: true }));
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setKeySaving((s) => ({ ...s, [provider]: false }));
     }
+    // Refresh silently after confirmed save — error here never reaches the user
+    try { await loadApiKeys(); } catch { /* silent */ }
   }
 
   // ── Agent config helpers ────────────────────────────────────────────────────
@@ -129,17 +146,16 @@ export default function ModelConfigPage() {
   async function save(agent: string) {
     setSaving((s) => ({ ...s, [agent]: true }));
     try {
-      const e    = edits[agent];
-      const body = { agent, model: e.model, provider: e.provider, maxTokens: Number(e.maxTokens), notes: e.notes };
-      const res  = await fetch("/api/admin/model-config", {
+      const e          = edits[agent];
+      const body       = { agent, model: e.model, provider: e.provider, maxTokens: Number(e.maxTokens), notes: e.notes };
+      const { ok, data } = await safeFetch("/api/admin/model-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || "Save failed");
+      if (!ok) throw new Error(data?.error?.message || "Save failed");
       toast({ title: "Saved", description: `${agent} → ${e.model} (${PROVIDER_STYLE[e.provider]?.label ?? e.provider})` });
-      await load();
+      try { await load(); } catch { /* silent refresh */ }
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
