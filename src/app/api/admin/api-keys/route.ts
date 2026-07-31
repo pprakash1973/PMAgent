@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/admin-auth";
 import { invalidateApiKey, type Provider } from "@/lib/providers/get-api-key";
 import { z } from "zod";
@@ -23,9 +24,10 @@ export async function GET() {
 
   let dbRows: { key: string; value: string }[] = [];
   try {
-    dbRows = await (prisma as any).systemSetting.findMany({
-      where: { key: { in: PROVIDERS.map((p) => `api_key.${p}`) } },
-    });
+    dbRows = await prisma.$queryRaw<{ key: string; value: string }[]>(
+      Prisma.sql`SELECT key, value FROM "SystemSetting"
+                 WHERE key IN ('api_key.anthropic', 'api_key.openai', 'api_key.deepseek')`
+    );
   } catch {
     // Table may not exist yet
   }
@@ -61,11 +63,22 @@ export async function PUT(req: NextRequest) {
     const body = await req.json();
     const { provider, apiKey } = putSchema.parse(body);
 
-    await (prisma as any).systemSetting.upsert({
-      where:  { key: `api_key.${provider}` },
-      create: { key: `api_key.${provider}`, value: apiKey, updatedBy: admin.email },
-      update: { value: apiKey, updatedBy: admin.email },
-    });
+    const dbKey  = `api_key.${provider}`;
+    const now    = new Date();
+    const byUser = admin?.email ?? "admin";
+
+    // Raw SQL upsert — works with both SQLite (local) and PostgreSQL (production)
+    // without depending on the Prisma-generated model bindings being current.
+    await prisma.$executeRaw(
+      Prisma.sql`
+        INSERT INTO "SystemSetting" ("key", "value", "updatedAt", "updatedBy")
+        VALUES (${dbKey}, ${apiKey}, ${now}, ${byUser})
+        ON CONFLICT ("key") DO UPDATE
+          SET "value"     = EXCLUDED."value",
+              "updatedAt" = EXCLUDED."updatedAt",
+              "updatedBy" = EXCLUDED."updatedBy"
+      `
+    );
 
     invalidateApiKey(provider);
     return NextResponse.json({ ok: true });
@@ -76,7 +89,10 @@ export async function PUT(req: NextRequest) {
         { status: 400 }
       );
     }
-    console.error(err);
-    return NextResponse.json({ error: { code: "SERVER_ERROR" } }, { status: 500 });
+    console.error("[api-keys PUT]", err);
+    return NextResponse.json(
+      { error: { code: "SERVER_ERROR", message: (err as Error).message } },
+      { status: 500 }
+    );
   }
 }

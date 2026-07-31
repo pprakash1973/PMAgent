@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 
 export type Provider = "anthropic" | "openai" | "deepseek";
 
@@ -8,7 +9,7 @@ const ENV_VARS: Record<Provider, string> = {
   deepseek:  "DEEPSEEK_API_KEY",
 };
 
-// 60-second in-process TTL cache — same pattern as model-router
+// 60-second in-process TTL cache
 const _cache = new Map<Provider, { value: string; expiresAt: number }>();
 
 export async function getApiKey(provider: Provider): Promise<string | undefined> {
@@ -16,15 +17,16 @@ export async function getApiKey(provider: Provider): Promise<string | undefined>
   if (hit && hit.expiresAt > Date.now()) return hit.value;
 
   try {
-    const row = await (prisma as any).systemSetting.findUnique({
-      where: { key: `api_key.${provider}` },
-    });
-    if (row?.value) {
-      _cache.set(provider, { value: row.value, expiresAt: Date.now() + 60_000 });
-      return row.value;
+    const rows = await prisma.$queryRaw<{ value: string }[]>(
+      Prisma.sql`SELECT value FROM "SystemSetting" WHERE key = ${"api_key." + provider}`
+    );
+    const val = rows[0]?.value;
+    if (val) {
+      _cache.set(provider, { value: val, expiresAt: Date.now() + 60_000 });
+      return val;
     }
   } catch {
-    // SystemSetting table may not exist yet — fall through to env var
+    // Table may not exist yet — fall through to env var
   }
 
   return process.env[ENV_VARS[provider]];
