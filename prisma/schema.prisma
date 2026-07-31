@@ -447,16 +447,26 @@ model Artifact {
 }
 
 model ArtifactVersion {
-  id            String   @id @default(cuid())
-  artifactId    String
-  versionNumber Int
-  content       Json
-  source        String
-  editedById    String?
-  createdAt     DateTime @default(now())
+  id                  String   @id @default(cuid())
+  artifactId          String
+  versionNumber       Int
+  content             Json
+  contentHash         String?
+  source              String   // ai_generated | ai_regenerated | pm_upload | restore
+  approvalStatus      String   @default("unreviewed")
+  parentVersionId     String?
+  supersededReason    String?
+  generationInputsRef Json?
+  editedById          String?
+  createdAt           DateTime @default(now())
 
-  artifact Artifact @relation(fields: [artifactId], references: [id])
-  editedBy User?    @relation(fields: [editedById], references: [id])
+  artifact      Artifact         @relation(fields: [artifactId], references: [id])
+  editedBy      User?            @relation(fields: [editedById], references: [id])
+  parentVersion ArtifactVersion? @relation("VersionLineage", fields: [parentVersionId], references: [id])
+  childVersions ArtifactVersion[] @relation("VersionLineage")
+
+  @@unique([artifactId, versionNumber])
+  @@index([artifactId, approvalStatus])
 }
 
 model Risk {

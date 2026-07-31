@@ -64,6 +64,33 @@ async function main() {
         ADD COLUMN IF NOT EXISTS "plannedCost" FLOAT
     `, "ScheduleTask columns");
 
+    await run(pool, `
+      ALTER TABLE "ArtifactVersion"
+        ADD COLUMN IF NOT EXISTS "contentHash"         TEXT,
+        ADD COLUMN IF NOT EXISTS "approvalStatus"      TEXT NOT NULL DEFAULT 'unreviewed',
+        ADD COLUMN IF NOT EXISTS "parentVersionId"     TEXT REFERENCES "ArtifactVersion"("id"),
+        ADD COLUMN IF NOT EXISTS "supersededReason"    TEXT,
+        ADD COLUMN IF NOT EXISTS "generationInputsRef" JSONB
+    `, "ArtifactVersion columns (baselining)");
+
+    await run(pool, `
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'ArtifactVersion_artifactId_versionNumber_key'
+        ) THEN
+          ALTER TABLE "ArtifactVersion"
+            ADD CONSTRAINT "ArtifactVersion_artifactId_versionNumber_key"
+            UNIQUE ("artifactId", "versionNumber");
+        END IF;
+      END $$;
+    `, "ArtifactVersion unique constraint");
+
+    await run(pool, `
+      CREATE INDEX IF NOT EXISTS "ArtifactVersion_artifactId_approvalStatus_idx"
+        ON "ArtifactVersion" ("artifactId", "approvalStatus")
+    `, "ArtifactVersion approval index");
+
     // ── 2. New tables (in dependency order) ─────────────────────────────────────
 
     await run(pool, `

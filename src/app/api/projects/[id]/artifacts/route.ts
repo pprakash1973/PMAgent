@@ -5,6 +5,7 @@ import { generateArtifact } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
+import { hashArtifactContent } from "@/lib/artifact-hash";
 
 export const maxDuration = 300;
 
@@ -146,21 +147,36 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     );
   }
 
-  const existing = await prisma.artifact.findFirst({ where: { projectId: id, artifactType } });
+  const existing = await prisma.artifact.findFirst({
+    where: { projectId: id, artifactType },
+    include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+  });
+  const newHash = hashArtifactContent(content);
 
   let artifact;
   if (existing) {
+    const currentHash = (existing.versions[0] as any)?.contentHash ?? null;
+    if (currentHash && currentHash === newHash) {
+      return NextResponse.json(
+        { noChange: true, currentVersion: existing.currentVersion, artifact: existing },
+        { status: 200 }
+      );
+    }
     const newVersion = existing.currentVersion + 1;
+    const parentVersionId = existing.versions[0]?.id ?? null;
     artifact = await prisma.artifact.update({
       where: { id: existing.id },
       data: { content, currentVersion: newVersion, status: "draft" },
     });
-    await prisma.artifactVersion.create({
+    await (prisma.artifactVersion as any).create({
       data: {
         artifactId: existing.id,
         versionNumber: newVersion,
         content,
-        source: "ai_generated",
+        contentHash: newHash,
+        source: "ai_regenerated",
+        approvalStatus: "unreviewed",
+        parentVersionId,
         editedById: user.id,
       },
     });
@@ -175,12 +191,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         status: "draft",
       },
     });
-    await prisma.artifactVersion.create({
+    await (prisma.artifactVersion as any).create({
       data: {
         artifactId: artifact.id,
         versionNumber: 1,
         content,
+        contentHash: newHash,
         source: "ai_generated",
+        approvalStatus: "unreviewed",
+        parentVersionId: null,
         editedById: user.id,
       },
     });

@@ -7,12 +7,14 @@ import {
   ShieldAlert, MessageSquare, Grid3x3, BadgeCheck, ClipboardList, AlertCircle,
   Gavel, FileBarChart, RefreshCw, GraduationCap, FileCheck, TrendingUp, ScrollText,
   Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Check, Lock,
+  History,
 } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
+import { ArtifactVersionRail } from "@/components/artifact-version-rail";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Artifact = { id: string; artifactType: string; phase: string; status: string; content: any };
+type Artifact = { id: string; artifactType: string; phase: string; status: string; content: any; currentVersion?: number };
 type Selection = { artifactType: string; selectionStatus: string };
 type CatalogEntry = { type: string; label: string; phase: string; mandatory?: boolean };
 
@@ -112,6 +114,7 @@ export function ArtifactPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
+  const [versionRailFor, setVersionRailFor] = useState<{ id: string; type: string; currentVersion: number } | null>(null);
   const [selectedOptional, setSelectedOptional] = useState<Set<string>>(new Set());
   const [promoted, setPromoted] = useState<Set<string>>(() => {
     try {
@@ -428,6 +431,7 @@ export function ArtifactPanel({
                         <div style={{ position: "absolute", right: 0, bottom: "calc(100% + 6px)", zIndex: 41, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, boxShadow: "0 8px 26px rgba(0,0,0,.14)", padding: 5, minWidth: 178, textAlign: "left" }}>
                           <MenuItem icon={<Upload style={{ width: 13, height: 13 }} />} label={isUp ? "Merging…" : "Upload new version"} onClick={() => handleUploadClick(entry.type)} disabled={!!uploading} />
                           <MenuItem icon={<RefreshCw style={{ width: 13, height: 13 }} />} label="Regenerate" onClick={() => generate(entry.type)} />
+                          <MenuItem icon={<History style={{ width: 13, height: 13 }} />} label="Version history" onClick={() => { setMenuFor(null); if (artifact) setVersionRailFor({ id: artifact.id, type: entry.type, currentVersion: artifact.currentVersion ?? 1 }); }} />
                           <MenuItem icon={<Trash2 style={{ width: 13, height: 13 }} />} label="Delete" onClick={() => deleteArtifact(entry.type)} disabled={!!deleting} danger />
                         </div>
                       </>
@@ -507,6 +511,17 @@ export function ArtifactPanel({
         )}
         {expanded && optionalEntries.some((e) => e.type === expanded) && <ExpandedViewer entryType={expanded} />}
       </div>
+
+      {/* Version history rail (portal-style overlay) */}
+      {versionRailFor && (
+        <ArtifactVersionRail
+          artifactId={versionRailFor.id}
+          artifactType={versionRailFor.type}
+          currentVersion={versionRailFor.currentVersion}
+          onClose={() => setVersionRailFor(null)}
+          onRestored={() => { router.refresh(); setVersionRailFor(null); }}
+        />
+      )}
     </div>
   );
 

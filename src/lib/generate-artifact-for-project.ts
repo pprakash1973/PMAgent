@@ -7,12 +7,13 @@ import { generateArtifact } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
+import { hashArtifactContent } from "@/lib/artifact-hash";
 
 export async function generateArtifactForProject(
   projectId: string,
   artifactType: string,
   userId: string
-): Promise<{ artifact: any; error?: never } | { artifact?: never; error: string }> {
+): Promise<{ artifact: any; noChange?: boolean; error?: never } | { artifact?: never; error: string }> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     include: {
@@ -108,25 +109,52 @@ export async function generateArtifactForProject(
     return { error: err.message ?? "AI generation failed" };
   }
 
-  // Persist artifact + version
-  const existing = await prisma.artifact.findFirst({ where: { projectId, artifactType } });
+  // Persist artifact + version (BL-5: suppress if content unchanged)
+  const existing = await prisma.artifact.findFirst({
+    where: { projectId, artifactType },
+    include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+  });
   let artifact;
+  const newHash = hashArtifactContent(content);
 
   if (existing) {
+    const currentHash = (existing.versions[0] as any)?.contentHash ?? null;
+    if (currentHash && currentHash === newHash) {
+      return { artifact: existing, noChange: true };
+    }
     const newVersion = existing.currentVersion + 1;
+    const parentVersionId = existing.versions[0]?.id ?? null;
     artifact = await prisma.artifact.update({
       where: { id: existing.id },
       data: { content, currentVersion: newVersion, status: "draft" },
     });
-    await prisma.artifactVersion.create({
-      data: { artifactId: existing.id, versionNumber: newVersion, content, source: "ai_generated", editedById: userId },
+    await (prisma.artifactVersion as any).create({
+      data: {
+        artifactId: existing.id,
+        versionNumber: newVersion,
+        content,
+        contentHash: newHash,
+        source: existing.currentVersion === 0 ? "ai_generated" : "ai_regenerated",
+        approvalStatus: "unreviewed",
+        parentVersionId,
+        editedById: userId,
+      },
     });
   } else {
     artifact = await prisma.artifact.create({
       data: { projectId, artifactType, phase: catalogEntry.phase, content, currentVersion: 1, status: "draft" },
     });
-    await prisma.artifactVersion.create({
-      data: { artifactId: artifact.id, versionNumber: 1, content, source: "ai_generated", editedById: userId },
+    await (prisma.artifactVersion as any).create({
+      data: {
+        artifactId: artifact.id,
+        versionNumber: 1,
+        content,
+        contentHash: newHash,
+        source: "ai_generated",
+        approvalStatus: "unreviewed",
+        parentVersionId: null,
+        editedById: userId,
+      },
     });
   }
 

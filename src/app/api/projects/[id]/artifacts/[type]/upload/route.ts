@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic, ARTIFACT_SCHEMA_HINTS } from "@/lib/ai";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
+import { hashArtifactContent } from "@/lib/artifact-hash";
 
 function extractJson(text: string): Record<string, unknown> {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
@@ -180,11 +181,36 @@ Merge the uploaded data into the artifact JSON, making sure every addition and e
     );
   }
 
+  const session2 = await auth();
+  const uploader = session2!.user as any;
+  const newHash = hashArtifactContent(mergedContent);
+
   let artifact;
   if (existingArtifact) {
+    const lastVersion = await (prisma.artifactVersion as any).findFirst({
+      where: { artifactId: existingArtifact.id },
+      orderBy: { versionNumber: "desc" },
+    });
+    const currentHash = lastVersion?.contentHash ?? null;
+    if (currentHash && currentHash === newHash) {
+      return NextResponse.json({ noChange: true, currentVersion: existingArtifact.currentVersion, artifact: existingArtifact });
+    }
+    const newVersion = (existingArtifact.currentVersion ?? 0) + 1;
     artifact = await prisma.artifact.update({
       where: { id: existingArtifact.id },
-      data: { content: mergedContent as object, status: "draft" },
+      data: { content: mergedContent as object, currentVersion: newVersion, status: "draft" },
+    });
+    await (prisma.artifactVersion as any).create({
+      data: {
+        artifactId: existingArtifact.id,
+        versionNumber: newVersion,
+        content: mergedContent as object,
+        contentHash: newHash,
+        source: "pm_upload",
+        approvalStatus: "unreviewed",
+        parentVersionId: lastVersion?.id ?? null,
+        editedById: uploader.id,
+      },
     });
   } else {
     artifact = await prisma.artifact.create({
@@ -194,6 +220,19 @@ Merge the uploaded data into the artifact JSON, making sure every addition and e
         phase: "planning",
         status: "draft",
         content: mergedContent as object,
+        currentVersion: 1,
+      },
+    });
+    await (prisma.artifactVersion as any).create({
+      data: {
+        artifactId: artifact.id,
+        versionNumber: 1,
+        content: mergedContent as object,
+        contentHash: newHash,
+        source: "pm_upload",
+        approvalStatus: "unreviewed",
+        parentVersionId: null,
+        editedById: uploader.id,
       },
     });
   }
