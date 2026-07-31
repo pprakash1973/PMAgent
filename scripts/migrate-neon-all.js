@@ -531,6 +531,46 @@ async function main() {
         ON "pmb_snapshot_members" ("snapshotId")
     `, "pmb_snapshot_members table");
 
+    // ── BL-P4: Comparison Engine tables ──────────────────────────────────────────
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "comparison_runs" (
+        "id"             TEXT        NOT NULL PRIMARY KEY,
+        "projectId"      TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "leftVersionId"  TEXT        NOT NULL,
+        "rightVersionId" TEXT        NOT NULL,
+        "artifactType"   TEXT        NOT NULL,
+        "status"         TEXT        NOT NULL DEFAULT 'complete',
+        "matchedCount"   INT         NOT NULL DEFAULT 0,
+        "addedCount"     INT         NOT NULL DEFAULT 0,
+        "deletedCount"   INT         NOT NULL DEFAULT 0,
+        "modifiedCount"  INT         NOT NULL DEFAULT 0,
+        "unchangedCount" INT         NOT NULL DEFAULT 0,
+        "createdAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "comparison_runs_projectId_artifactType_idx"
+        ON "comparison_runs" ("projectId","artifactType")
+    `, "comparison_runs table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "comparison_pairs" (
+        "id"               TEXT        NOT NULL PRIMARY KEY,
+        "runId"            TEXT        NOT NULL REFERENCES "comparison_runs"("id") ON DELETE CASCADE,
+        "leftItemId"       TEXT        REFERENCES "artifact_version_items"("id"),
+        "rightItemId"      TEXT        REFERENCES "artifact_version_items"("id"),
+        "matchTier"        INT,
+        "temporalClass"    TEXT        NOT NULL,
+        "dispositionClass" TEXT,
+        "similarity"       FLOAT,
+        "overrideBy"       TEXT,
+        "overrideAt"       TIMESTAMP(3),
+        "overrideReason"   TEXT,
+        "createdAt"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "comparison_pairs_runId_idx"
+        ON "comparison_pairs" ("runId")
+    `, "comparison_pairs table");
+
     // ── 3. Seed data ─────────────────────────────────────────────────────────────
 
     const orgId = "seed-org-1";
