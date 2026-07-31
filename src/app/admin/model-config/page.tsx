@@ -3,14 +3,17 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, Save, RotateCcw, Cpu } from "lucide-react";
+import { Loader2, Save, RotateCcw, Cpu, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type Provider = "anthropic" | "openai" | "deepseek";
 
 interface AgentRow {
   agent: string;
   label: string;
   description: string;
   model: string;
+  provider: Provider;
   maxTokens: number;
   notes: string;
   updatedAt: string | null;
@@ -18,22 +21,31 @@ interface AgentRow {
   isDefault: boolean;
 }
 
-interface ModelOption { id: string; label: string }
+interface ModelOption { id: string; label: string; provider: Provider; tier: string }
 
-const MODEL_TIER: Record<string, { color: string; badge: string }> = {
-  "claude-haiku-4-5-20251001": { color: "bg-green-100 text-green-700",  badge: "Fast" },
-  "claude-sonnet-4-6":         { color: "bg-blue-100 text-blue-700",    badge: "Balanced" },
-  "claude-sonnet-5":           { color: "bg-violet-100 text-violet-700", badge: "Latest" },
-  "claude-opus-4-8":           { color: "bg-amber-100 text-amber-800",   badge: "Quality" },
+type ProviderKeyStatus = Record<Provider, boolean>;
+
+const TIER_STYLE: Record<string, { color: string }> = {
+  "Fast":     { color: "bg-green-100 text-green-700" },
+  "Balanced": { color: "bg-blue-100 text-blue-700" },
+  "Latest":   { color: "bg-violet-100 text-violet-700" },
+  "Quality":  { color: "bg-amber-100 text-amber-800" },
+  "Smart":    { color: "bg-purple-100 text-purple-800" },
+};
+
+const PROVIDER_STYLE: Record<Provider, { label: string; color: string }> = {
+  anthropic: { label: "Anthropic", color: "bg-amber-100 text-amber-800" },
+  openai:    { label: "OpenAI",    color: "bg-emerald-100 text-emerald-800" },
+  deepseek:  { label: "DeepSeek", color: "bg-blue-100 text-blue-800" },
 };
 
 export default function ModelConfigPage() {
-  const [agents, setAgents]   = useState<AgentRow[]>([]);
-  const [models, setModels]   = useState<ModelOption[]>([]);
-  const [loading, setLoading] = useState(true);
-  // local edits before saving — keyed by agent id
-  const [edits, setEdits]     = useState<Record<string, { model: string; maxTokens: number; notes: string }>>({});
-  const [saving, setSaving]   = useState<Record<string, boolean>>({});
+  const [agents, setAgents]       = useState<AgentRow[]>([]);
+  const [models, setModels]       = useState<ModelOption[]>([]);
+  const [keyStatus, setKeyStatus] = useState<ProviderKeyStatus>({ anthropic: true, openai: false, deepseek: false });
+  const [loading, setLoading]     = useState(true);
+  const [edits, setEdits]         = useState<Record<string, { model: string; provider: Provider; maxTokens: number; notes: string }>>({});
+  const [saving, setSaving]       = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,10 +53,10 @@ export default function ModelConfigPage() {
     const data = await res.json();
     setAgents(data.agents ?? []);
     setModels(data.availableModels ?? []);
-    // seed edits from fetched state
+    setKeyStatus(data.providerKeyStatus ?? { anthropic: true, openai: false, deepseek: false });
     const initial: typeof edits = {};
     for (const a of (data.agents ?? [])) {
-      initial[a.agent] = { model: a.model, maxTokens: a.maxTokens, notes: a.notes ?? "" };
+      initial[a.agent] = { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" };
     }
     setEdits(initial);
     setLoading(false);
@@ -52,14 +64,23 @@ export default function ModelConfigPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  function patch(agent: string, field: keyof typeof edits[string], value: string | number) {
+  function patchModel(agent: string, modelId: string) {
+    const meta = models.find((m) => m.id === modelId);
+    setEdits((prev) => ({
+      ...prev,
+      [agent]: { ...prev[agent], model: modelId, provider: meta?.provider ?? prev[agent].provider },
+    }));
+  }
+
+  function patch(agent: string, field: "maxTokens" | "notes", value: string | number) {
     setEdits((prev) => ({ ...prev, [agent]: { ...prev[agent], [field]: value } }));
   }
 
   async function save(agent: string) {
     setSaving((s) => ({ ...s, [agent]: true }));
     try {
-      const body = { agent, ...edits[agent], maxTokens: Number(edits[agent].maxTokens) };
+      const e    = edits[agent];
+      const body = { agent, model: e.model, provider: e.provider, maxTokens: Number(e.maxTokens), notes: e.notes };
       const res  = await fetch("/api/admin/model-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -67,7 +88,7 @@ export default function ModelConfigPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || "Save failed");
-      toast({ title: "Saved", description: `${agent} → ${edits[agent].model}` });
+      toast({ title: "Saved", description: `${agent} → ${e.model} (${PROVIDER_STYLE[e.provider]?.label ?? e.provider})` });
       await load();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -79,12 +100,21 @@ export default function ModelConfigPage() {
   function isDirty(a: AgentRow) {
     const e = edits[a.agent];
     if (!e) return false;
-    return e.model !== a.model || e.maxTokens !== a.maxTokens || e.notes !== (a.notes ?? "");
+    return e.model !== a.model || e.provider !== a.provider || e.maxTokens !== a.maxTokens || e.notes !== (a.notes ?? "");
   }
 
   function reset(a: AgentRow) {
-    setEdits((prev) => ({ ...prev, [a.agent]: { model: a.model, maxTokens: a.maxTokens, notes: a.notes ?? "" } }));
+    setEdits((prev) => ({ ...prev, [a.agent]: { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" } }));
   }
+
+  // Group models by provider for the <select> optgroup display
+  const modelsByProvider = models.reduce<Record<string, ModelOption[]>>((acc, m) => {
+    (acc[m.provider] ??= []).push(m);
+    return acc;
+  }, {});
+  const providerOrder: Provider[] = ["anthropic", "openai", "deepseek"];
+
+  const missingKeys = (Object.keys(keyStatus) as Provider[]).filter((p) => !keyStatus[p]);
 
   return (
     <div className="p-8 max-w-5xl">
@@ -94,9 +124,27 @@ export default function ModelConfigPage() {
           <h1 className="text-xl font-bold text-slate-900">Model Router</h1>
         </div>
         <p className="text-slate-500 text-sm">
-          Configure which Claude model each AI agent uses. Changes take effect immediately — no redeploy needed.
+          Configure which AI model each agent uses. Supports Anthropic Claude, OpenAI GPT, and DeepSeek — changes take effect immediately.
         </p>
       </div>
+
+      {/* Provider key warnings */}
+      {missingKeys.length > 0 && (
+        <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800">
+            <p className="font-semibold mb-1">API keys not configured</p>
+            {missingKeys.map((p) => (
+              <p key={p} className="text-xs">
+                <span className={cn("inline-block px-2 py-0.5 rounded-full text-xs font-semibold mr-1", PROVIDER_STYLE[p].color)}>
+                  {PROVIDER_STYLE[p].label}
+                </span>
+                Set <code className="bg-amber-100 px-1 rounded text-xs">{p === "openai" ? "OPENAI_API_KEY" : p === "deepseek" ? "DEEPSEEK_API_KEY" : "ANTHROPIC_API_KEY"}</code> in your environment to enable this provider.
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-slate-400 py-12">
@@ -105,9 +153,11 @@ export default function ModelConfigPage() {
       ) : (
         <div className="space-y-3">
           {agents.map((a) => {
-            const e    = edits[a.agent] ?? { model: a.model, maxTokens: a.maxTokens, notes: a.notes ?? "" };
-            const tier = MODEL_TIER[e.model];
+            const e    = edits[a.agent] ?? { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" };
+            const meta = models.find((m) => m.id === e.model);
+            const tier = meta?.tier ?? "";
             const dirty = isDirty(a);
+            const keyMissing = !keyStatus[e.provider];
 
             return (
               <div
@@ -122,34 +172,50 @@ export default function ModelConfigPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-900 text-sm">{a.label}</span>
                       <code className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded font-mono">{a.agent}</code>
-                      {a.isDefault && !dirty && (
-                        <span className="text-xs text-slate-400 italic">default</span>
-                      )}
-                      {dirty && (
-                        <span className="text-xs text-[#006E74] font-medium">unsaved changes</span>
-                      )}
+                      {a.isDefault && !dirty && <span className="text-xs text-slate-400 italic">default</span>}
+                      {dirty && <span className="text-xs text-[#006E74] font-medium">unsaved changes</span>}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">{a.description}</p>
                   </div>
-                  {tier && (
-                    <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full shrink-0", tier.color)}>
-                      {tier.badge}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {e.provider && (
+                      <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", PROVIDER_STYLE[e.provider]?.color)}>
+                        {PROVIDER_STYLE[e.provider]?.label}
+                      </span>
+                    )}
+                    {tier && (
+                      <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", TIER_STYLE[tier]?.color ?? "bg-slate-100 text-slate-600")}>
+                        {tier}
+                      </span>
+                    )}
+                    {keyMissing && (
+                      <span title="API key not set — calls will fail" className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> No key
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-12 gap-3 items-end">
-                  {/* Model selector */}
+                  {/* Model selector — grouped by provider */}
                   <div className="col-span-5 space-y-1">
                     <label className="text-xs font-medium text-slate-600">Model</label>
                     <select
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#006E74] bg-white"
                       value={e.model}
-                      onChange={(ev) => patch(a.agent, "model", ev.target.value)}
+                      onChange={(ev) => patchModel(a.agent, ev.target.value)}
                     >
-                      {models.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
-                      ))}
+                      {providerOrder.map((prov) => {
+                        const provModels = modelsByProvider[prov];
+                        if (!provModels?.length) return null;
+                        return (
+                          <optgroup key={prov} label={`── ${PROVIDER_STYLE[prov].label} ──`}>
+                            {provModels.map((m) => (
+                              <option key={m.id} value={m.id}>{m.label} [{m.tier}]</option>
+                            ))}
+                          </optgroup>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -171,7 +237,7 @@ export default function ModelConfigPage() {
                   <div className="col-span-3 space-y-1">
                     <label className="text-xs font-medium text-slate-600">Notes</label>
                     <Input
-                      placeholder="e.g. switched to Haiku to cut cost"
+                      placeholder="e.g. switched to GPT-4o for cost"
                       value={e.notes}
                       onChange={(ev) => patch(a.agent, "notes", ev.target.value)}
                       className="text-sm"
@@ -205,7 +271,6 @@ export default function ModelConfigPage() {
                   </div>
                 </div>
 
-                {/* Last saved */}
                 {a.updatedAt && (
                   <p className="text-xs text-slate-400 mt-3">
                     Last saved {new Date(a.updatedAt).toLocaleString()}{a.updatedBy ? ` by ${a.updatedBy}` : ""}
@@ -220,7 +285,7 @@ export default function ModelConfigPage() {
       <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 space-y-1">
         <p className="font-medium text-slate-700">How it works</p>
         <p>Each save writes to the database and immediately invalidates the in-process cache. The next AI call for that agent picks up the new model — no restart or redeploy needed.</p>
-        <p>The cache TTL is 60 s for reads; a save always bypasses it instantly.</p>
+        <p>Selecting a model automatically sets its provider. The provider adapter handles routing (Anthropic uses prompt caching; OpenAI/DeepSeek use standard chat completions).</p>
       </div>
     </div>
   );

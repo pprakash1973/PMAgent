@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { GUARDRAIL_SYSTEM_ADDENDUM } from "@/lib/guardrails";
 import { resolveModel } from "@/lib/model-router";
+import { callLLM, streamLLM } from "@/lib/providers";
 import { formatEvidenceForPrompt, type EvidenceContext } from "@/lib/evidence-assembler";
 
-export const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Re-exported for routes that call Anthropic APIs directly (streaming, tool use, etc.)
+// These are not routed through the provider abstraction.
+export const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 function extractJson(text: string): Record<string, unknown> {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
@@ -18,17 +19,12 @@ function extractJson(text: string): Record<string, unknown> {
   throw new Error("AI did not return valid JSON");
 }
 
-// Guards every JSON-producing AI call against silent truncation: if the model
-// hit its token ceiling the JSON is incomplete, so fail loudly instead of
-// persisting a half-parsed document.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseAIJson(message: any, label: string): Record<string, unknown> {
-  const content = message.content[0];
-  if (!content || content.type !== "text") throw new Error("Unexpected AI response type");
-  if (message.stop_reason === "max_tokens") {
+// Guards every JSON-producing AI call against silent truncation.
+function parseAIJson(text: string, stopReason: string, label: string): Record<string, unknown> {
+  if (stopReason === "max_tokens") {
     throw new Error(`AI response for "${label}" was truncated (hit token limit). Try a smaller input.`);
   }
-  return extractJson(content.text);
+  return extractJson(text);
 }
 
 const PMI_SYSTEM_PROMPT = `You are a senior PMO AI assistant with deep expertise in:
@@ -83,8 +79,6 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   quarterly_business_review: "quarter, projectName, executiveSummary, ragStatus, milestoneReview (array of {milestone, planned, forecast, status}), budgetSummary {budget, actualToDate, forecastAtCompletion, variance}, schedulePerformance {spi, spiTrend}, costPerformance {cpi, cpiTrend}, keyRisks (array), keyIssues (array), decisions (array), nextQuarterPlan (array), clientActions (array)",
 };
 
-// Streaming bypasses the SDK guard that fires on high max_tokens with messages.create().
-// 32k gives WBS and other verbose artifacts enough room without risk of truncation.
 const ARTIFACT_MAX_TOKENS = 32000;
 
 export async function generateArtifact(
@@ -94,25 +88,23 @@ export async function generateArtifact(
   evidenceContext?: EvidenceContext
 ): Promise<Record<string, unknown>> {
   const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext);
-  const { model } = await resolveModel("artifact");
+  const config = await resolveModel("artifact");
 
-  const stream = anthropic.messages.stream({
-    model,
-    max_tokens: ARTIFACT_MAX_TOKENS,
-    system: [{ type: "text", text: PMI_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content }],
-  });
-  const message = await stream.finalMessage();
+  // Combine text blocks into a single system string for non-Anthropic providers
+  const systemText = PMI_SYSTEM_PROMPT;
+  const userContent = content.map((b) => b.text).join("\n\n");
 
-  return parseAIJson(message, `artifact:${artifactType}`);
+  const response = await streamLLM(
+    { model: config.model, maxTokens: ARTIFACT_MAX_TOKENS, system: systemText, messages: [{ role: "user", content: userContent }] },
+    config
+  );
+
+  return parseAIJson(response.text, response.stopReason, `artifact:${artifactType}`);
 }
 
 export async function generateProjectFromNL(description: string): Promise<Record<string, unknown>> {
-  const { model, maxTokens } = await resolveModel("nl_project");
-  const message = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: `You are a senior PMO AI. Extract structured project fields from a natural language description or requirements document.
+  const config = await resolveModel("nl_project");
+  const system = `You are a senior PMO AI. Extract structured project fields from a natural language description or requirements document.
 Return JSON with these fields (infer from context; leave null if not found):
 - name (string): project name
 - customer (string): client or customer organization
@@ -133,16 +125,19 @@ Return JSON with these fields (infer from context; leave null if not found):
 - constraints (array of strings): budget/schedule/regulatory constraints
 - assumptions (array of strings): key assumptions
 - sponsor (string): executive sponsor name/role if mentioned
-- clarifyingQuestions (array of strings): questions if critical info is missing`, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `Extract project fields from this description:\n\n${description}\n\nReturn JSON only.`,
-      },
-    ],
-  });
+- clarifyingQuestions (array of strings): questions if critical info is missing`;
 
-  return parseAIJson(message, "project-from-document");
+  const response = await callLLM(
+    {
+      model: config.model,
+      maxTokens: config.maxTokens,
+      system,
+      messages: [{ role: "user", content: `Extract project fields from this description:\n\n${description}\n\nReturn JSON only.` }],
+    },
+    config
+  );
+
+  return parseAIJson(response.text, response.stopReason, "project-from-document");
 }
 
 export interface StatusQuestion {
@@ -150,21 +145,18 @@ export interface StatusQuestion {
   category: string;
   question: string;
   type: "chips" | "multi-chips" | "number" | "select";
-  suggestedAnswers: string[];   // 3–6 pre-populated, context-aware options
-  allowCustom: boolean;         // whether PM can type a custom answer
+  suggestedAnswers: string[];
+  allowCustom: boolean;
   required: boolean;
   placeholder?: string;
-  unit?: string;                // for number type, e.g. "%", "days"
+  unit?: string;
 }
 
 export async function generateStatusQuestions(
   projectContext: Record<string, unknown>
 ): Promise<StatusQuestion[]> {
-  const { model, maxTokens } = await resolveModel("status_questions");
-  const message = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
+  const config = await resolveModel("status_questions");
+  const system = `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
 Generate exactly 10 targeted questions based on the project's current context.
 
 Rules:
@@ -178,16 +170,19 @@ Rules:
   - "select": dropdown for simple categorical choices (RAG, yes/no, methodology-specific)
   - "number": numeric input for percentages, counts, days
 - Set allowCustom: true when the PM might have an answer not in the list (narrative, unique situations)
-- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "chips|multi-chips|select|number", "suggestedAnswers": ["...", "..."], "allowCustom": true|false, "required": true, "placeholder": "..." } ] }`, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `Generate 10 weekly status questions for this project:\n\n${JSON.stringify(projectContext, null, 2)}\n\nReturn JSON only.`,
-      },
-    ],
-  });
+- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "chips|multi-chips|select|number", "suggestedAnswers": ["...", "..."], "allowCustom": true|false, "required": true, "placeholder": "..." } ] }`;
 
-  const result = parseAIJson(message, "status-questions") as any;
+  const response = await callLLM(
+    {
+      model: config.model,
+      maxTokens: config.maxTokens,
+      system,
+      messages: [{ role: "user", content: `Generate 10 weekly status questions for this project:\n\n${JSON.stringify(projectContext, null, 2)}\n\nReturn JSON only.` }],
+    },
+    config
+  );
+
+  const result = parseAIJson(response.text, response.stopReason, "status-questions") as any;
   return result.questions as StatusQuestion[];
 }
 
@@ -205,11 +200,8 @@ export async function generateStatusSummary(
 - Overdue tasks: ${liveEVM.overdueTasks}`
     : "";
 
-  const { model, maxTokens } = await resolveModel("status_summary");
-  const message = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
+  const config = await resolveModel("status_summary");
+  const system = `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
 Apply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.
 When live EVM data is provided, use those exact numbers in metricsNarrative and spi field — do not override them.
 
@@ -222,16 +214,19 @@ Return JSON with:
 - nextWeekPlan (array of strings): bulleted plan for next week extracted from answers
 - metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status; include SPI and SV if EVM data is provided
 - cpi (number | null): cost performance index if derivable from answers, else null
-- spi (number | null): use the live SPI value if provided, else derive from PM answers, else null`, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `Project context:\n${JSON.stringify(projectContext, null, 2)}${evmSection}\n\nPM Q&A responses:\n${JSON.stringify(rawInput, null, 2)}\n\nGenerate the Weekly Status Report. Return JSON only.`,
-      },
-    ],
-  });
+- spi (number | null): use the live SPI value if provided, else derive from PM answers, else null`;
 
-  return parseAIJson(message, "status-summary") as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null };
+  const response = await callLLM(
+    {
+      model: config.model,
+      maxTokens: config.maxTokens,
+      system,
+      messages: [{ role: "user", content: `Project context:\n${JSON.stringify(projectContext, null, 2)}${evmSection}\n\nPM Q&A responses:\n${JSON.stringify(rawInput, null, 2)}\n\nGenerate the Weekly Status Report. Return JSON only.` }],
+    },
+    config
+  );
+
+  return parseAIJson(response.text, response.stopReason, "status-summary") as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null };
 }
 
 export async function generateScheduleRecovery(
@@ -239,33 +234,30 @@ export async function generateScheduleRecovery(
   evm: { pv: number; ev: number; sv: number; spi: number; overdueTasks: number; overdueTaskNames: string[] },
   tasks: { name: string; phase: string; percentComplete: number; baselineDays: number; status: string }[]
 ): Promise<{ headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string }> {
-  const { model, maxTokens } = await resolveModel("schedule_recovery");
-  const message = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: `You are a PMO recovery specialist. A project is behind schedule (SPI < 0.8) and the PM needs a concrete recovery plan.
+  const config = await resolveModel("schedule_recovery");
+  const system = `You are a PMO recovery specialist. A project is behind schedule (SPI < 0.8) and the PM needs a concrete recovery plan.
 Apply PMBOK schedule compression techniques: fast-tracking, crashing, scope reduction, resource reallocation.
 Return JSON with:
 - headline (string): 1-sentence diagnosis of the delay root cause based on the data
 - steps (array of 4–6 objects): each has title (short action name), action (specific what-to-do in 2 sentences), effort ("Low"|"Medium"|"High"), impact ("Low"|"Medium"|"High")
-- estimatedRecovery (string): realistic estimate of how many days/weeks recovery will take if steps are followed`, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `Project: ${JSON.stringify(projectContext)}\n\nEVM metrics: SPI=${evm.spi}, SV=${evm.sv} task-days, PV=${evm.pv}, EV=${evm.ev}, Overdue tasks: ${evm.overdueTasks} (${evm.overdueTaskNames.join(", ")})\n\nTask breakdown (top 10): ${JSON.stringify(tasks.slice(0, 10))}\n\nGenerate recovery plan JSON only.`,
-      },
-    ],
-  });
+- estimatedRecovery (string): realistic estimate of how many days/weeks recovery will take if steps are followed`;
 
-  return parseAIJson(message, "schedule-recovery") as unknown as { headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string };
+  const response = await callLLM(
+    {
+      model: config.model,
+      maxTokens: config.maxTokens,
+      system,
+      messages: [{ role: "user", content: `Project: ${JSON.stringify(projectContext)}\n\nEVM metrics: SPI=${evm.spi}, SV=${evm.sv} task-days, PV=${evm.pv}, EV=${evm.ev}, Overdue tasks: ${evm.overdueTasks} (${evm.overdueTaskNames.join(", ")})\n\nTask breakdown (top 10): ${JSON.stringify(tasks.slice(0, 10))}\n\nGenerate recovery plan JSON only.` }],
+    },
+    config
+  );
+
+  return parseAIJson(response.text, response.stopReason, "schedule-recovery") as unknown as { headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string };
 }
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
-  const { model, maxTokens } = await resolveModel("requirements");
-  const message = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
+  const config = await resolveModel("requirements");
+  const system = `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
 Return JSON with:
 - goals (array of strings): business/project goals
 - scopeItems (array of strings): in-scope deliverables
@@ -277,41 +269,42 @@ Return JSON with:
 - budgetSignals (string): any budget figures or signals
 - methodology (string): delivery approach if mentioned
 - risks (array of strings): any risks or concerns mentioned
-- confidence (number 0-1): confidence in extraction quality`, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `Extract requirements from this document:\n\n${text.slice(0, 12000)}\n\nReturn JSON only.`,
-      },
-    ],
-  });
+- confidence (number 0-1): confidence in extraction quality`;
 
-  return parseAIJson(message, "requirements-extraction");
+  const response = await callLLM(
+    {
+      model: config.model,
+      maxTokens: config.maxTokens,
+      system,
+      messages: [{ role: "user", content: `Extract requirements from this document:\n\n${text.slice(0, 12000)}\n\nReturn JSON only.` }],
+    },
+    config
+  );
+
+  return parseAIJson(response.text, response.stopReason, "requirements-extraction");
 }
 
 export async function chatCommand(
   command: string,
   context: Record<string, unknown>
 ): Promise<string> {
-  const { model, maxTokens } = await resolveModel("chat");
-  const message = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: `You are a senior PMO AI copilot with PMBOK 6th/7th edition expertise.
+  const config = await resolveModel("chat");
+  const system = `You are a senior PMO AI copilot with PMBOK 6th/7th edition expertise.
 Help the user with project management tasks, artifact generation, and PMI best practices.
 You have access to the current project context. Respond concisely and helpfully.
-Reference PMBOK processes, knowledge areas, and principles where relevant.`, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `Context: ${JSON.stringify(context, null, 2)}\n\nUser command: ${command}`,
-      },
-    ],
-  });
+Reference PMBOK processes, knowledge areas, and principles where relevant.`;
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response");
-  return content.text;
+  const response = await callLLM(
+    {
+      model: config.model,
+      maxTokens: config.maxTokens,
+      system,
+      messages: [{ role: "user", content: `Context: ${JSON.stringify(context, null, 2)}\n\nUser command: ${command}` }],
+    },
+    config
+  );
+
+  return response.text;
 }
 
 export async function askPortfolio(
@@ -326,28 +319,26 @@ export async function askPortfolio(
     admin: "The user is an org administrator with full visibility. Answer with portfolio-wide context, calling out governance or process gaps where relevant.",
   };
 
-  const { model, maxTokens } = await resolveModel("portfolio_chat");
-  const message = await anthropic.messages.create({
-    model,
-    max_tokens: maxTokens,
-    system: [{ type: "text", text: `You are the PM Agent portfolio copilot — a senior PMO AI with PMBOK 6th/7th edition expertise, embedded across a portfolio delivery platform.
+  const config = await resolveModel("portfolio_chat");
+  const system = `You are the PM Agent portfolio copilot — a senior PMO AI with PMBOK 6th/7th edition expertise, embedded across a portfolio delivery platform.
 ${roleGuidance[role] ?? roleGuidance.pm}
 You have access to live portfolio data (projects, health, budget, risks, issues, milestones) provided as context below.
 Answer directly and concisely using only the data provided — never fabricate figures, names, or dates not present in context.
 If asked to draft something (an email, a message, a summary), produce it ready to send/use.
 If the answer requires data not present in context, say what's missing rather than guessing.
-Use markdown formatting (bold, bullet lists) sparingly for readability in a chat UI.`, cache_control: { type: "ephemeral" } }],
-    messages: [
-      {
-        role: "user",
-        content: `Portfolio context:\n${JSON.stringify(context, null, 2)}\n\nQuestion: ${question}`,
-      },
-    ],
-  });
+Use markdown formatting (bold, bullet lists) sparingly for readability in a chat UI.`;
 
-  const content = message.content[0];
-  if (content.type !== "text") throw new Error("Unexpected response");
-  return content.text;
+  const response = await callLLM(
+    {
+      model: config.model,
+      maxTokens: config.maxTokens,
+      system,
+      messages: [{ role: "user", content: `Portfolio context:\n${JSON.stringify(context, null, 2)}\n\nQuestion: ${question}` }],
+    },
+    config
+  );
+
+  return response.text;
 }
 
 function buildArtifactContent(
@@ -355,7 +346,7 @@ function buildArtifactContent(
   projectContext: Record<string, unknown>,
   requirements?: string,
   evidenceContext?: EvidenceContext
-): Anthropic.TextBlockParam[] {
+): { text: string }[] {
   const templates: Record<string, string> = {
 
     // ── INITIATING ────────────────────────────────────────────────────────────
@@ -1119,12 +1110,9 @@ Return JSON with:
 
   return [
     {
-      type: "text",
       text: `Task: ${schema}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`,
-      cache_control: { type: "ephemeral" },
     },
     {
-      type: "text",
       text: dynamicContext,
     },
   ];
