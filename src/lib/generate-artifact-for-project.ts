@@ -8,6 +8,7 @@ import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
+import { extractAndStoreItems } from "@/lib/item-extractor";
 
 export async function generateArtifactForProject(
   projectId: string,
@@ -167,6 +168,18 @@ export async function generateArtifactForProject(
   await syncArtifactToTables(projectId, artifactType, content).catch((err) => {
     console.error(`[artifact-sync] copilot sync failed for ${artifactType}:`, err);
   });
+
+  // BL-P2: extract canonical items async (non-blocking)
+  const latestVersion = await (prisma.artifactVersion as any).findFirst({
+    where: { artifactId: artifact.id },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true },
+  });
+  if (latestVersion) {
+    extractAndStoreItems(latestVersion.id, artifactType, content).catch((err) => {
+      console.error("[item-extractor] async extraction failed:", err);
+    });
+  }
 
   return { artifact };
 }

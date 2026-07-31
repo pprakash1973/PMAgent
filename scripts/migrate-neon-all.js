@@ -91,6 +91,39 @@ async function main() {
         ON "ArtifactVersion" ("artifactId", "approvalStatus")
     `, "ArtifactVersion approval index");
 
+    await run(pool, `
+      ALTER TABLE "ArtifactVersion"
+        ADD COLUMN IF NOT EXISTS "extractionStatus"   TEXT NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS "extractionCoverage" FLOAT
+    `, "ArtifactVersion extraction columns");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "artifact_version_items" (
+        "id"                TEXT         NOT NULL PRIMARY KEY,
+        "artifactVersionId" TEXT         NOT NULL REFERENCES "ArtifactVersion"("id") ON DELETE CASCADE,
+        "declaredId"        TEXT,
+        "sequence"          INT          NOT NULL,
+        "sourceRef"         JSONB        NOT NULL DEFAULT '{}',
+        "rawText"           TEXT         NOT NULL,
+        "normalizedTitle"   TEXT         NOT NULL,
+        "normalizedDesc"    TEXT         NOT NULL DEFAULT '',
+        "entryTimestamp"    TIMESTAMP(3),
+        "attributes"        JSONB        NOT NULL DEFAULT '{}',
+        "lineageItemId"     TEXT,
+        "createdAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `, "artifact_version_items table");
+
+    await run(pool, `
+      CREATE INDEX IF NOT EXISTS "artifact_version_items_artifactVersionId_idx"
+        ON "artifact_version_items" ("artifactVersionId")
+    `, "artifact_version_items index");
+
+    await run(pool, `
+      CREATE INDEX IF NOT EXISTS "artifact_version_items_artifactVersionId_declaredId_idx"
+        ON "artifact_version_items" ("artifactVersionId", "declaredId")
+    `, "artifact_version_items declared_id index");
+
     // ── 2. New tables (in dependency order) ─────────────────────────────────────
 
     await run(pool, `

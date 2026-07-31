@@ -457,6 +457,8 @@ model ArtifactVersion {
   parentVersionId     String?
   supersededReason    String?
   generationInputsRef Json?
+  extractionStatus    String   @default("pending") // pending | complete | partial | failed
+  extractionCoverage  Float?
   editedById          String?
   createdAt           DateTime @default(now())
 
@@ -464,9 +466,31 @@ model ArtifactVersion {
   editedBy      User?            @relation(fields: [editedById], references: [id])
   parentVersion ArtifactVersion? @relation("VersionLineage", fields: [parentVersionId], references: [id])
   childVersions ArtifactVersion[] @relation("VersionLineage")
+  items         ArtifactVersionItem[]
 
   @@unique([artifactId, versionNumber])
   @@index([artifactId, approvalStatus])
+}
+
+model ArtifactVersionItem {
+  id                  String   @id @default(cuid())
+  artifactVersionId   String
+  declaredId          String?
+  sequence            Int
+  sourceRef           Json
+  rawText             String
+  normalizedTitle     String
+  normalizedDesc      String   @default("")
+  entryTimestamp      DateTime?
+  attributes          Json     @default("{}")
+  lineageItemId       String?
+  createdAt           DateTime @default(now())
+
+  artifactVersion ArtifactVersion @relation(fields: [artifactVersionId], references: [id], onDelete: Cascade)
+
+  @@index([artifactVersionId])
+  @@index([artifactVersionId, declaredId])
+  @@map("artifact_version_items")
 }
 
 model Risk {

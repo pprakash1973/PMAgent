@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { anthropic, ARTIFACT_SCHEMA_HINTS } from "@/lib/ai";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
+import { extractAndStoreItems } from "@/lib/item-extractor";
 
 function extractJson(text: string): Record<string, unknown> {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
@@ -241,6 +242,18 @@ Merge the uploaded data into the artifact JSON, making sure every addition and e
   await syncArtifactToTables(id, type, mergedContent).catch((err) => {
     console.error(`[artifact-sync] upload sync failed for ${type}:`, err);
   });
+
+  // BL-P2: extract canonical items async (non-blocking)
+  const latestUploadVersion = await (prisma.artifactVersion as any).findFirst({
+    where: { artifactId: artifact.id },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true },
+  });
+  if (latestUploadVersion) {
+    extractAndStoreItems(latestUploadVersion.id, type, mergedContent).catch((e) => {
+      console.error("[item-extractor] upload extraction failed:", e);
+    });
+  }
 
   return NextResponse.json(artifact);
 }
