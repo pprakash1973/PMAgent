@@ -144,13 +144,13 @@ if (project) {
         pair.right.id,
         pair.left.artifact.artifactType
       );
-      ok(`Comparison run id=${result.run.id}, matched=${result.run.matchedCount}, added=${result.run.addedCount}, deleted=${result.run.deletedCount}`);
+      ok(`Comparison runId=${result.runId}, matched=${result.stats.matched}, added=${result.stats.added}, deleted=${result.stats.deleted}`);
 
       // ── Test 6: Impact computation ─────────────────────────────────────────
       console.log("\n── T6: Impact computation ───────────────────────────────────────");
       const { computeImpact } = await import("../src/lib/impact-engine.js");
       try {
-        const impact = await computeImpact(result.run.id, project.id);
+        const impact = await computeImpact(result.runId, project.id);
         ok(`Impact: risk=${impact.overallRisk}, confidence=${impact.confidence?.toFixed(2)}`);
         ok(`Impact scores: scope=${impact.scopeScore?.toFixed(2)}, schedule=${impact.scheduleScore?.toFixed(2)}, cost=${impact.costScore?.toFixed(2)}`);
       } catch (e: any) {
@@ -176,8 +176,8 @@ if (project) {
       ok("Gold entry created");
 
       try {
-        const acc = await evaluateAccuracy(result.run.id, project.id);
-        ok(`Accuracy: tp=${acc.tp}, fp=${acc.fp}, fn=${acc.fn}, grade=${acc.grade}`);
+        const acc = await evaluateAccuracy(result.runId, project.id);
+        ok(`Accuracy: tp=${acc.truePositives}, fp=${acc.falsePositives}, fn=${acc.falseNegatives}, grade=${acc.grade}`);
       } catch (e: any) {
         ko("evaluateAccuracy threw", e.message);
       }
@@ -187,10 +187,10 @@ if (project) {
       ok("Gold entry cleaned up");
 
       // cleanup comparison run (cascades to pairs, impact, accuracy)
-      await db.impactReport.deleteMany({ where: { runId: result.run.id } });
-      await db.accuracyReport.deleteMany({ where: { runId: result.run.id } });
-      await db.comparisonPair.deleteMany({ where: { runId: result.run.id } });
-      await db.comparisonRun.delete({ where: { id: result.run.id } });
+      await db.impactReport.deleteMany({ where: { runId: result.runId } });
+      await db.accuracyReport.deleteMany({ where: { runId: result.runId } });
+      await db.comparisonPair.deleteMany({ where: { runId: result.runId } });
+      await db.comparisonRun.delete({ where: { id: result.runId } });
       ok("Comparison run cleaned up");
 
     } catch (e: any) {
@@ -210,7 +210,7 @@ if (project) {
   try {
     const v = await verifyBaseline(project.id);
     ok(`verify: pass=${v.pass}, score=${v.score}`);
-    v.checks.forEach((c) => ok(`  check ${c.id}: ${c.pass ? "pass" : "fail"} — ${c.message}`));
+    v.checks.forEach((c) => ok(`  check ${c.id}: ${c.pass ? "pass" : "fail"} — ${c.detail}`));
   } catch (e: any) {
     ko("verifyBaseline threw", e.message);
   }
