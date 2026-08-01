@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusQuestionnaire } from "@/components/status-questionnaire";
+import { PmbSnapshotPanel } from "@/components/pmb-snapshot-panel";
+import { ComparisonView } from "@/components/comparison-view";
+import { ImpactReportPanel } from "@/components/impact-report-panel";
+import { BaselineSummaryCard, BaselineVerifyPanel } from "@/components/baseline-summary-card";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@/lib/utils";
 import { useCopilot } from "@/components/copilot/CopilotContext";
 
@@ -3065,9 +3069,149 @@ function CostTab({ project }: { project: any }) {
   );
 }
 
+// ── Baseline tab ───────────────────────────────────────────────────────────────
+
+function BaselineTab({ project }: { project: any }) {
+  const projectId = project.id;
+
+  // Artifact versions available for comparison
+  const [versions, setVersions] = useState<any[]>([]);
+  const [leftId, setLeftId] = useState("");
+  const [rightId, setRightId] = useState("");
+  const [activeComparison, setActiveComparison] = useState<{
+    leftVersionId: string; rightVersionId: string; artifactType: string; runId: string | null;
+  } | null>(null);
+
+  // Load all artifact versions for this project
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/artifact-versions`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setVersions)
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  function detectType(id: string) {
+    return versions.find((x: any) => x.id === id)?.artifactType ?? "";
+  }
+
+  function handleRun() {
+    if (!leftId || !rightId || leftId === rightId) return;
+    const artifactType = detectType(leftId) || detectType(rightId);
+    setActiveComparison({ leftVersionId: leftId, rightVersionId: rightId, artifactType, runId: null });
+  }
+
+  function handleRunComplete(runId: string) {
+    setActiveComparison(prev => prev ? { ...prev, runId } : null);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      {/* GR-BL-07 verification strip */}
+      <BaselineVerifyPanel projectId={projectId} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20, alignItems: "start" }}>
+
+        {/* Left column: PMB Snapshots */}
+        <PmbSnapshotPanel projectId={projectId} />
+
+        {/* Right column: comparison workflow */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+          {/* Version picker */}
+          <div style={{
+            background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16,
+          }}>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: C.text }}>
+              Run Comparison
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4, fontWeight: 600 }}>BASELINE (LEFT)</div>
+                <select
+                  value={leftId}
+                  onChange={e => setLeftId(e.target.value)}
+                  style={{
+                    width: "100%", padding: "7px 10px", border: `1px solid ${C.border}`,
+                    borderRadius: 7, fontSize: 13, color: C.text, background: C.surface,
+                  }}
+                >
+                  <option value="">Select version…</option>
+                  {versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {v.artifact?.artifactType ?? v.artifactType} — v{v.versionNumber} ({v.approvalStatus ?? "draft"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4, fontWeight: 600 }}>CURRENT (RIGHT)</div>
+                <select
+                  value={rightId}
+                  onChange={e => setRightId(e.target.value)}
+                  style={{
+                    width: "100%", padding: "7px 10px", border: `1px solid ${C.border}`,
+                    borderRadius: 7, fontSize: 13, color: C.text, background: C.surface,
+                  }}
+                >
+                  <option value="">Select version…</option>
+                  {versions.map((v: any) => (
+                    <option key={v.id} value={v.id}>
+                      {v.artifact?.artifactType ?? v.artifactType} — v{v.versionNumber} ({v.approvalStatus ?? "draft"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={handleRun}
+                disabled={!leftId || !rightId || leftId === rightId}
+                style={{
+                  padding: "7px 18px", background: C.primary, color: "#fff",
+                  border: "none", borderRadius: 7, fontSize: 13, fontWeight: 600,
+                  cursor: leftId && rightId && leftId !== rightId ? "pointer" : "not-allowed",
+                  opacity: leftId && rightId && leftId !== rightId ? 1 : 0.5,
+                }}
+              >
+                Compare
+              </button>
+            </div>
+          </div>
+
+          {/* Comparison results */}
+          {activeComparison && (
+            <>
+              <ComparisonView
+                projectId={projectId}
+                leftVersionId={activeComparison.leftVersionId}
+                rightVersionId={activeComparison.rightVersionId}
+                artifactType={activeComparison.artifactType}
+                autoRun
+                onRunComplete={handleRunComplete}
+              />
+              {activeComparison.runId && (
+                <>
+                  <ImpactReportPanel
+                    projectId={projectId}
+                    runId={activeComparison.runId}
+                  />
+                  <BaselineSummaryCard
+                    projectId={projectId}
+                    runId={activeComparison.runId}
+                  />
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting"];
+const TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const [tab, setTab] = useState("Artifacts");
@@ -3165,6 +3309,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       {tab === "Cost" && <CostTab project={project} />}
       {tab === "Scope Control" && <RequirementsTab project={project} />}
       {tab === "Status Reporting" && <StatusTab project={project} />}
+      {tab === "Baseline" && <BaselineTab project={project} />}
 
     </div>
   );

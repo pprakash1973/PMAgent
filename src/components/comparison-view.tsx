@@ -116,11 +116,15 @@ export function ComparisonView({
   leftVersionId,
   rightVersionId,
   artifactType,
+  onRunComplete,
+  autoRun,
 }: {
   projectId: string;
   leftVersionId: string;
   rightVersionId: string;
   artifactType: string;
+  onRunComplete?: (runId: string) => void;
+  autoRun?: boolean;
 }) {
   const [run, setRun] = useState<ComparisonRun | null>(null);
   const [loading, setLoading] = useState(false);
@@ -143,13 +147,21 @@ export function ComparisonView({
       }
       // Fetch full run with pair details
       const runRes = await fetch(`/api/projects/${projectId}/comparisons/${data.runId}`);
-      setRun(await runRes.json());
+      const runData = await runRes.json();
+      setRun(runData);
+      onRunComplete?.(data.runId);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
   }
+
+  // Auto-run when mounted with autoRun=true
+  useEffect(() => {
+    if (autoRun) runComparison();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRun, leftVersionId, rightVersionId]);
 
   const filteredPairs = run?.pairs.filter(
     (p) => filter === "all" || p.temporalClass === filter
