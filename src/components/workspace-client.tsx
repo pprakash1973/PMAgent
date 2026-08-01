@@ -9,6 +9,8 @@ import { ComparisonView } from "@/components/comparison-view";
 import { ImpactReportPanel } from "@/components/impact-report-panel";
 import { BaselineSummaryCard, BaselineVerifyPanel } from "@/components/baseline-summary-card";
 import { BacklogTab, SprintsTab } from "@/components/agile-workspace";
+import { AgileCommercialTab } from "@/components/agile-commercial-tab";
+import { AgileStatusTab } from "@/components/agile-status-tab";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@/lib/utils";
 import { useCopilot } from "@/components/copilot/CopilotContext";
 
@@ -3314,9 +3316,10 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       {tab === "Resources" && <ResourcesTab project={project} />}
       {tab === "Schedule" && <ScheduleTab project={project} />}
       {tab === "Cost" && <CostTab project={project} />}
-      {tab === "Commercial" && <CostTab project={project} />}
+      {tab === "Commercial" && isAgile && <AgileCommercialTab project={project} />}
       {tab === "Scope Control" && <RequirementsTab project={project} />}
-      {tab === "Status Reporting" && <StatusTab project={project} />}
+      {tab === "Status Reporting" && isAgile && <AgileStatusTab project={project} />}
+      {tab === "Status Reporting" && !isAgile && <StatusTab project={project} />}
       {tab === "Baseline" && <BaselineTab project={project} />}
 
     </div>

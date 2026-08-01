@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, ChevronRight, ChevronDown, Flame, Target } from "lucide-react";
+import { Loader2, Plus, ChevronRight, ChevronDown, Flame, Target, Zap } from "lucide-react";
+import { CeremoniesPanel } from "@/components/agile-ceremonies";
+import { ImpedimentsPanel } from "@/components/agile-impediments";
+import { ReleasesPanel } from "@/components/agile-releases";
 import { formatDate } from "@/lib/utils";
 
 const C = {
@@ -24,7 +27,7 @@ type BacklogItem = {
 };
 
 type Sprint = {
-  id: string; sprintNumber: number; label: string; goal?: string;
+  id: string; projectId: string; sprintNumber: number; label: string; goal?: string;
   startDate: string; endDate: string; state: string;
   plannedCapacityPoints?: number; committedPoints?: number;
   acceptedPoints?: number; carriedPoints?: number;
@@ -186,27 +189,35 @@ function SprintCard({ sprint, projectId, onRefresh }: { sprint: Sprint; projectI
         </div>
       </div>
 
-      {/* Item list */}
-      {expanded && items.length > 0 && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
-          {items.map(item => (
-            <div key={item.id} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "6px 8px",
-              borderRadius: 7, background: C.surface2,
-            }}>
-              <span style={{ fontSize: 10, fontWeight: 600, color: C.text3, textTransform: "uppercase", width: 40, flexShrink: 0 }}>
-                {item.level}
-              </span>
-              <span style={{ flex: 1, fontSize: 12.5, color: C.text }}>{item.title}</span>
-              <StateChip state={item.state} />
-              <PointsBadge points={item.points} />
+      {/* Item list + ceremonies */}
+      {expanded && (
+        <div style={{ borderTop: `1px solid ${C.border}` }}>
+          {items.length > 0 && (
+            <div style={{ padding: "10px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
+              {items.map(item => (
+                <div key={item.id} style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "6px 8px",
+                  borderRadius: 7, background: C.surface2,
+                }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: C.text3, textTransform: "uppercase", width: 40, flexShrink: 0 }}>
+                    {item.level}
+                  </span>
+                  <span style={{ flex: 1, fontSize: 12.5, color: C.text }}>{item.title}</span>
+                  <StateChip state={item.state} />
+                  <PointsBadge points={item.points} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-      {expanded && items.length === 0 && (
-        <div style={{ borderTop: `1px solid ${C.border}`, padding: "12px 16px", fontSize: 12, color: C.text3, textAlign: "center" }}>
-          No items in this sprint. Drag items from the backlog to populate it.
+          )}
+          {items.length === 0 && (
+            <div style={{ padding: "10px 16px", fontSize: 12, color: C.text3, textAlign: "center" }}>
+              No items in this sprint yet.
+            </div>
+          )}
+          {/* Ceremonies panel */}
+          <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}` }}>
+            <CeremoniesPanel projectId={sprint.projectId} sprintId={sprint.id} />
+          </div>
         </div>
       )}
     </div>
@@ -486,6 +497,105 @@ function VelocitySummary({ sprints }: { sprints: Sprint[] }) {
   );
 }
 
+// ── Cadence generator ────────────────────────────────────────────────────────
+
+function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [weeks, setWeeks] = useState("2");
+  const [startDate, setStartDate] = useState(
+    project.startDate ? new Date(project.startDate).toISOString().slice(0, 10) : ""
+  );
+  const [endDate, setEndDate] = useState(
+    project.endDate ? new Date(project.endDate).toISOString().slice(0, 10) : ""
+  );
+  const [capacity, setCapacity] = useState("");
+  const [generating, setGenerating] = useState(false);
+
+  async function generate(e: React.FormEvent) {
+    e.preventDefault();
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/cadence`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sprintLengthWeeks: parseInt(weeks),
+          startDate, endDate,
+          plannedCapacityPointsPerSprint: capacity ? parseFloat(capacity) : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: `${data.created} sprints generated from project dates` });
+      setOpen(false);
+      onGenerated();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  if (!open) return (
+    <button
+      onClick={() => setOpen(true)}
+      style={{
+        display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
+        color: "#158a5a", background: "#e3f3ea", border: "1px solid #9FE1CB",
+        borderRadius: 8, padding: "6px 12px", cursor: "pointer", marginBottom: 10,
+      }}
+    >
+      <Zap size={13} />Auto-Generate Sprints from Project Dates
+    </button>
+  );
+
+  return (
+    <div style={{
+      border: "1px solid #9FE1CB", borderRadius: 12, background: "#e3f3ea",
+      padding: 16, marginBottom: 14,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#0F6E56", marginBottom: 10 }}>
+        Auto-Generate Sprint Cadence
+      </div>
+      <form onSubmit={generate} className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label className="text-xs">Sprint Length (weeks)</Label>
+            <Select value={weeks} onValueChange={setWeeks}>
+              <SelectTrigger className="mt-1 h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 week</SelectItem>
+                <SelectItem value="2">2 weeks</SelectItem>
+                <SelectItem value="3">3 weeks</SelectItem>
+                <SelectItem value="4">4 weeks</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Default Capacity (pts/sprint)</Label>
+            <Input type="number" value={capacity} onChange={e => setCapacity(e.target.value)} placeholder="40" className="mt-1 h-8 text-xs" />
+          </div>
+          <div>
+            <Label className="text-xs">Start Date *</Label>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required className="mt-1 h-8 text-xs" />
+          </div>
+          <div>
+            <Label className="text-xs">End Date *</Label>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} required className="mt-1 h-8 text-xs" />
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button type="submit" size="sm" disabled={generating}>
+            {generating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Zap className="w-3 h-3 mr-1" />}
+            Generate Sprints
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ── Main Agile Workspace ─────────────────────────────────────────────────────
 
 export function BacklogTab({ project }: { project: any }) {
@@ -548,6 +658,7 @@ export function BacklogTab({ project }: { project: any }) {
 export function SprintsTab({ project }: { project: any }) {
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [subTab, setSubTab] = useState<"sprints" | "impediments" | "releases">("sprints");
 
   const load = useCallback(async () => {
     try {
@@ -561,37 +672,59 @@ export function SprintsTab({ project }: { project: any }) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
-        <Loader2 size={20} className="animate-spin" color={C.text3} />
-      </div>
-    );
-  }
-
   return (
     <div>
-      <div style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 4 }}>Sprint Management</h3>
-          <p style={{ fontSize: 12, color: C.text3 }}>
-            {sprints.length} sprint(s) · {sprints.filter(s => s.state === "active").length} active
-          </p>
-        </div>
+      {/* Sub-tab bar */}
+      <div style={{ display: "flex", gap: 20, borderBottom: `1.5px solid ${C.border}`, marginBottom: 18 }}>
+        {([
+          { id: "sprints" as const, label: "Sprints" },
+          { id: "impediments" as const, label: "Impediments" },
+          { id: "releases" as const, label: "Releases" },
+        ]).map(t => (
+          <button key={t.id} onClick={() => setSubTab(t.id)}
+            style={{
+              padding: "0 1px 11px", border: "none", background: "transparent", cursor: "pointer",
+              fontSize: 13, fontWeight: subTab === t.id ? 700 : 500,
+              color: subTab === t.id ? C.text : C.text3,
+              borderBottom: subTab === t.id ? `2.5px solid ${C.primary}` : "2.5px solid transparent",
+              marginBottom: "-1.5px",
+            }}
+          >{t.label}</button>
+        ))}
       </div>
 
-      <VelocitySummary sprints={sprints} />
-      <CreateSprintForm projectId={project.id} project={project} onCreated={load} />
+      {subTab === "sprints" && (
+        <div>
+          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <p style={{ fontSize: 12, color: C.text3 }}>
+              {sprints.length} sprint(s) · {sprints.filter(s => s.state === "active").length} active
+            </p>
+          </div>
 
-      {sprints.length === 0 && (
-        <div style={{ textAlign: "center", padding: "30px 0", color: C.text3, fontSize: 13 }}>
-          No sprints yet. Create your first sprint above.
+          <VelocitySummary sprints={sprints} />
+          <CadenceGenerator project={project} onGenerated={load} />
+          <CreateSprintForm projectId={project.id} project={project} onCreated={load} />
+
+          {loading && (
+            <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+              <Loader2 size={20} className="animate-spin" color={C.text3} />
+            </div>
+          )}
+
+          {!loading && sprints.length === 0 && (
+            <div style={{ textAlign: "center", padding: "30px 0", color: C.text3, fontSize: 13 }}>
+              No sprints yet. Use Auto-Generate or create manually above.
+            </div>
+          )}
+
+          {sprints.map(sprint => (
+            <SprintCard key={sprint.id} sprint={sprint} projectId={project.id} onRefresh={load} />
+          ))}
         </div>
       )}
 
-      {sprints.map(sprint => (
-        <SprintCard key={sprint.id} sprint={sprint} projectId={project.id} onRefresh={load} />
-      ))}
+      {subTab === "impediments" && <ImpedimentsPanel projectId={project.id} />}
+      {subTab === "releases" && <ReleasesPanel projectId={project.id} />}
     </div>
   );
 }
