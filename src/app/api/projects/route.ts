@@ -16,6 +16,9 @@ const createSchema = z.object({
   pmOwnerId: z.string().optional(),
   projectType: z.string().default("fixed_price"),
   methodology: z.string().default("waterfall"),
+  deliveryMethod: z.enum(["predictive", "agile_scrum", "hybrid"]).optional(),
+  commercialModel: z.enum(["fixed_price", "time_and_materials", "capped_tm"]).optional(),
+  sprintLengthWeeks: z.number().optional(),
   engagementMode: z.enum(["detailed", "high_level"]).default("detailed"),
   industry: z.string().optional(),
   projectSize: z.string().optional(),
@@ -127,7 +130,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const project = await prisma.project.create({
+    // Derive deliveryMethod from methodology if not explicitly provided
+    const deliveryMethod = data.deliveryMethod
+      ?? (data.methodology === "agile_scrum" ? "agile_scrum"
+        : data.methodology === "hybrid" ? "hybrid"
+        : "predictive");
+
+    // Derive commercialModel from projectType if not explicitly provided
+    const commercialModel = data.commercialModel
+      ?? (data.projectType === "time_and_material" || data.projectType === "time_and_materials" ? "time_and_materials"
+        : data.projectType === "capped_tm" ? "capped_tm"
+        : "fixed_price");
+
+    const db = prisma as any;
+    const project = await db.project.create({
       data: {
         orgId: user.orgId,
         pmOwnerId,
@@ -138,6 +154,8 @@ export async function POST(req: NextRequest) {
         customer: data.customer,
         projectType: data.projectType,
         methodology: data.methodology,
+        deliveryMethod,
+        commercialModel,
         engagementMode: data.engagementMode,
         externalExecutionTool: data.externalExecutionTool,
         industry: data.industry,
@@ -158,7 +176,7 @@ export async function POST(req: NextRequest) {
       : DEFAULT_DETAILED_ARTIFACTS;
 
     const { ARTIFACT_CATALOG } = await import("@/lib/utils");
-    await prisma.artifactSelection.createMany({
+    await db.artifactSelection.createMany({
       data: ARTIFACT_CATALOG.map((a) => ({
         projectId: project.id,
         artifactType: a.type,
@@ -168,7 +186,7 @@ export async function POST(req: NextRequest) {
 
     // Save requirements document if file was uploaded
     if (data.requirementsText && data.requirementsFileName) {
-      await prisma.requirementsDocument.create({
+      await db.requirementsDocument.create({
         data: {
           projectId: project.id,
           fileName: data.requirementsFileName,

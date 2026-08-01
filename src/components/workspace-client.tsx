@@ -8,6 +8,7 @@ import { PmbSnapshotPanel } from "@/components/pmb-snapshot-panel";
 import { ComparisonView } from "@/components/comparison-view";
 import { ImpactReportPanel } from "@/components/impact-report-panel";
 import { BaselineSummaryCard, BaselineVerifyPanel } from "@/components/baseline-summary-card";
+import { BacklogTab, SprintsTab } from "@/components/agile-workspace";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@/lib/utils";
 import { useCopilot } from "@/components/copilot/CopilotContext";
 
@@ -3211,9 +3212,13 @@ function BaselineTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
+const PREDICTIVE_TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
+const AGILE_TABS = ["Artifacts", "Backlog", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
+  const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
+  const TABS = isAgile ? AGILE_TABS : PREDICTIVE_TABS;
+
   const [tab, setTab] = useState("Artifacts");
   const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
   const [badges, setBadges] = useState<Record<string, number>>({});
@@ -3302,11 +3307,14 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
 
       {/* Tab content */}
       {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} />}
+      {tab === "Backlog" && <BacklogTab project={project} />}
+      {tab === "Sprints" && <SprintsTab project={project} />}
       {tab === "Risk" && <RiskTab project={project} />}
       {tab === "Issues" && <IssuesTab project={project} />}
       {tab === "Resources" && <ResourcesTab project={project} />}
       {tab === "Schedule" && <ScheduleTab project={project} />}
       {tab === "Cost" && <CostTab project={project} />}
+      {tab === "Commercial" && <CostTab project={project} />}
       {tab === "Scope Control" && <RequirementsTab project={project} />}
       {tab === "Status Reporting" && <StatusTab project={project} />}
       {tab === "Baseline" && <BaselineTab project={project} />}

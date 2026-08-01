@@ -81,6 +81,7 @@ model User {
   closedActionItems      ActionItem[]              @relation("ActionItemClosedBy")
   actionItemEvents       ActionItemEvent[]
   dmReviewNotes          DmReviewNote[]
+  projectRoleAssignments ProjectRoleAssignment[]
 }
 
 // NextAuth OAuth provider accounts (credentials-based auth uses this table too)
@@ -208,6 +209,12 @@ model Program {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
 
+  // Agile defaults (Phase A)
+  defaultDeliveryMethod  String?
+  defaultCommercialModel String?
+  defaultRateCardId      String?
+  pmMarginVisibility     Boolean @default(true)
+
   org         Organization        @relation(fields: [orgId], references: [id])
   account     OrgAccount          @relation(fields: [accountId], references: [id])
   assignments ProgramAssignment[]
@@ -278,6 +285,13 @@ model Project {
   evidenceReadinessScore Float?
   evidenceReadinessBand  String?
 
+  // Agile & Commercial Model (Phase A)
+  deliveryMethod         String    @default("predictive")  // predictive | agile_scrum | hybrid
+  commercialModel        String    @default("fixed_price") // fixed_price | time_and_materials | capped_tm
+  stage                  String?                           // s0_inception | s1_discovery | s2_sprint_loop | s3_release_close
+  readinessGatePassedAt  DateTime?
+  activeContractId       String?
+
   bu                 BusinessUnit?          @relation(fields: [buId], references: [id])
   cluster            Cluster?               @relation(fields: [clusterId], references: [id])
   account            OrgAccount?            @relation(fields: [accountId], references: [id])
@@ -309,6 +323,19 @@ model Project {
   impactReports      ImpactReport[]
   goldEntries        ComparisonGoldEntry[]
   accuracyReports    AccuracyReport[]
+
+  // Agile relations (Phase A/B)
+  contracts          Contract[]
+  cadenceConfigs     CadenceConfig[]
+  releases           Release[]
+  backlogItems       BacklogItem[]
+  roleAssignments    ProjectRoleAssignment[]
+  costLedger         CostLedger[]
+  agileMetrics         AgileMetricSnapshot[]
+  ceremonies           Ceremony[]
+  retrospectiveActions RetrospectiveAction[]
+  impediments          Impediment[]
+  commercialSnapshots  CommercialSnapshot[]
 
   @@unique([orgId, code])
 }
@@ -737,28 +764,347 @@ model HealthScore {
 }
 
 model Sprint {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   projectId    String
   sprintNumber Int
   startDate    DateTime
   endDate      DateTime
   goal         String?
-  status       String   @default("planned")
+  status       String    @default("planned")
 
-  project      Project       @relation(fields: [projectId], references: [id])
-  backlogItems BacklogItem[]
+  // Full Agile spec (Phase B)
+  label                  String?
+  releaseId              String?
+  cadenceConfigId        String?
+  plannedCapacityPoints  Float?
+  committedPoints        Float?
+  acceptedPoints         Float?
+  carriedPoints          Float?
+  availableDays          Float?
+  focusFactor            Float?
+  state                  String    @default("planned") // planned | active | closed
+  goalMet                String?   // yes | partial | no
+  closedAt               DateTime?
+  closedBy               String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  project              Project               @relation(fields: [projectId], references: [id])
+  release              Release?              @relation(fields: [releaseId], references: [id])
+  cadenceConfig        CadenceConfig?        @relation(fields: [cadenceConfigId], references: [id])
+  backlogItems         BacklogItem[]
+  ceremonies           Ceremony[]
+  retrospectiveActions RetrospectiveAction[]
+  agileMetrics         AgileMetricSnapshot[]
+  impediments          Impediment[]
+  costLedger           CostLedger[]
+  commercialSnapshots  CommercialSnapshot[]
 }
 
 model BacklogItem {
-  id          String  @id @default(cuid())
-  sprintId    String
+  id          String   @id @default(cuid())
+  projectId   String
+  sprintId    String?  // nullable — items live in backlog without a sprint
   title       String
-  type        String  @default("story")
+  type        String   @default("story")
   storyPoints Int?
-  status      String  @default("todo")
+  status      String   @default("todo")
   assignee    String?
 
-  sprint Sprint @relation(fields: [sprintId], references: [id])
+  // Full Agile spec (Phase B)
+  parentId              String?
+  level                 String   @default("story")   // epic | feature | story | task
+  itemType              String   @default("story")   // story | defect | spike | enabler | chore
+  externalRef           String?
+  externalUrl           String?
+  description           String?
+  acceptanceCriteria    String?
+  points                Float?
+  baselinePoints        Float?   // frozen at Readiness Gate
+  inContractedBaseline  Boolean  @default(false)
+  changeRequestId       String?
+  disposition           String   @default("in_scope") // in_scope | deferred | out_of_scope | conditional | illustrative | negated | undetermined
+  priorityRank          Float?
+  state                 String   @default("todo")   // todo | in_progress | blocked | review | done
+  acceptedAt            DateTime?
+  acceptedBy            String?
+  dorPassed             Boolean  @default(false)
+  dodPassed             Boolean  @default(false)
+  wbsWorkPackageId      String?
+  sourceProvenance      Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  project  Project              @relation(fields: [projectId], references: [id])
+  sprint   Sprint?              @relation(fields: [sprintId], references: [id])
+  parent   BacklogItem?         @relation("BacklogHierarchy", fields: [parentId], references: [id])
+  children BacklogItem[]        @relation("BacklogHierarchy")
+  history  BacklogItemHistory[]
+}
+
+model BacklogItemHistory {
+  id             String   @id @default(cuid())
+  backlogItemId  String
+  field          String
+  oldValue       String?
+  newValue       String?
+  changeClass    String   // reprioritise | reestimate | scope_add | scope_remove | buffer_draw | cr
+  sprintId       String?
+  changedBy      String
+  changedAt      DateTime @default(now())
+
+  backlogItem BacklogItem @relation(fields: [backlogItemId], references: [id])
+}
+
+// ── Agile models (Phase A) ─────────────────────────────────────────────────────
+
+model Contract {
+  id                   String    @id @default(cuid())
+  projectId            String
+  version              Int       @default(1)
+  amendmentOf          String?
+  commercialModel      String    // fixed_price | time_and_materials | capped_tm
+  currency             String    @default("AUD")
+  contractValue        Float?
+  ceilingValue         Float?
+  estimatedValue       Float?
+  targetMarginPct      Float?
+  rateCardId           String?
+  approvedHours        Float?
+  bufferPoints         Float?
+  bufferValue          Float?
+  invoicingTrigger     String    @default("milestone_acceptance")
+  revenueRecognition   String    @default("percent_complete")
+  defectEarningPolicy  String    @default("non_earning")
+  paymentTermsDays     Int       @default(30)
+  contractStart        DateTime?
+  contractEnd          DateTime?
+  baselinedAt          DateTime?
+  status               String    @default("draft") // draft | baselined | amended | closed
+  createdBy            String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id])
+  rateCard RateCard? @relation(fields: [rateCardId], references: [id])
+}
+
+model RateCard {
+  id         String   @id @default(cuid())
+  scopeLevel String   @default("program") // global | cluster | client | program | project
+  scopeId    String?
+  name       String
+  status     String   @default("active")
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lines     RateCardLine[]
+  contracts Contract[]
+}
+
+model RateCardLine {
+  id           String   @id @default(cuid())
+  rateCardId   String
+  role         String
+  location     String   @default("offshore") // onshore | offshore | nearshore
+  billRate     Float
+  costRate     Float
+  unit         String   @default("day") // hour | day
+  effectiveFrom DateTime @default(now())
+  effectiveTo  DateTime?
+  createdAt    DateTime  @default(now())
+
+  rateCard RateCard @relation(fields: [rateCardId], references: [id], onDelete: Cascade)
+}
+
+model CostLedger {
+  id          String   @id @default(cuid())
+  projectId   String
+  sprintId    String?
+  periodStart DateTime
+  periodEnd   DateTime
+  source      String   @default("manual") // timesheet | manual | allocation
+  role        String?
+  location    String?
+  hours       Float?
+  costRate    Float?
+  billRate    Float?
+  costAmount  Float?
+  billAmount  Float?
+  approved    Boolean  @default(false)
+  reconciled  Boolean  @default(false)
+  externalRef String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+  sprint  Sprint? @relation(fields: [sprintId], references: [id])
+}
+
+model ProjectRoleAssignment {
+  id         String    @id @default(cuid())
+  projectId  String
+  userId     String
+  role       String    // product_owner | scrum_master
+  assignedBy String?
+  assignedAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  project Project @relation(fields: [projectId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId, role])
+}
+
+// ── Cadence & Sprint models (Phase B) ─────────────────────────────────────────
+
+model CadenceConfig {
+  id                   String   @id @default(cuid())
+  projectId            String
+  version              Int      @default(1)
+  sprintLengthDays     Int      @default(14)
+  sprintStartDow       Int      @default(1) // 1=Monday
+  sprintZeroDate       DateTime?
+  numberingScheme      String   @default("sequential") // sequential | release_scoped
+  releaseCalenceSprints Int     @default(6)
+  capacityModel        String   @default("velocity_based") // velocity_based | capacity_hours
+  defaultFocusFactor   Float    @default(0.7)
+  ceremonySchedule     Json?
+  effectiveFrom        DateTime @default(now())
+  createdBy            String?
+  createdAt            DateTime @default(now())
+
+  project Project  @relation(fields: [projectId], references: [id])
+  sprints Sprint[]
+}
+
+model Release {
+  id                  String    @id @default(cuid())
+  projectId           String
+  number              Int
+  name                String?
+  goal                String?
+  startSprintId       String?
+  endSprintId         String?
+  plannedDate         DateTime?
+  actualDate          DateTime?
+  isInvoicingTrigger  Boolean   @default(false)
+  gateStatus          String    @default("open") // open | passed | failed
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  project             Project              @relation(fields: [projectId], references: [id])
+  sprints             Sprint[]
+  commercialSnapshots CommercialSnapshot[]
+}
+
+model Ceremony {
+  id              String    @id @default(cuid())
+  projectId       String
+  sprintId        String
+  type            String    // planning | daily | review | retrospective | refinement
+  scheduledAt     DateTime
+  heldAt          DateTime?
+  durationMinutes Int?
+  attendancePct   Float?
+  outcomeSummary  String?
+  artifactId      String?
+  createdAt       DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  sprint  Sprint  @relation(fields: [sprintId], references: [id])
+}
+
+model RetrospectiveAction {
+  id          String    @id @default(cuid())
+  projectId   String
+  sprintId    String
+  description String
+  ownerUserId String?
+  dueSprint   String?
+  status      String    @default("open") // open | in_progress | done | dropped
+  createdAt   DateTime  @default(now())
+  closedAt    DateTime?
+
+  project Project @relation(fields: [projectId], references: [id])
+  sprint  Sprint  @relation(fields: [sprintId], references: [id])
+}
+
+model Impediment {
+  id             String    @id @default(cuid())
+  projectId      String
+  sprintId       String?
+  description    String
+  raisedAt       DateTime  @default(now())
+  raisedBy       String?
+  severity       String    @default("medium") // low | medium | high | critical
+  escalatedTo    String?
+  escalatedAt    DateTime?
+  status         String    @default("open") // open | escalated | resolved
+  resolvedAt     DateTime?
+  resolution     String?
+  createdAt      DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  sprint  Sprint? @relation(fields: [sprintId], references: [id])
+}
+
+model AgileMetricSnapshot {
+  id                    String   @id @default(cuid())
+  projectId             String
+  sprintId              String
+  velocity              Float?
+  trailingVelocity      Float?
+  commitmentReliability Float?
+  carryOverRate         Float?
+  predictabilityIndex   Float?
+  cycleTimeMedian       Float?
+  leadTimeMedian        Float?
+  throughput            Int?
+  wipAvg                Float?
+  escapedDefectRate     Float?
+  defectDensity         Float?
+  backlogReadySprints   Float?
+  createdAt             DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id])
+  sprint  Sprint  @relation(fields: [sprintId], references: [id])
+}
+
+model CommercialSnapshot {
+  id                       String    @id @default(cuid())
+  projectId                String
+  sprintId                 String?
+  releaseId                String?
+  snapshotAt               DateTime  @default(now())
+  bac                      Float?
+  pv                       Float?
+  ev                       Float?
+  ac                       Float?
+  sv                       Float?
+  cv                       Float?
+  spi                      Float?
+  cpi                      Float?
+  burnRate                 Float?
+  runwaySprints            Float?
+  budgetConsumedPct        Float?
+  ceilingForecastDate      DateTime?
+  bufferConsumedPoints     Float?
+  bufferConsumedValue      Float?
+  scopeCreepIndex          Float?
+  actualCostPerPoint       Float?
+  baselineCostPerPoint     Float?
+  eac                      Float?
+  vac                      Float?
+  forecastMarginPct        Float?
+  computedBy               String?
+  inputsHash               String?
+  createdAt                DateTime  @default(now())
+
+  project Project  @relation(fields: [projectId], references: [id])
+  sprint  Sprint?  @relation(fields: [sprintId], references: [id])
+  release Release? @relation(fields: [releaseId], references: [id])
 }
 
 model IntegrationLink {
