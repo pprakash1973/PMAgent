@@ -3215,7 +3215,7 @@ function BaselineTab({ project }: { project: any }) {
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
 const PREDICTIVE_TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
-const AGILE_TABS = ["Artifacts", "Backlog", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
+const AGILE_TABS = ["Artifacts", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
