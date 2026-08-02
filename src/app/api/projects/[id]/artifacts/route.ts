@@ -1,12 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { generateArtifact } from "@/lib/ai";
+import { generateArtifact, type ArtifactTemplateOverride } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
 import { extractAndStoreItems } from "@/lib/item-extractor";
+
+async function resolveTemplate(
+  orgId: string | null | undefined,
+  accountId: string | null | undefined,
+  artifactType: string
+): Promise<ArtifactTemplateOverride | undefined> {
+  if (!orgId) return undefined;
+  const db = prisma as any;
+  const candidates = await db.artifactTemplate.findMany({
+    where: {
+      orgId,
+      isActive: true,
+      OR: [
+        ...(accountId ? [
+          { scope: "account", accountId, artifactType },
+          { scope: "account", accountId, artifactType: "all" },
+        ] : []),
+        { scope: "global", accountId: null, artifactType },
+        { scope: "global", accountId: null, artifactType: "all" },
+      ],
+    },
+    orderBy: [{ scope: "desc" }, { artifactType: "desc" }],
+  });
+  if (candidates.length === 0) return undefined;
+  const pick = candidates.find((t: any) => t.scope === "account" && t.artifactType === artifactType)
+    ?? candidates.find((t: any) => t.scope === "account" && t.artifactType === "all")
+    ?? candidates.find((t: any) => t.scope === "global" && t.artifactType === artifactType)
+    ?? candidates[0];
+  return { systemAddendum: pick.systemAddendum, userAddendum: pick.userAddendum, templateId: pick.id };
+}
 
 export const maxDuration = 300;
 
@@ -136,10 +166,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ? JSON.stringify(project.requirementsDocs[0].extractedContent)
     : undefined;
 
+  const templateOverride = await resolveTemplate(
+    (user as any).orgId,
+    (project as any).accountId,
+    artifactType
+  );
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let content: any;
   try {
-    content = await generateArtifact(artifactType, projectContext, requirements);
+    content = await generateArtifact(artifactType, projectContext, requirements, undefined, templateOverride);
   } catch (err: any) {
     console.error(`[artifact] generation failed for ${artifactType}:`, err);
     return NextResponse.json(
@@ -179,6 +215,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         approvalStatus: "unreviewed",
         parentVersionId,
         editedById: user.id,
+        appliedTemplateId: templateOverride?.templateId ?? null,
       },
     });
   } else {
@@ -202,6 +239,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         approvalStatus: "unreviewed",
         parentVersionId: null,
         editedById: user.id,
+        appliedTemplateId: templateOverride?.templateId ?? null,
       },
     });
   }
