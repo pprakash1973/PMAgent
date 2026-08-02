@@ -97,9 +97,9 @@ export async function generateArtifact(
   const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext, templateOverride);
   const config = await resolveModel("artifact");
 
-  // Build system prompt — append client/org addendum when a template is active
+  // Build system prompt — client addendum leads as a mandatory override block
   const systemText = templateOverride?.systemAddendum
-    ? `${PMI_SYSTEM_PROMPT}\n\n${templateOverride.systemAddendum}`
+    ? `${PMI_SYSTEM_PROMPT}\n\nMANDATORY CLIENT-SPECIFIC INSTRUCTIONS — these override your defaults:\n${templateOverride.systemAddendum}`
     : PMI_SYSTEM_PROMPT;
 
   const userContent = content.map((b) => b.text).join("\n\n");
@@ -1119,8 +1119,18 @@ Return JSON with:
 
   const dynamicContext = `Project Context:\n${JSON.stringify(projectContext, null, 2)}\n\n${evidenceBlock}${requirements && !evidenceContext?.hasEvidence ? `Requirements / Source Document Content:\n${requirements}\n\n` : ""}`;
 
+  // When a client template is active, its instructions lead the prompt so Claude
+  // applies them before locking in the schema's default field list.
   const taskBlock = templateOverride?.userAddendum
-    ? `Task: ${schema}\n\n${templateOverride.userAddendum}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`
+    ? `Task: Generate a ${artifactType.replace(/_/g, " ")} for this project.
+
+MANDATORY CLIENT-SPECIFIC REQUIREMENTS (apply these first — they override defaults):
+${templateOverride.userAddendum}
+
+Output format — produce a JSON object conforming to this schema:
+${schema}
+
+Return the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`
     : `Task: ${schema}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`;
 
   return [
