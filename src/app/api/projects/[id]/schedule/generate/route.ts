@@ -133,6 +133,43 @@ export async function POST(
     }
   }
 
+  // ── Phase-based implicit sequencing ─────────────────────────────────────────
+  // When tasks carry no explicit dependencies (typical for AI-generated WBS),
+  // inject phase-level finish-to-start links so phases execute sequentially
+  // and tasks within the same phase run end-to-end rather than all on day 1.
+  const hasAnyExplicitDeps = allTasks.some((t) => t.dependencies.length > 0);
+  if (!hasAnyExplicitDeps && allTasks.length > 1) {
+    // Collect unique phases in WBS order
+    const phaseOrder: string[] = [];
+    const seen = new Set<string>();
+    for (const t of allTasks) {
+      if (!seen.has(t.phase)) { phaseOrder.push(t.phase); seen.add(t.phase); }
+    }
+    // Group tasks by phase
+    const byPhase: Record<string, WPTask[]> = {};
+    for (const t of allTasks) {
+      byPhase[t.phase] = byPhase[t.phase] ?? [];
+      byPhase[t.phase].push(t);
+    }
+    // For each task with no deps: depend on previous task in same phase (serial within phase)
+    // For the first task of each phase (except the first): depend on last task of prior phase
+    for (let pi = 0; pi < phaseOrder.length; pi++) {
+      const phaseTasks = byPhase[phaseOrder[pi]];
+      for (let ti = 0; ti < phaseTasks.length; ti++) {
+        if (phaseTasks[ti].dependencies.length > 0) continue; // respect explicit deps
+        if (ti > 0) {
+          // Depend on previous task in this phase → serial sequencing
+          phaseTasks[ti].dependencies = [phaseTasks[ti - 1].wbsCode];
+        } else if (pi > 0) {
+          // First task of this phase depends on the last task of the previous phase
+          const prevPhaseTasks = byPhase[phaseOrder[pi - 1]];
+          const lastInPrev = prevPhaseTasks[prevPhaseTasks.length - 1];
+          phaseTasks[ti].dependencies = [lastInPrev.wbsCode];
+        }
+      }
+    }
+  }
+
   if (allTasks.length === 0) {
     return NextResponse.json({
       error: isGovernance

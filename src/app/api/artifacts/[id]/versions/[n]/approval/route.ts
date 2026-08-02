@@ -16,9 +16,15 @@ export async function PATCH(
   const versionNumber = parseInt(n, 10);
   if (isNaN(versionNumber)) return NextResponse.json({ error: "INVALID_VERSION" }, { status: 400 });
 
-  const { status } = await req.json();
+  const body = await req.json();
+  // Accept both "status" and "approvalStatus" field names
+  const status = body.status ?? body.approvalStatus;
   if (!VALID_STATUSES.includes(status)) {
-    return NextResponse.json({ error: "INVALID_STATUS", validStatuses: VALID_STATUSES }, { status: 400 });
+    return NextResponse.json({
+      error: "INVALID_STATUS",
+      hint: "Send { \"status\": \"<value>\" } — accepted values listed in validStatuses",
+      validStatuses: VALID_STATUSES,
+    }, { status: 400 });
   }
 
   const version = await (prisma.artifactVersion as any).findFirst({

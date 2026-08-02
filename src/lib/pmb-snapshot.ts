@@ -34,7 +34,7 @@ export const ARTIFACT_DIMENSION: Record<string, "scope" | "schedule" | "cost" | 
 export const REQUIRED_BASELINE_TYPES: string[] = [
   "scope_statement",
   "milestone_plan",
-  "budget_estimate",
+  "cost_plan",
 ];
 
 export type ReadinessResult = {

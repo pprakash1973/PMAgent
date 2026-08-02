@@ -511,8 +511,8 @@ function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated:
   const [capacity, setCapacity] = useState("");
   const [generating, setGenerating] = useState(false);
 
-  async function generate(e: React.FormEvent) {
-    e.preventDefault();
+  async function generate(e?: React.FormEvent | React.MouseEvent) {
+    e?.preventDefault();
     setGenerating(true);
     try {
       const res = await fetch(`/api/projects/${project.id}/cadence`, {
@@ -586,7 +586,7 @@ function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated:
         </div>
         <div className="flex gap-2 justify-end">
           <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button type="submit" size="sm" disabled={generating}>
+          <Button type="button" size="sm" disabled={generating} onClick={generate}>
             {generating ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Zap className="w-3 h-3 mr-1" />}
             Generate Sprints
           </Button>

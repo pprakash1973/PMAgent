@@ -24,7 +24,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       severity: body.severity || "medium",
       status: body.status || "open",
       owner: body.owner,
-      resolution: body.resolution,
+      // Accept both "resolution" and "resolutionPlan" field names
+      resolution: body.resolution ?? body.resolutionPlan,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
     },
   });

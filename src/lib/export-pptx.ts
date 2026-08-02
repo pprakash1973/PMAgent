@@ -34,6 +34,14 @@ function safeStr(v: unknown): string {
   return String(v);
 }
 
+// Normalise a field that should be an array.
+// Strings become single-element arrays; nullish values become [].
+function toArray(v: unknown): unknown[] {
+  if (Array.isArray(v)) return v;
+  if (v == null || v === "") return [];
+  return [v];
+}
+
 // Strip parenthetical/bracketed qualifiers that AI appends to KPI values.
 // "USD 150,000 (Order-of-Magnitude...)" → "USD 150,000"
 function kpiVal(v: string): string {
@@ -204,7 +212,7 @@ function buildStatusReport(pptx: any, content: any, projectName: string) {
   if (summText) s2.addText(summText, { x: 0.3, y: 4.9, w: 12.73, h: 0.9, fontSize: 10.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
 
   // ── Slide 3: Milestone Tracker — color-coded status chips ──
-  const ms = content.milestoneStatus ?? content.milestones ?? [];
+  const ms = toArray(content.milestoneStatus ?? content.milestones);
   if (ms.length) {
     const s3 = contentSlide(pptx, "Milestone Tracker", projectName, page++);
     const msHeaders = ["Milestone", "Planned Date", "Forecast Date", "Variance", "Status"];
@@ -252,8 +260,8 @@ function buildStatusReport(pptx: any, content: any, projectName: string) {
 
   // ── Slide 5: Accomplishments & Next Steps ──
   const s5 = contentSlide(pptx, "Accomplishments & Next Steps", projectName, page++);
-  const accItems = (content.accomplishments ?? []).slice(0, 7);
-  const planItems = (content.nextWeekPlan ?? content.plannedActivities ?? []).slice(0, 7);
+  const accItems = toArray(content.accomplishments).slice(0, 7);
+  const planItems = toArray(content.nextWeekPlan ?? content.plannedActivities).slice(0, 7);
   s5.addShape(pptx.ShapeType.rect, { x: 0.3, y: 0.85, w: 5.9, h: 0.38, fill: { color: GREEN } });
   s5.addText("Completed This Period", { x: 0.3, y: 0.85, w: 5.9, h: 0.38, fontSize: 10, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
   accItems.forEach((a: unknown, i: number) => {
@@ -268,8 +276,8 @@ function buildStatusReport(pptx: any, content: any, projectName: string) {
   });
 
   // ── Slide 6: Issues & Risks ──
-  const issues = content.issues ?? [];
-  const risks = content.risks ?? content.topRisks ?? [];
+  const issues = toArray(content.issues);
+  const risks = toArray(content.risks ?? content.topRisks);
   const s6 = contentSlide(pptx, "Issues & Risks", projectName, page++);
   // Left: issues with severity badge
   s6.addShape(pptx.ShapeType.rect, { x: 0.3, y: 0.85, w: 6.1, h: 0.38, fill: { color: PETROL } });
@@ -302,7 +310,7 @@ function buildStatusReport(pptx: any, content: any, projectName: string) {
   });
 
   // ── Slide 7: Decisions Required ──
-  const decisions = content.decisions ?? content.decisionsRequired ?? [];
+  const decisions = toArray(content.decisions ?? content.decisionsRequired);
   const s7 = contentSlide(pptx, "Decisions Required", projectName, page++);
   if (!decisions.length) {
     s7.addText("No decisions required this period.", { x: 0.3, y: 2.5, w: 12.73, h: 0.6, fontSize: 14, color: DARK_GRAY, align: "center", italic: true, fontFace: "Aptos" });

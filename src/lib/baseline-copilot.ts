@@ -131,7 +131,7 @@ export async function verifyBaseline(projectId: string): Promise<VerificationRes
   });
 
   // Check 2: Required artifacts have approved versions
-  const REQUIRED = ["scope_statement", "milestone_plan", "budget_estimate"];
+  const REQUIRED = ["scope_statement", "milestone_plan", "cost_plan"];
   const APPROVED = new Set(["pm_confirmed", "gate_approved"]);
 
   for (const type of REQUIRED) {

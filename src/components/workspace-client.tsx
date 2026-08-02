@@ -2273,7 +2273,10 @@ function RequirementsTab({ project }: { project: any }) {
       const res = await fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Extraction failed");
-      // Reload requirements
+      if ((data.extracted ?? 0) === 0) {
+        throw new Error("No requirements found in the uploaded documents. Ensure the documents contain formal requirements (BR-xx, NFR-xx, etc.) and try again.");
+      }
+      // Reload requirements list then switch to the reqs sub-tab
       const listRes = await fetch(`/api/projects/${project.id}/requirements/list`);
       const list = await listRes.json();
       if (Array.isArray(list)) setReqs(list);
