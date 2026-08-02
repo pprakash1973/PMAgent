@@ -337,7 +337,9 @@ export function ArtifactPanel({
     const segStyle = (i: number): React.CSSProperties => {
       const base: React.CSSProperties = { flex: 1, height: 4, borderRadius: 99, background: "#e5e7eb", transition: "background .4s" };
       if (isGen && i === 1) return { ...base, background: C.primaryAlt };
-      if (i < stage) return { ...base, background: stage === 4 ? C.green : C.primary };
+      // Fill ALL 4 segments once generated — the card is complete
+      if (stage >= 2) return { ...base, background: stage === 4 ? C.green : C.primary };
+      if (i < stage) return { ...base, background: C.primary };
       return base;
     };
 
@@ -401,7 +403,7 @@ export function ArtifactPanel({
 
           {/* Status line — replaces the four stage labels at this density */}
           <div style={{ fontSize: 10.5, fontWeight: 600, marginBottom: 9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: isLocked ? C.amber : status.color }}>
-            {isLocked ? "🔒 Governance locked" : isUp ? "Merging upload…" : <>{isGen ? <GeneratingLine /> : status.label}</>}
+            {isLocked ? "🔒 Governance locked" : isUp ? "Merging upload…" : <>{isGen ? <GeneratingLine hasCustomTemplate={hasCustomTemplate} /> : status.label}</>}
           </div>
 
           {guardrail && (
@@ -535,15 +537,16 @@ export function ArtifactPanel({
 }
 
 const GEN_STAGES = [
-  { key: "read",       label: "Reading project",     icon: "📂", delay: 400  },
-  { key: "guardrails", label: "Checking guardrails",  icon: "🛡️", delay: 900  },
-  { key: "ai",         label: "Subagent working",     icon: "✨", delay: null },
-  { key: "saving",     label: "Saving",               icon: "💾", delay: 300  },
-  { key: "done",       label: "Done",                 icon: "✓",  delay: null },
+  { key: "read",       label: "Reading project",              icon: "📂", delay: 400  },
+  { key: "guardrails", label: "Checking guardrails",           icon: "🛡️", delay: 600  },
+  { key: "templates",  label: "Checking for custom templates", icon: "📋", delay: 700  },
+  { key: "ai",         label: "Subagent working",              icon: "✨", delay: null },
+  { key: "saving",     label: "Saving",                        icon: "💾", delay: 300  },
+  { key: "done",       label: "Done",                          icon: "✓",  delay: null },
 ];
 
 // Single-line variant of GenerationProgress, for the lifecycle-stepper card
-function GeneratingLine() {
+function GeneratingLine({ hasCustomTemplate }: { hasCustomTemplate?: boolean }) {
   const [stage, setStage] = useState(0);
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -554,6 +557,10 @@ function GeneratingLine() {
     }
     return () => timers.forEach(clearTimeout);
   }, []);
+  // At the AI-working stage, report whether a custom template was found
+  if (stage === 3) {
+    return <>{hasCustomTemplate ? "Reading custom template…" : "Using default prompt…"}</>;
+  }
   return <>{GEN_STAGES[stage].label}…</>;
 }
 
