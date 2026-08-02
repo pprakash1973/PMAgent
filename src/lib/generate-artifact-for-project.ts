@@ -3,12 +3,49 @@
  * and the Copilot actions route (avoids internal unauthenticated HTTP calls).
  */
 import { prisma } from "@/lib/db";
-import { generateArtifact } from "@/lib/ai";
+import { generateArtifact, type ArtifactTemplateOverride } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
 import { extractAndStoreItems } from "@/lib/item-extractor";
+
+async function resolveTemplate(orgId: string, accountId: string | null | undefined, artifactType: string): Promise<ArtifactTemplateOverride | undefined> {
+  const db = prisma as any;
+
+  // Preference order: account+type > account+"all" > global+type > global+"all"
+  const candidates = await db.artifactTemplate.findMany({
+    where: {
+      orgId,
+      isActive: true,
+      OR: [
+        // Account-specific matches (exact type or catch-all "all")
+        ...(accountId ? [
+          { scope: "account", accountId, artifactType },
+          { scope: "account", accountId, artifactType: "all" },
+        ] : []),
+        // Global matches
+        { scope: "global", accountId: null, artifactType },
+        { scope: "global", accountId: null, artifactType: "all" },
+      ],
+    },
+    orderBy: [{ scope: "desc" }, { artifactType: "desc" }], // account before global, exact before "all"
+  });
+
+  if (candidates.length === 0) return undefined;
+
+  // Pick the highest-priority candidate
+  const pick = candidates.find((t: any) => t.scope === "account" && t.artifactType === artifactType)
+    ?? candidates.find((t: any) => t.scope === "account" && t.artifactType === "all")
+    ?? candidates.find((t: any) => t.scope === "global" && t.artifactType === artifactType)
+    ?? candidates[0];
+
+  return {
+    systemAddendum: pick.systemAddendum ?? undefined,
+    userAddendum:   pick.userAddendum ?? undefined,
+    templateId:     pick.id,
+  };
+}
 
 export async function generateArtifactForProject(
   projectId: string,
@@ -103,9 +140,16 @@ export async function generateArtifactForProject(
     ? JSON.stringify(project.requirementsDocs[0].extractedContent)
     : undefined;
 
+  // Resolve active template for this project's account + artifact type
+  const templateOverride = await resolveTemplate(
+    (project as any).orgId,
+    (project as any).accountId,
+    artifactType
+  );
+
   let content: any;
   try {
-    content = await generateArtifact(artifactType, projectContext, requirements);
+    content = await generateArtifact(artifactType, projectContext, requirements, undefined, templateOverride);
   } catch (err: any) {
     return { error: err.message ?? "AI generation failed" };
   }
@@ -139,6 +183,7 @@ export async function generateArtifactForProject(
         approvalStatus: "unreviewed",
         parentVersionId,
         editedById: userId,
+        appliedTemplateId: templateOverride?.templateId ?? null,
       },
     });
   } else {
@@ -155,6 +200,7 @@ export async function generateArtifactForProject(
         approvalStatus: "unreviewed",
         parentVersionId: null,
         editedById: userId,
+        appliedTemplateId: templateOverride?.templateId ?? null,
       },
     });
   }

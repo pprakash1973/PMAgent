@@ -81,17 +81,27 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
 
 const ARTIFACT_MAX_TOKENS = 32000;
 
+export interface ArtifactTemplateOverride {
+  systemAddendum?: string | null;
+  userAddendum?: string | null;
+  templateId?: string | null;
+}
+
 export async function generateArtifact(
   artifactType: string,
   projectContext: Record<string, unknown>,
   requirements?: string,
-  evidenceContext?: EvidenceContext
+  evidenceContext?: EvidenceContext,
+  templateOverride?: ArtifactTemplateOverride
 ): Promise<Record<string, unknown>> {
-  const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext);
+  const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext, templateOverride);
   const config = await resolveModel("artifact");
 
-  // Combine text blocks into a single system string for non-Anthropic providers
-  const systemText = PMI_SYSTEM_PROMPT;
+  // Build system prompt — append client/org addendum when a template is active
+  const systemText = templateOverride?.systemAddendum
+    ? `${PMI_SYSTEM_PROMPT}\n\n${templateOverride.systemAddendum}`
+    : PMI_SYSTEM_PROMPT;
+
   const userContent = content.map((b) => b.text).join("\n\n");
 
   const response = await streamLLM(
@@ -345,7 +355,8 @@ function buildArtifactContent(
   artifactType: string,
   projectContext: Record<string, unknown>,
   requirements?: string,
-  evidenceContext?: EvidenceContext
+  evidenceContext?: EvidenceContext,
+  templateOverride?: ArtifactTemplateOverride
 ): { text: string }[] {
   const templates: Record<string, string> = {
 
@@ -1108,12 +1119,12 @@ Return JSON with:
 
   const dynamicContext = `Project Context:\n${JSON.stringify(projectContext, null, 2)}\n\n${evidenceBlock}${requirements && !evidenceContext?.hasEvidence ? `Requirements / Source Document Content:\n${requirements}\n\n` : ""}`;
 
+  const taskBlock = templateOverride?.userAddendum
+    ? `Task: ${schema}\n\n${templateOverride.userAddendum}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`
+    : `Task: ${schema}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`;
+
   return [
-    {
-      text: `Task: ${schema}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`,
-    },
-    {
-      text: dynamicContext,
-    },
+    { text: taskBlock },
+    { text: dynamicContext },
   ];
 }

@@ -14,7 +14,7 @@ import { ArtifactVersionRail } from "@/components/artifact-version-rail";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Artifact = { id: string; artifactType: string; phase: string; status: string; content: any; currentVersion?: number };
+type Artifact = { id: string; artifactType: string; phase: string; status: string; content: any; currentVersion?: number; versions?: Array<{ appliedTemplateId?: string | null }> };
 type Selection = { artifactType: string; selectionStatus: string };
 type CatalogEntry = { type: string; label: string; phase: string; mandatory?: boolean };
 
@@ -323,6 +323,7 @@ export function ArtifactPanel({
     const rail = PHASES.find((p) => p.id === entry.phase)?.dot ?? C.primary;
     const idle = !artifact && !isGen;
     const guardrail = guardrailErrors[entry.type];
+    const hasCustomTemplate = !!artifact?.versions?.[0]?.appliedTemplateId;
 
     function toggleSelect(ev: React.MouseEvent) {
       ev.stopPropagation();
@@ -405,6 +406,12 @@ export function ArtifactPanel({
 
           {guardrail && (
             <div style={{ fontSize: 10, color: C.red, lineHeight: 1.35, marginBottom: 8 }}>{guardrail}</div>
+          )}
+
+          {hasCustomTemplate && (
+            <div style={{ marginBottom: 7 }}>
+              <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 10, background: "rgba(0,110,116,.1)", color: C.teal, border: `1px solid rgba(0,110,116,.2)`, letterSpacing: "0.02em" }}>⚡ Custom template</span>
+            </div>
           )}
 
           {/* Footer — phase pill + actions */}

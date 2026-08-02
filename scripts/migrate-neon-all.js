@@ -976,6 +976,33 @@ async function main() {
     }
 
     console.log("✓ Seed data");
+
+    // ── Artifact Templates ─────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "ArtifactTemplate" (
+        "id"             TEXT        NOT NULL PRIMARY KEY,
+        "orgId"          TEXT        NOT NULL,
+        "name"           TEXT        NOT NULL,
+        "description"    TEXT,
+        "artifactType"   TEXT        NOT NULL,
+        "scope"          TEXT        NOT NULL DEFAULT 'global',
+        "accountId"      TEXT,
+        "systemAddendum" TEXT,
+        "userAddendum"   TEXT,
+        "isActive"       BOOLEAN     NOT NULL DEFAULT true,
+        "createdBy"      TEXT,
+        "createdAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS "ArtifactTemplate_orgId_type_scope_idx"
+      ON "ArtifactTemplate"("orgId","artifactType","scope","isActive")`);
+
+    // appliedTemplateId column on ArtifactVersion (tracks which template was used)
+    await pool.query(`ALTER TABLE "ArtifactVersion"
+      ADD COLUMN IF NOT EXISTS "appliedTemplateId" TEXT`);
+
+    console.log("✓ ArtifactTemplate table + ArtifactVersion.appliedTemplateId");
     console.log("✓ All migrations complete");
 
   } catch (err) {

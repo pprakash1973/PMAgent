@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { generateArtifact } from "@/lib/ai";
+import { generateArtifact, type ArtifactTemplateOverride } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
@@ -96,10 +96,28 @@ export async function POST(
     allowed.map(({ type }) => assembleEvidence(id, type))
   );
 
+  // Resolve per-type templates (account-specific wins over global)
+  const db = prisma as any;
+  const accountId = (project as any).accountId ?? null;
+  const orgId = user.orgId;
+  const templateMap = new Map<string, ArtifactTemplateOverride>();
+  if (orgId) {
+    const activeTemplates = await db.artifactTemplate.findMany({
+      where: { orgId, isActive: true },
+    });
+    for (const t of allowed) {
+      const pick = activeTemplates.find((tmpl: any) => tmpl.scope === "account" && tmpl.accountId === accountId && tmpl.artifactType === t.type)
+        ?? activeTemplates.find((tmpl: any) => tmpl.scope === "account" && tmpl.accountId === accountId && tmpl.artifactType === "all")
+        ?? activeTemplates.find((tmpl: any) => tmpl.scope === "global" && tmpl.accountId === null && tmpl.artifactType === t.type)
+        ?? activeTemplates.find((tmpl: any) => tmpl.scope === "global" && tmpl.accountId === null && tmpl.artifactType === "all");
+      if (pick) templateMap.set(t.type, { systemAddendum: pick.systemAddendum, userAddendum: pick.userAddendum, templateId: pick.id });
+    }
+  }
+
   // Fan out — each generateArtifact() is an independent sub-agent call
   const subAgentResults = await Promise.allSettled(
     allowed.map(({ type }, i) =>
-      generateArtifact(type, projectContext, requirements, evidenceContexts[i])
+      generateArtifact(type, projectContext, requirements, evidenceContexts[i], templateMap.get(type))
         .then((content) => ({ type, content, evidenceCtx: evidenceContexts[i] }))
     )
   );
@@ -133,6 +151,7 @@ export async function POST(
       const existing = await prisma.artifact.findFirst({ where: { projectId: id, artifactType: type } });
       const jsonContent = content as Prisma.InputJsonValue;
 
+      const appliedTemplateId = templateMap.get(type)?.templateId ?? null;
       let artifact;
       if (existing) {
         const newVersion = existing.currentVersion + 1;
@@ -140,8 +159,8 @@ export async function POST(
           where: { id: existing.id },
           data: { content: jsonContent, currentVersion: newVersion, status: "draft", gapCount, groundingScore },
         });
-        await prisma.artifactVersion.create({
-          data: { artifactId: existing.id, versionNumber: newVersion, content: jsonContent, source: "ai_generated", editedById: user.id },
+        await (prisma.artifactVersion as any).create({
+          data: { artifactId: existing.id, versionNumber: newVersion, content: jsonContent, source: "ai_generated", editedById: user.id, appliedTemplateId },
         });
         // Clear old gaps for this artifact before writing new ones
         await prisma.gap.deleteMany({ where: { artifactId: existing.id } });
@@ -149,8 +168,8 @@ export async function POST(
         artifact = await prisma.artifact.create({
           data: { projectId: id, artifactType: type, phase: catalogEntry.phase, content: jsonContent, currentVersion: 1, status: "draft", gapCount, groundingScore },
         });
-        await prisma.artifactVersion.create({
-          data: { artifactId: artifact.id, versionNumber: 1, content: jsonContent, source: "ai_generated", editedById: user.id },
+        await (prisma.artifactVersion as any).create({
+          data: { artifactId: artifact.id, versionNumber: 1, content: jsonContent, source: "ai_generated", editedById: user.id, appliedTemplateId },
         });
       }
 

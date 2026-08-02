@@ -18,6 +18,7 @@ model Organization {
   clusters      Cluster[]
   accounts      OrgAccount[]
   programs      Program[]
+  artifactTemplates ArtifactTemplate[]
 }
 
 model BusinessUnit {
@@ -173,6 +174,7 @@ model OrgAccount {
   programs          Program[]
   projects          Project[]
   dmAssignments     AccountAssignment[]
+  artifactTemplates ArtifactTemplate[]
 
   @@unique([orgId, name])
   @@map("org_accounts")
@@ -492,6 +494,7 @@ model ArtifactVersion {
   extractionStatus    String   @default("pending") // pending | complete | partial | failed
   extractionCoverage  Float?
   editedById          String?
+  appliedTemplateId   String?  // FK to ArtifactTemplate — set when a custom template was used
   createdAt           DateTime @default(now())
 
   artifact      Artifact         @relation(fields: [artifactId], references: [id])
@@ -1200,6 +1203,30 @@ model SystemSetting {
   value     String
   updatedAt DateTime @updatedAt
   updatedBy String?
+}
+
+// ── Artifact Templates ─────────────────────────────────────────────────────────
+// Addendum-only overlays scoped to the org (global) or a specific client account.
+// The system default prompt is always preserved — addenda are layered on top.
+model ArtifactTemplate {
+  id             String   @id @default(cuid())
+  orgId          String
+  name           String
+  description    String?
+  artifactType   String   // matches ARTIFACT_CATALOG key; "all" = catch-all for every type
+  scope          String   @default("global") // global | account
+  accountId      String?  // null when scope=global; FK to OrgAccount when scope=account
+  systemAddendum String?  // appended to PMI_SYSTEM_PROMPT (role / methodology / terminology)
+  userAddendum   String?  // appended to per-type content instruction (sections / format)
+  isActive       Boolean  @default(true)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  org     Organization @relation(fields: [orgId], references: [id])
+  account OrgAccount?  @relation(fields: [accountId], references: [id])
+
+  @@index([orgId, artifactType, scope, isActive])
 }
 
 model ProjectPmAssignment {
