@@ -2045,7 +2045,7 @@ function ScheduleTab({ project }: { project: any }) {
         </>
       )}
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>
     </div>
   );
 }
@@ -2258,6 +2258,12 @@ function RequirementsTab({ project }: { project: any }) {
   const [amendingId, setAmendingId] = React.useState<string | null>(null);
   const [amendText, setAmendText] = React.useState("");
 
+  // Impact analysis
+  const [selectedDocIds, setSelectedDocIds] = React.useState<Set<string>>(new Set());
+  const [impactStatus, setImpactStatus] = React.useState<"idle" | "running" | "done" | "error">("idle");
+  const [impactText, setImpactText] = React.useState("");
+  const impactPanelRef = React.useRef<HTMLDivElement>(null);
+
   React.useEffect(() => {
     fetch(`/api/projects/${project.id}/evidence-readiness`)
       .then(r => r.json())
@@ -2333,6 +2339,47 @@ function RequirementsTab({ project }: { project: any }) {
     }
   }
 
+  async function runImpactAnalysis() {
+    if (selectedDocIds.size < 2) return;
+    setImpactStatus("running");
+    setImpactText("");
+    setTimeout(() => impactPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/requirements/impact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentIds: [...selectedDocIds] }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Analysis failed");
+      }
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const json = JSON.parse(line.slice(6));
+            if (json.chunk) setImpactText(t => t + json.chunk);
+            if (json.done)  setImpactStatus("done");
+            if (json.error) throw new Error(json.error);
+          } catch { /* skip malformed lines */ }
+        }
+      }
+      setImpactStatus("done");
+    } catch (err: any) {
+      setImpactText(err.message || "Analysis failed");
+      setImpactStatus("error");
+    }
+  }
+
   const confirmedCount = reqs.filter(r => r.status === "confirmed").length;
   const proposedCount  = reqs.filter(r => r.status === "proposed").length;
 
@@ -2385,7 +2432,29 @@ function RequirementsTab({ project }: { project: any }) {
           )}
         </div>
       )}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18, gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, gap: 8, flexWrap: "wrap" as const }}>
+        {/* Left: impact analysis button — shown when 2+ docs selected */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {selectedDocIds.size >= 2 && (
+            <button
+              onClick={runImpactAnalysis}
+              disabled={impactStatus === "running"}
+              style={{ display: "flex", alignItems: "center", gap: 7, background: impactStatus === "running" ? C.surface2 : "#4f46e5", color: impactStatus === "running" ? C.text3 : "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: impactStatus === "running" ? "not-allowed" : "pointer", opacity: impactStatus === "running" ? 0.7 : 1 }}
+            >
+              {impactStatus === "running" ? (
+                <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke={C.text3} strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>Analysing…</>
+              ) : (
+                <><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M9 19l-7-7 7-7M22 12H2M15 5l7 7-7 7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>Run Impact Analysis ({selectedDocIds.size})</>
+              )}
+            </button>
+          )}
+          {selectedDocIds.size === 1 && (
+            <span style={{ fontSize: 12, color: C.text3 }}>Select 1 more document to run Impact Analysis</span>
+          )}
+        </div>
+
+        {/* Right: existing actions */}
+        <div style={{ display: "flex", gap: 8 }}>
           {docs.length > 0 && (
             <button
               onClick={handleExtract}
@@ -2406,6 +2475,7 @@ function RequirementsTab({ project }: { project: any }) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7 9m5-5l5 5M5 20h14" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             Upload document
           </button>
+        </div>
       </div>
       {extractError && <div style={{ color: "#cf3f3a", fontSize: 12, marginBottom: 10 }}>{extractError}</div>}
 
@@ -2501,11 +2571,29 @@ function RequirementsTab({ project }: { project: any }) {
       {activeView === "docs" && (
         docs.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column" as const, gap: 8 }}>
+            {docs.length > 1 && (
+              <div style={{ fontSize: 11, color: C.text3, marginBottom: 4, paddingLeft: 2 }}>
+                Select documents to compare, then click <strong>Run Impact Analysis</strong>
+              </div>
+            )}
             {docs.map((doc: any) => {
               const ext = doc.fileName?.split(".").pop()?.toUpperCase() || "DOC";
               const cls = CLASS_LABELS[doc.docClass] ?? "Other";
+              const isChecked = selectedDocIds.has(doc.id);
               return (
-                <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 12, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+                <div
+                  key={doc.id}
+                  onClick={() => setSelectedDocIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id);
+                    return next;
+                  })}
+                  style={{ display: "flex", alignItems: "center", gap: 12, background: isChecked ? "rgba(79,70,229,.04)" : C.surface, border: `1px solid ${isChecked ? "#4f46e5" : C.border}`, borderRadius: 10, padding: "10px 14px", cursor: "pointer", transition: "border-color .15s, background .15s" }}
+                >
+                  {/* Checkbox */}
+                  <div style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, border: `2px solid ${isChecked ? "#4f46e5" : C.border}`, background: isChecked ? "#4f46e5" : C.surface, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {isChecked && <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </div>
                   <div style={{ width: 32, height: 32, borderRadius: 7, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 9, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.fileName}</div>
@@ -2531,6 +2619,51 @@ function RequirementsTab({ project }: { project: any }) {
             <div style={{ fontSize: 13, color: C.text2 }}>Upload a SOW, BRD, or estimation sheet to ground artifact generation in your project&apos;s actual content.</div>
           </div>
         )
+      )}
+
+      {/* ── IMPACT ANALYSIS RESULTS ── */}
+      {(impactStatus === "running" || impactStatus === "done" || impactStatus === "error") && activeView === "docs" && (
+        <div ref={impactPanelRef} style={{ marginTop: 20, border: `1.5px solid #4f46e5`, borderRadius: 14, overflow: "hidden", boxShadow: "0 4px 20px rgba(79,70,229,.10)" }}>
+          {/* Panel header */}
+          <div style={{ background: "linear-gradient(90deg, #4f46e5, #7c3aed)", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 19l-7-7 7-7M22 12H2" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Impact Analysis</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,.7)" }}>
+                  {selectedDocIds.size} documents compared · {impactStatus === "running" ? "Analysing…" : impactStatus === "error" ? "Error" : "Complete"}
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {impactStatus === "running" && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,.5)" strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>
+              )}
+              {impactStatus !== "running" && (
+                <button
+                  onClick={() => { setImpactStatus("idle"); setImpactText(""); setSelectedDocIds(new Set()); }}
+                  style={{ background: "rgba(255,255,255,.15)", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, padding: "4px 10px", cursor: "pointer", fontWeight: 500 }}
+                >
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Panel body — streaming markdown-like text */}
+          <div style={{ padding: "18px 20px", background: "#fafafa", maxHeight: 520, overflowY: "auto" as const }}>
+            {impactStatus === "error" ? (
+              <div style={{ color: "#cf3f3a", fontSize: 13 }}>{impactText || "Analysis failed. Please try again."}</div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#1a2332", lineHeight: 1.75, whiteSpace: "pre-wrap" as const, fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}>
+                {impactText || <span style={{ color: "#9ca3af" }}>Starting analysis…</span>}
+                {impactStatus === "running" && <span style={{ display: "inline-block", width: 8, height: 14, background: "#4f46e5", borderRadius: 2, marginLeft: 2, verticalAlign: "text-bottom", animation: "blink-cursor 1s step-end infinite" }} />}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── REQUIREMENTS VIEW ── */}
