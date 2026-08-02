@@ -773,12 +773,16 @@ async function main() {
         "oldValue"      TEXT,
         "newValue"      TEXT,
         "changeClass"   TEXT        NOT NULL DEFAULT 'update',
-        "changedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "changedBy"     TEXT        NOT NULL
+        "sprintId"      TEXT,
+        "changedBy"     TEXT        NOT NULL,
+        "changedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS "BacklogItemHistory_backlogItemId_idx"
         ON "BacklogItemHistory" ("backlogItemId")
     `, "BacklogItemHistory table");
+    await run(pool, `
+      ALTER TABLE "BacklogItemHistory" ADD COLUMN IF NOT EXISTS "sprintId" TEXT
+    `, "BacklogItemHistory.sprintId column");
 
     await run(pool, `
       CREATE TABLE IF NOT EXISTS "ProjectRoleAssignment" (
@@ -817,20 +821,37 @@ async function main() {
 
     await run(pool, `
       CREATE TABLE IF NOT EXISTS "Ceremony" (
-        "id"          TEXT        NOT NULL PRIMARY KEY,
-        "projectId"   TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
-        "sprintId"    TEXT        REFERENCES "Sprint"("id"),
-        "type"        TEXT        NOT NULL,
-        "scheduledAt" TIMESTAMP(3),
-        "heldAt"      TIMESTAMP(3),
-        "durationMin" INT,
-        "notes"       TEXT,
-        "facilitator" TEXT,
-        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        "id"              TEXT        NOT NULL PRIMARY KEY,
+        "projectId"       TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"        TEXT        REFERENCES "Sprint"("id"),
+        "type"            TEXT        NOT NULL,
+        "scheduledAt"     TIMESTAMP(3),
+        "heldAt"          TIMESTAMP(3),
+        "durationMinutes" INT,
+        "attendancePct"   FLOAT,
+        "outcomeSummary"  TEXT,
+        "artifactId"      TEXT,
+        "createdAt"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS "Ceremony_projectId_idx" ON "Ceremony"("projectId");
       CREATE INDEX IF NOT EXISTS "Ceremony_sprintId_idx" ON "Ceremony"("sprintId")
     `, "Ceremony table");
+    await run(pool, `
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name='Ceremony' AND column_name='durationMin')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name='Ceremony' AND column_name='durationMinutes')
+        THEN
+          ALTER TABLE "Ceremony" RENAME COLUMN "durationMin" TO "durationMinutes";
+        END IF;
+      END $$;
+      ALTER TABLE "Ceremony" ADD COLUMN IF NOT EXISTS "durationMinutes" INT;
+      ALTER TABLE "Ceremony" ADD COLUMN IF NOT EXISTS "heldAt" TIMESTAMP(3);
+      ALTER TABLE "Ceremony" ADD COLUMN IF NOT EXISTS "attendancePct" FLOAT;
+      ALTER TABLE "Ceremony" ADD COLUMN IF NOT EXISTS "outcomeSummary" TEXT;
+      ALTER TABLE "Ceremony" ADD COLUMN IF NOT EXISTS "artifactId" TEXT
+    `, "Ceremony schema fix");
 
     await run(pool, `
       CREATE TABLE IF NOT EXISTS "RetrospectiveAction" (
@@ -851,19 +872,30 @@ async function main() {
 
     await run(pool, `
       CREATE TABLE IF NOT EXISTS "Impediment" (
-        "id"          TEXT        NOT NULL PRIMARY KEY,
-        "projectId"   TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
-        "sprintId"    TEXT        REFERENCES "Sprint"("id"),
-        "title"       TEXT        NOT NULL,
-        "description" TEXT,
-        "severity"    TEXT        NOT NULL DEFAULT 'medium',
-        "status"      TEXT        NOT NULL DEFAULT 'open',
-        "raisedBy"    TEXT        NOT NULL,
-        "resolvedAt"  TIMESTAMP(3),
-        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        "id"           TEXT        NOT NULL PRIMARY KEY,
+        "projectId"    TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"     TEXT        REFERENCES "Sprint"("id"),
+        "title"        TEXT        NOT NULL DEFAULT '',
+        "description"  TEXT,
+        "raisedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "raisedBy"     TEXT,
+        "severity"     TEXT        NOT NULL DEFAULT 'medium',
+        "escalatedTo"  TEXT,
+        "escalatedAt"  TIMESTAMP(3),
+        "status"       TEXT        NOT NULL DEFAULT 'open',
+        "resolvedAt"   TIMESTAMP(3),
+        "resolution"   TEXT,
+        "createdAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
       CREATE INDEX IF NOT EXISTS "Impediment_projectId_idx" ON "Impediment"("projectId")
     `, "Impediment table");
+    await run(pool, `
+      ALTER TABLE "Impediment" ADD COLUMN IF NOT EXISTS "title"       TEXT        NOT NULL DEFAULT '';
+      ALTER TABLE "Impediment" ADD COLUMN IF NOT EXISTS "raisedAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+      ALTER TABLE "Impediment" ADD COLUMN IF NOT EXISTS "escalatedTo" TEXT;
+      ALTER TABLE "Impediment" ADD COLUMN IF NOT EXISTS "escalatedAt" TIMESTAMP(3);
+      ALTER TABLE "Impediment" ADD COLUMN IF NOT EXISTS "resolution"  TEXT
+    `, "Impediment schema fix");
 
     await run(pool, `
       CREATE TABLE IF NOT EXISTS "AgileMetricSnapshot" (

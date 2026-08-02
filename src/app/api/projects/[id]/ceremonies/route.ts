@@ -8,9 +8,7 @@ const createSchema = z.object({
   type: z.enum(["planning", "daily_standup", "review", "retrospective", "refinement", "other"]),
   sprintId: z.string().optional(),
   scheduledAt: z.string().optional(),
-  durationMin: z.number().optional(),
-  facilitator: z.string().optional(),
-  notes: z.string().optional(),
+  durationMinutes: z.number().optional(),
 });
 
 export async function GET(
@@ -54,9 +52,7 @@ export async function POST(
       sprintId: data.sprintId,
       type: data.type,
       scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : undefined,
-      durationMin: data.durationMin,
-      facilitator: data.facilitator,
-      notes: data.notes,
+      durationMinutes: data.durationMinutes,
     },
   });
 

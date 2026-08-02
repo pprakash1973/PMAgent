@@ -996,9 +996,9 @@ model Release {
 model Ceremony {
   id              String    @id @default(cuid())
   projectId       String
-  sprintId        String
+  sprintId        String?   // optional — ceremony may not be tied to a specific sprint
   type            String    // planning | daily | review | retrospective | refinement
-  scheduledAt     DateTime
+  scheduledAt     DateTime? // optional — may be TBD at creation time
   heldAt          DateTime?
   durationMinutes Int?
   attendancePct   Float?
@@ -1006,8 +1006,8 @@ model Ceremony {
   artifactId      String?
   createdAt       DateTime  @default(now())
 
-  project Project @relation(fields: [projectId], references: [id])
-  sprint  Sprint  @relation(fields: [sprintId], references: [id])
+  project Project  @relation(fields: [projectId], references: [id])
+  sprint  Sprint?  @relation(fields: [sprintId], references: [id])
 }
 
 model RetrospectiveAction {
@@ -1029,7 +1029,8 @@ model Impediment {
   id             String    @id @default(cuid())
   projectId      String
   sprintId       String?
-  description    String
+  title          String    // primary label shown in the UI
+  description    String?   // optional longer description
   raisedAt       DateTime  @default(now())
   raisedBy       String?
   severity       String    @default("medium") // low | medium | high | critical
