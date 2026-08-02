@@ -98,6 +98,9 @@ export async function generateArtifact(
   const config = await resolveModel("artifact");
 
   // Build system prompt — append client/org addendum when a template is active
+  if (templateOverride) {
+    console.log(`[generateArtifact] template ${templateOverride.templateId} sysAddendum=${templateOverride.systemAddendum?.length ?? 0}chars userAddendum=${templateOverride.userAddendum?.length ?? 0}chars`);
+  }
   const systemText = templateOverride?.systemAddendum
     ? `${PMI_SYSTEM_PROMPT}\n\n${templateOverride.systemAddendum}`
     : PMI_SYSTEM_PROMPT;
