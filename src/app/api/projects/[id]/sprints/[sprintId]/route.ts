@@ -79,3 +79,29 @@ export async function PATCH(
 
   return NextResponse.json(sprint);
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string; sprintId: string }> }
+) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+
+  const { sprintId } = await params;
+  const db = prisma as any;
+
+  const sprint = await db.sprint.findUnique({ where: { id: sprintId } });
+  if (!sprint) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  if (sprint.state !== "planned") {
+    return NextResponse.json({ error: "Only planned sprints can be deleted" }, { status: 400 });
+  }
+
+  // Unassign any backlog items from this sprint before deleting
+  await db.backlogItem.updateMany({
+    where: { sprintId },
+    data: { sprintId: null },
+  });
+
+  await db.sprint.delete({ where: { id: sprintId } });
+  return NextResponse.json({ deleted: true });
+}

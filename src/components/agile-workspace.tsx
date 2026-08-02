@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, ChevronRight, ChevronDown, Flame, Target, Zap } from "lucide-react";
+import { Loader2, Plus, ChevronRight, ChevronDown, Flame, Target, Zap, Trash2 } from "lucide-react";
 import { CeremoniesPanel } from "@/components/agile-ceremonies";
 import { ImpedimentsPanel } from "@/components/agile-impediments";
 import { ReleasesPanel } from "@/components/agile-releases";
@@ -69,6 +69,7 @@ function PointsBadge({ points }: { points?: number }) {
 function SprintCard({ sprint, projectId, onRefresh }: { sprint: Sprint; projectId: string; onRefresh: () => void }) {
   const [expanded, setExpanded] = useState(sprint.state === "active");
   const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const items = sprint.backlogItems ?? [];
   const accepted = items.filter(i => i.state === "accepted").length;
@@ -90,6 +91,20 @@ function SprintCard({ sprint, projectId, onRefresh }: { sprint: Sprint; projectI
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setUpdating(false);
+    }
+  }
+
+  async function deleteSprint() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/sprints/${sprint.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).error);
+      toast({ title: "Sprint deleted" });
+      onRefresh();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -184,6 +199,20 @@ function SprintCard({ sprint, projectId, onRefresh }: { sprint: Sprint; projectI
               }}
             >
               {updating ? <Loader2 size={11} className="animate-spin" /> : "Close Sprint"}
+            </button>
+          )}
+          {sprint.state === "planned" && (
+            <button
+              onClick={deleteSprint}
+              disabled={deleting}
+              title="Delete this planned sprint"
+              style={{
+                fontSize: 11, color: "#c0392b", background: "#fde8e8",
+                border: "1px solid #f5c6cb", borderRadius: 7, padding: "4px 8px",
+                cursor: "pointer", display: "flex", alignItems: "center",
+              }}
+            >
+              {deleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
             </button>
           )}
         </div>
@@ -499,17 +528,29 @@ function VelocitySummary({ sprints }: { sprints: Sprint[] }) {
 
 // ── Cadence generator ────────────────────────────────────────────────────────
 
-function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated: () => void }) {
+function CadenceGenerator({ project, sprints, onGenerated }: { project: any; sprints: Sprint[]; onGenerated: () => void }) {
   const [open, setOpen] = useState(false);
   const [weeks, setWeeks] = useState("2");
-  const [startDate, setStartDate] = useState(
-    project.startDate ? new Date(project.startDate).toISOString().slice(0, 10) : ""
-  );
-  const [endDate, setEndDate] = useState(
-    project.endDate ? new Date(project.endDate).toISOString().slice(0, 10) : ""
-  );
   const [capacity, setCapacity] = useState("");
   const [generating, setGenerating] = useState(false);
+
+  // If sprints exist, extend from the day after the last sprint ends
+  const lastSprint = sprints.length > 0
+    ? sprints.reduce((a, b) => new Date(a.endDate) > new Date(b.endDate) ? a : b)
+    : null;
+  const projectEnd = project.endDate ? new Date(project.endDate).toISOString().slice(0, 10) : "";
+  const derivedStart = lastSprint
+    ? (() => { const d = new Date(lastSprint.endDate); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })()
+    : (project.startDate ? new Date(project.startDate).toISOString().slice(0, 10) : "");
+
+  // Disable if all project duration is already covered by sprints
+  const allCovered = lastSprint && projectEnd && derivedStart >= projectEnd;
+
+  const [startDate, setStartDate] = useState(derivedStart);
+  const [endDate, setEndDate] = useState(projectEnd);
+
+  // Sync derived start when sprints change
+  const effectiveStart = lastSprint ? derivedStart : startDate;
 
   async function generate(e?: React.FormEvent | React.MouseEvent) {
     e?.preventDefault();
@@ -520,13 +561,13 @@ function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sprintLengthWeeks: parseInt(weeks),
-          startDate, endDate,
+          startDate: effectiveStart, endDate,
           plannedCapacityPointsPerSprint: capacity ? parseFloat(capacity) : undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      toast({ title: `${data.created} sprints generated from project dates` });
+      toast({ title: `${data.created} sprint(s) added` });
       setOpen(false);
       onGenerated();
     } catch (e: any) {
@@ -535,6 +576,16 @@ function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated:
       setGenerating(false);
     }
   }
+
+  if (allCovered) return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
+      color: C.text3, background: C.surface2, border: `1px solid ${C.border}`,
+      borderRadius: 8, padding: "6px 12px", marginBottom: 10, cursor: "default",
+    }}>
+      <Zap size={13} />All sprints generated — project duration fully covered
+    </div>
+  );
 
   if (!open) return (
     <button
@@ -545,7 +596,7 @@ function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated:
         borderRadius: 8, padding: "6px 12px", cursor: "pointer", marginBottom: 10,
       }}
     >
-      <Zap size={13} />Auto-Generate Sprints from Project Dates
+      <Zap size={13} />{lastSprint ? "Add Sprints for Remaining Duration" : "Auto-Generate Sprints from Project Dates"}
     </button>
   );
 
@@ -558,6 +609,11 @@ function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated:
         Auto-Generate Sprint Cadence
       </div>
       <form onSubmit={generate} className="space-y-3">
+        {lastSprint && (
+          <p style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>
+            Extending from {effectiveStart} (day after last sprint ends) to project end.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label className="text-xs">Sprint Length (weeks)</Label>
@@ -575,10 +631,12 @@ function CadenceGenerator({ project, onGenerated }: { project: any; onGenerated:
             <Label className="text-xs">Default Capacity (pts/sprint)</Label>
             <Input type="number" value={capacity} onChange={e => setCapacity(e.target.value)} placeholder="40" className="mt-1 h-8 text-xs" />
           </div>
-          <div>
-            <Label className="text-xs">Start Date *</Label>
-            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required className="mt-1 h-8 text-xs" />
-          </div>
+          {!lastSprint && (
+            <div>
+              <Label className="text-xs">Start Date *</Label>
+              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required className="mt-1 h-8 text-xs" />
+            </div>
+          )}
           <div>
             <Label className="text-xs">End Date *</Label>
             <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} required className="mt-1 h-8 text-xs" />
@@ -702,7 +760,7 @@ export function SprintsTab({ project }: { project: any }) {
           </div>
 
           <VelocitySummary sprints={sprints} />
-          <CadenceGenerator project={project} onGenerated={load} />
+          <CadenceGenerator project={project} sprints={sprints} onGenerated={load} />
           <CreateSprintForm projectId={project.id} project={project} onCreated={load} />
 
           {loading && (
