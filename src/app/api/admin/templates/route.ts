@@ -6,7 +6,7 @@ import { z } from "zod";
 
 const createSchema = z.object({
   name:           z.string().min(1, "Name is required"),
-  description:    z.string().optional(),
+  description:    z.string().optional().nullable(),
   artifactType:   z.string().min(1, "Artifact type is required"),
   scope:          z.enum(["global", "account"]).default("global"),
   accountId:      z.string().optional().nullable(),
@@ -46,7 +46,12 @@ export async function POST(req: NextRequest) {
   if (error) return error;
 
   const body = await req.json();
-  const data = createSchema.parse(body);
+  let data: z.infer<typeof createSchema>;
+  try {
+    data = createSchema.parse(body);
+  } catch (err: any) {
+    return NextResponse.json({ error: err.errors?.[0]?.message ?? "Invalid request" }, { status: 400 });
+  }
 
   if (data.scope === "account" && !data.accountId) {
     return NextResponse.json({ error: "accountId is required when scope is account" }, { status: 400 });
