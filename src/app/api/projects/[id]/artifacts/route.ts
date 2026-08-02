@@ -13,11 +13,7 @@ async function resolveTemplate(
   accountId: string | null | undefined,
   artifactType: string
 ): Promise<ArtifactTemplateOverride | undefined> {
-  if (!orgId) {
-    console.log(`[resolveTemplate] SKIP — orgId is empty`);
-    return undefined;
-  }
-  console.log(`[resolveTemplate] orgId=${orgId} accountId=${accountId ?? "null"} type=${artifactType}`);
+  if (!orgId) return undefined;
   const db = prisma as any;
   const candidates = await db.artifactTemplate.findMany({
     where: {
@@ -34,7 +30,6 @@ async function resolveTemplate(
     },
     orderBy: [{ scope: "desc" }, { artifactType: "desc" }],
   });
-  console.log(`[resolveTemplate] found ${candidates.length} candidate(s):`, candidates.map((c: any) => ({ id: c.id, scope: c.scope, accountId: c.accountId, artifactType: c.artifactType })));
   if (candidates.length === 0) return undefined;
   const pick = candidates.find((t: any) => t.scope === "account" && t.artifactType === artifactType)
     ?? candidates.find((t: any) => t.scope === "account" && t.artifactType === "all")
