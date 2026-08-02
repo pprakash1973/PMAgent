@@ -624,6 +624,292 @@ async function main() {
       )
     `, "accuracy_reports table");
 
+    // ── Agile Scrum: extend existing tables ──────────────────────────────────────
+
+    await run(pool, `
+      ALTER TABLE "Project"
+        ADD COLUMN IF NOT EXISTS "deliveryMethod"        TEXT NOT NULL DEFAULT 'predictive',
+        ADD COLUMN IF NOT EXISTS "commercialModel"       TEXT NOT NULL DEFAULT 'fixed_price',
+        ADD COLUMN IF NOT EXISTS "stage"                 TEXT,
+        ADD COLUMN IF NOT EXISTS "readinessGatePassedAt" TIMESTAMP(3),
+        ADD COLUMN IF NOT EXISTS "activeContractId"      TEXT
+    `, "Project agile columns");
+
+    await run(pool, `
+      ALTER TABLE "Program"
+        ADD COLUMN IF NOT EXISTS "defaultDeliveryMethod"  TEXT,
+        ADD COLUMN IF NOT EXISTS "defaultCommercialModel"  TEXT,
+        ADD COLUMN IF NOT EXISTS "defaultRateCardId"       TEXT,
+        ADD COLUMN IF NOT EXISTS "pmMarginVisibility"      BOOLEAN NOT NULL DEFAULT true
+    `, "Program agile columns");
+
+    await run(pool, `
+      ALTER TABLE "Sprint"
+        ADD COLUMN IF NOT EXISTS "label"                 TEXT,
+        ADD COLUMN IF NOT EXISTS "releaseId"             TEXT,
+        ADD COLUMN IF NOT EXISTS "cadenceConfigId"       TEXT,
+        ADD COLUMN IF NOT EXISTS "plannedCapacityPoints" FLOAT,
+        ADD COLUMN IF NOT EXISTS "committedPoints"       FLOAT,
+        ADD COLUMN IF NOT EXISTS "acceptedPoints"        FLOAT,
+        ADD COLUMN IF NOT EXISTS "carriedPoints"         FLOAT,
+        ADD COLUMN IF NOT EXISTS "availableDays"         INT,
+        ADD COLUMN IF NOT EXISTS "focusFactor"           FLOAT,
+        ADD COLUMN IF NOT EXISTS "state"                 TEXT NOT NULL DEFAULT 'planned',
+        ADD COLUMN IF NOT EXISTS "goalMet"               TEXT,
+        ADD COLUMN IF NOT EXISTS "closedAt"              TIMESTAMP(3),
+        ADD COLUMN IF NOT EXISTS "closedBy"              TEXT,
+        ADD COLUMN IF NOT EXISTS "createdAt"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS "updatedAt"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    `, "Sprint agile columns");
+
+    await run(pool, `
+      ALTER TABLE "BacklogItem"
+        ADD COLUMN IF NOT EXISTS "projectId"          TEXT REFERENCES "Project"("id") ON DELETE CASCADE,
+        ADD COLUMN IF NOT EXISTS "parentId"           TEXT,
+        ADD COLUMN IF NOT EXISTS "level"              TEXT NOT NULL DEFAULT 'story',
+        ADD COLUMN IF NOT EXISTS "itemType"           TEXT NOT NULL DEFAULT 'story',
+        ADD COLUMN IF NOT EXISTS "externalRef"        TEXT,
+        ADD COLUMN IF NOT EXISTS "externalUrl"        TEXT,
+        ADD COLUMN IF NOT EXISTS "description"        TEXT,
+        ADD COLUMN IF NOT EXISTS "acceptanceCriteria" TEXT,
+        ADD COLUMN IF NOT EXISTS "points"             FLOAT,
+        ADD COLUMN IF NOT EXISTS "baselinePoints"     FLOAT,
+        ADD COLUMN IF NOT EXISTS "inContractedBaseline" BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS "changeRequestId"    TEXT,
+        ADD COLUMN IF NOT EXISTS "disposition"        TEXT NOT NULL DEFAULT 'in_scope',
+        ADD COLUMN IF NOT EXISTS "priorityRank"       INT,
+        ADD COLUMN IF NOT EXISTS "state"              TEXT NOT NULL DEFAULT 'todo',
+        ADD COLUMN IF NOT EXISTS "acceptedAt"         TIMESTAMP(3),
+        ADD COLUMN IF NOT EXISTS "acceptedBy"         TEXT,
+        ADD COLUMN IF NOT EXISTS "dorPassed"          BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS "dodPassed"          BOOLEAN NOT NULL DEFAULT false,
+        ADD COLUMN IF NOT EXISTS "wbsWorkPackageId"   TEXT,
+        ADD COLUMN IF NOT EXISTS "sourceProvenance"   TEXT,
+        ADD COLUMN IF NOT EXISTS "createdAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS "updatedAt"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    `, "BacklogItem agile columns");
+
+    // ── Agile Scrum: new tables (FK order) ───────────────────────────────────────
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "RateCard" (
+        "id"          TEXT        NOT NULL PRIMARY KEY,
+        "orgId"       TEXT        NOT NULL,
+        "name"        TEXT        NOT NULL,
+        "currency"    TEXT        NOT NULL DEFAULT 'USD',
+        "effectiveDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "status"      TEXT        NOT NULL DEFAULT 'active',
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `, "RateCard table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "RateCardLine" (
+        "id"         TEXT    NOT NULL PRIMARY KEY,
+        "rateCardId" TEXT    NOT NULL REFERENCES "RateCard"("id") ON DELETE CASCADE,
+        "role"       TEXT    NOT NULL,
+        "ratePerHour" FLOAT NOT NULL,
+        "currency"   TEXT    NOT NULL DEFAULT 'USD',
+        "effectiveDate" TIMESTAMP(3),
+        "endDate"    TIMESTAMP(3)
+      )
+    `, "RateCardLine table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "Contract" (
+        "id"              TEXT        NOT NULL PRIMARY KEY,
+        "projectId"       TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "contractRef"     TEXT        NOT NULL,
+        "title"           TEXT        NOT NULL,
+        "commercialModel" TEXT        NOT NULL DEFAULT 'fixed_price',
+        "currency"        TEXT        NOT NULL DEFAULT 'USD',
+        "contractValue"   FLOAT,
+        "ceilingValue"    FLOAT,
+        "rateCardId"      TEXT        REFERENCES "RateCard"("id"),
+        "status"          TEXT        NOT NULL DEFAULT 'active',
+        "signedAt"        TIMESTAMP(3),
+        "startDate"       TIMESTAMP(3),
+        "endDate"         TIMESTAMP(3),
+        "notes"           TEXT,
+        "createdAt"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "Contract_projectId_idx" ON "Contract"("projectId")
+    `, "Contract table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "CadenceConfig" (
+        "id"                TEXT        NOT NULL PRIMARY KEY,
+        "projectId"         TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintLengthWeeks" INT         NOT NULL DEFAULT 2,
+        "cadenceStart"      TIMESTAMP(3),
+        "holidays"          JSONB       NOT NULL DEFAULT '[]',
+        "defaultCapacity"   FLOAT,
+        "notes"             TEXT,
+        "createdAt"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `, "CadenceConfig table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "Release" (
+        "id"           TEXT        NOT NULL PRIMARY KEY,
+        "projectId"    TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "name"         TEXT        NOT NULL,
+        "targetDate"   TIMESTAMP(3),
+        "releasedAt"   TIMESTAMP(3),
+        "status"       TEXT        NOT NULL DEFAULT 'planned',
+        "notes"        TEXT,
+        "createdAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "Release_projectId_idx" ON "Release"("projectId")
+    `, "Release table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "BacklogItemHistory" (
+        "id"            TEXT        NOT NULL PRIMARY KEY,
+        "backlogItemId" TEXT        NOT NULL REFERENCES "BacklogItem"("id") ON DELETE CASCADE,
+        "field"         TEXT        NOT NULL,
+        "oldValue"      TEXT,
+        "newValue"      TEXT,
+        "changeClass"   TEXT        NOT NULL DEFAULT 'update',
+        "changedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "changedBy"     TEXT        NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS "BacklogItemHistory_backlogItemId_idx"
+        ON "BacklogItemHistory" ("backlogItemId")
+    `, "BacklogItemHistory table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "ProjectRoleAssignment" (
+        "id"          TEXT        NOT NULL PRIMARY KEY,
+        "projectId"   TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "userId"      TEXT        NOT NULL REFERENCES "User"("id"),
+        "role"        TEXT        NOT NULL,
+        "allocationPct" FLOAT     NOT NULL DEFAULT 100,
+        "startDate"   TIMESTAMP(3),
+        "endDate"     TIMESTAMP(3),
+        "rateCardId"  TEXT        REFERENCES "RateCard"("id"),
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("projectId","userId","role")
+      );
+      CREATE INDEX IF NOT EXISTS "ProjectRoleAssignment_projectId_idx"
+        ON "ProjectRoleAssignment" ("projectId")
+    `, "ProjectRoleAssignment table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "CostLedger" (
+        "id"              TEXT        NOT NULL PRIMARY KEY,
+        "projectId"       TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"        TEXT        REFERENCES "Sprint"("id"),
+        "entryType"       TEXT        NOT NULL,
+        "amount"          FLOAT       NOT NULL,
+        "currency"        TEXT        NOT NULL DEFAULT 'USD',
+        "description"     TEXT,
+        "confirmedBy"     TEXT        NOT NULL,
+        "confirmedAt"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "pmConfirmed"     BOOLEAN     NOT NULL DEFAULT false,
+        "createdAt"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "CostLedger_projectId_idx" ON "CostLedger"("projectId");
+      CREATE INDEX IF NOT EXISTS "CostLedger_sprintId_idx" ON "CostLedger"("sprintId")
+    `, "CostLedger table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "Ceremony" (
+        "id"          TEXT        NOT NULL PRIMARY KEY,
+        "projectId"   TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"    TEXT        REFERENCES "Sprint"("id"),
+        "type"        TEXT        NOT NULL,
+        "scheduledAt" TIMESTAMP(3),
+        "heldAt"      TIMESTAMP(3),
+        "durationMin" INT,
+        "notes"       TEXT,
+        "facilitator" TEXT,
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "Ceremony_projectId_idx" ON "Ceremony"("projectId");
+      CREATE INDEX IF NOT EXISTS "Ceremony_sprintId_idx" ON "Ceremony"("sprintId")
+    `, "Ceremony table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "RetrospectiveAction" (
+        "id"          TEXT        NOT NULL PRIMARY KEY,
+        "projectId"   TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"    TEXT        REFERENCES "Sprint"("id"),
+        "category"    TEXT        NOT NULL DEFAULT 'improvement',
+        "description" TEXT        NOT NULL,
+        "owner"       TEXT,
+        "status"      TEXT        NOT NULL DEFAULT 'open',
+        "dueDate"     TIMESTAMP(3),
+        "closedAt"    TIMESTAMP(3),
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "RetrospectiveAction_projectId_idx"
+        ON "RetrospectiveAction" ("projectId")
+    `, "RetrospectiveAction table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "Impediment" (
+        "id"          TEXT        NOT NULL PRIMARY KEY,
+        "projectId"   TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"    TEXT        REFERENCES "Sprint"("id"),
+        "title"       TEXT        NOT NULL,
+        "description" TEXT,
+        "severity"    TEXT        NOT NULL DEFAULT 'medium',
+        "status"      TEXT        NOT NULL DEFAULT 'open',
+        "raisedBy"    TEXT        NOT NULL,
+        "resolvedAt"  TIMESTAMP(3),
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "Impediment_projectId_idx" ON "Impediment"("projectId")
+    `, "Impediment table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "AgileMetricSnapshot" (
+        "id"                  TEXT        NOT NULL PRIMARY KEY,
+        "projectId"           TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"            TEXT        REFERENCES "Sprint"("id"),
+        "snapshotDate"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "velocity"            FLOAT,
+        "plannedPoints"       FLOAT,
+        "acceptedPoints"      FLOAT,
+        "commitmentReliability" FLOAT,
+        "burndownRemaining"   FLOAT,
+        "burnupAccepted"      FLOAT,
+        "cycleTimeMedian"     FLOAT,
+        "cpiEvm"              FLOAT,
+        "spiEvm"              FLOAT,
+        "computedBy"          TEXT,
+        "createdAt"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "AgileMetricSnapshot_projectId_idx"
+        ON "AgileMetricSnapshot" ("projectId");
+      CREATE INDEX IF NOT EXISTS "AgileMetricSnapshot_sprintId_idx"
+        ON "AgileMetricSnapshot" ("sprintId")
+    `, "AgileMetricSnapshot table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS "CommercialSnapshot" (
+        "id"               TEXT        NOT NULL PRIMARY KEY,
+        "projectId"        TEXT        NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "sprintId"         TEXT        REFERENCES "Sprint"("id"),
+        "snapshotDate"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "actualToDate"     FLOAT,
+        "eacForecast"      FLOAT,
+        "ceilingRemaining" FLOAT,
+        "burnRate"         FLOAT,
+        "runwayWeeks"      FLOAT,
+        "marginAtCompletion" FLOAT,
+        "primaryMetric"    TEXT,
+        "primaryValue"     FLOAT,
+        "confirmedBy"      TEXT,
+        "createdAt"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "CommercialSnapshot_projectId_idx"
+        ON "CommercialSnapshot" ("projectId")
+    `, "CommercialSnapshot table");
+
     // ── 3. Seed data ─────────────────────────────────────────────────────────────
 
     const orgId = "seed-org-1";

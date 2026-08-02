@@ -66,6 +66,8 @@ const emptyForm = {
   pmOwnerId: "",
   projectType: "fixed_bid",
   methodology: "milestone_based",
+  commercialModel: "fixed_price",
+  sprintLengthWeeks: "2",
   engagementMode: "detailed",
   industry: "",
   budget: "",
@@ -264,10 +266,14 @@ export default function NewProjectPage() {
         ...(form.pmOwnerId ? { pmOwnerId: form.pmOwnerId } : {}),
       };
     } else {
-      const { accountId, programId, pmOwnerId, clusterId, ...rest } = form;
+      const { accountId, programId, pmOwnerId, clusterId, sprintLengthWeeks, ...rest } = form;
+      const isAgile = form.methodology === "agile_scrum";
       payload = {
         ...rest, engagementMode: "detailed",
         budget: form.budget ? parseFloat(form.budget) : undefined,
+        deliveryMethod: isAgile ? "agile_scrum" : "predictive",
+        commercialModel: isAgile ? form.commercialModel : (form.projectType === "time_and_material" ? "time_and_materials" : "fixed_price"),
+        ...(isAgile && sprintLengthWeeks ? { sprintLengthWeeks: parseInt(sprintLengthWeeks) } : {}),
         ...(clusterId ? { clusterId } : {}),
         ...(accountId ? { accountId } : {}),
         ...(programId ? { programId } : {}),
@@ -660,6 +666,8 @@ export default function NewProjectPage() {
 }
 
 function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; update: (f: string, v: string) => void; role?: string }) {
+  const isAgile = form.methodology === "agile_scrum";
+
   return (
     <>
       <Card>
@@ -690,16 +698,65 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Billing Type</Label>
-            <Select value={form.projectType} onValueChange={(v) => update("projectType", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fixed_bid">Fixed Bid</SelectItem>
-                <SelectItem value="time_and_material">Time and Material</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+
+          {/* Billing type — predictive only */}
+          {!isAgile && (
+            <div className="space-y-2">
+              <Label>Billing Type</Label>
+              <Select value={form.projectType} onValueChange={(v) => update("projectType", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed_bid">Fixed Bid</SelectItem>
+                  <SelectItem value="time_and_material">Time and Material</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Agile-specific configuration */}
+          {isAgile && (
+            <>
+              <div className="col-span-2 rounded-lg border border-[#cfd4f5] bg-[#f5f6fd] px-4 py-3 mt-1">
+                <p className="text-xs font-semibold text-[#4f5bd5] mb-3 uppercase tracking-wide">Agile Scrum Configuration</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Commercial Model</Label>
+                    <Select value={form.commercialModel} onValueChange={(v) => update("commercialModel", v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="fixed_price">Fixed Price</SelectItem>
+                        <SelectItem value="time_and_materials">Time &amp; Materials</SelectItem>
+                        <SelectItem value="capped_tm">Capped T&amp;M</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sprint Length (weeks)</Label>
+                    <Select value={form.sprintLengthWeeks} onValueChange={(v) => update("sprintLengthWeeks", v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 week</SelectItem>
+                        <SelectItem value="2">2 weeks</SelectItem>
+                        <SelectItem value="3">3 weeks</SelectItem>
+                        <SelectItem value="4">4 weeks</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="mt-2">
+                  {form.commercialModel === "fixed_price" && (
+                    <p className="text-xs text-slate-500">Fixed Price: point-based EVM active. Baseline required before Sprint 1.</p>
+                  )}
+                  {form.commercialModel === "time_and_materials" && (
+                    <p className="text-xs text-slate-500">T&amp;M: velocity and burn metrics tracked. No scope baseline required.</p>
+                  )}
+                  {form.commercialModel === "capped_tm" && (
+                    <p className="text-xs text-slate-500">Capped T&amp;M: ceiling gate enforced. EVM and burn metrics both active.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
