@@ -50,6 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.startDate !== undefined && { startDate: body.startDate ? new Date(body.startDate) : null }),
       ...(body.endDate !== undefined && { endDate: body.endDate ? new Date(body.endDate) : null }),
       ...(body.budget !== undefined && { budget: body.budget }),
+      ...(body.accountId !== undefined && { accountId: body.accountId || null }),
     },
   });
 

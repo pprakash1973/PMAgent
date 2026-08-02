@@ -3396,6 +3396,35 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
+  // Account linker — lets PM fix accountId on existing projects
+  const [projectAccount, setProjectAccount] = useState<{ id: string; name: string; code: string } | null>(project.account ?? null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [accountList, setAccountList] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [linkingAccount, setLinkingAccount] = useState(false);
+
+  useEffect(() => {
+    if (accountMenuOpen && accountList.length === 0) {
+      fetch("/api/accounts").then(r => r.json()).then(d => {
+        if (Array.isArray(d)) setAccountList(d.map((a: any) => ({ id: a.id, name: a.name, code: a.code })));
+      }).catch(() => {});
+    }
+  }, [accountMenuOpen, accountList.length]);
+
+  async function linkAccount(acct: { id: string; name: string; code: string }) {
+    setLinkingAccount(true);
+    setAccountMenuOpen(false);
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: acct.id }),
+      });
+      if (res.ok) setProjectAccount(acct);
+    } finally {
+      setLinkingAccount(false);
+    }
+  }
+
   const { setTabContext } = useCopilot();
   useEffect(() => {
     setTabContext({
@@ -3494,9 +3523,60 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
               {project.engagementMode === "high_level" ? "Governance Mode" : "Detailed Mode"}
             </span>
           </div>
-          <span className="mono" style={{ fontSize: 12, color: C.text3 }}>
-            {project.code} · {project.customer || "Internal"} · {project.methodology}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
+            <span className="mono" style={{ fontSize: 12, color: C.text3 }}>
+              {project.code} · {project.customer || "Internal"} · {project.methodology}
+            </span>
+            {/* Account linker */}
+            <span style={{ position: "relative" }}>
+              <button
+                onClick={() => setAccountMenuOpen(o => !o)}
+                disabled={linkingAccount}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  padding: "2px 8px", borderRadius: 99, border: "1px solid",
+                  ...(projectAccount
+                    ? { background: "rgba(0,110,116,.08)", color: C.primary, borderColor: "rgba(0,110,116,.25)" }
+                    : { background: "#fef3c7", color: "#92400e", borderColor: "#f59e0b" }),
+                }}
+              >
+                {linkingAccount ? "Linking…" : projectAccount ? `⚡ ${projectAccount.code}` : "⚠ No client account"}
+              </button>
+              {accountMenuOpen && (
+                <>
+                  <div onClick={() => setAccountMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41,
+                    background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
+                    boxShadow: "0 8px 24px rgba(0,0,0,.13)", padding: 6, minWidth: 220, maxHeight: 260, overflowY: "auto" as const,
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", padding: "4px 8px 6px" }}>
+                      Link client account
+                    </div>
+                    {accountList.length === 0 && <div style={{ fontSize: 12, color: C.text3, padding: "6px 10px" }}>Loading…</div>}
+                    {accountList.map(a => (
+                      <button
+                        key={a.id}
+                        onClick={() => linkAccount(a)}
+                        style={{
+                          display: "block", width: "100%", textAlign: "left", padding: "7px 10px",
+                          border: "none", borderRadius: 7, cursor: "pointer", fontSize: 13,
+                          background: projectAccount?.id === a.id ? C.primaryLight : "transparent",
+                          color: projectAccount?.id === a.id ? C.primary : C.text,
+                          fontWeight: projectAccount?.id === a.id ? 600 : 400,
+                        }}
+                        onMouseEnter={e => { if (projectAccount?.id !== a.id) e.currentTarget.style.background = C.surface2; }}
+                        onMouseLeave={e => { if (projectAccount?.id !== a.id) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{a.code}</span> — {a.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </span>
+          </div>
         </div>
       </div>
 

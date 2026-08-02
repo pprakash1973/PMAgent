@@ -11,7 +11,8 @@ const createSchema = z.object({
   code: z.string().min(1).optional(),
   naturalLanguage: z.string().optional(),
   customer: z.string().optional(),
-  clientId: z.string().optional(),
+  accountId: z.string().optional(),   // UI sends "accountId"
+  clientId: z.string().optional(),    // legacy alias — keep for compat
   programId: z.string().optional(),
   pmOwnerId: z.string().optional(),
   projectType: z.string().default("fixed_price"),
@@ -118,7 +119,7 @@ export async function POST(req: NextRequest) {
 
     // PM: auto-resolve programId from their single assignment
     let resolvedProgramId = data.programId;
-    let resolvedClientId = data.clientId;
+    let resolvedClientId = data.accountId ?? data.clientId;
     if (user.role === "pm" && !resolvedProgramId) {
       const assignment = await prisma.programAssignment.findFirst({
         where: { userId: user.id },
