@@ -3238,6 +3238,20 @@ const TAB_META: Record<string, { icon: React.ReactNode }> = {
   "Baseline":         { icon: <GitCompare size={14} /> },
 };
 
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  draft:     { label: "Draft",     color: "#5b616e", bg: "#f1f3f5", border: "#d3d7de" },
+  active:    { label: "Active",    color: "#158a5a", bg: "#e3f3ea", border: "#a3d9bc" },
+  closing:   { label: "Closing",   color: "#c17d12", bg: "#fbf0da", border: "#f0cc80" },
+  completed: { label: "Completed", color: "#4f5bd5", bg: "#eef0fc", border: "#cfd4f5" },
+  archived:  { label: "Archived",  color: "#8a909c", bg: "#f7f8fa", border: "#e2e5ea" },
+};
+
+const STATUS_NEXT: Record<string, string[]> = {
+  draft:   ["active"],
+  active:  ["closing", "completed"],
+  closing: ["completed"],
+};
+
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
   const TABS = isAgile ? AGILE_TABS : PREDICTIVE_TABS;
@@ -3245,6 +3259,9 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
   const [tab, setTab] = useState("Artifacts");
   const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
   const [badges, setBadges] = useState<Record<string, number>>({});
+  const [projectStatus, setProjectStatus] = useState<string>(project.status || "draft");
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const { setTabContext } = useCopilot();
   useEffect(() => {
@@ -3265,6 +3282,21 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
 
   useEffect(() => { loadBadges(); }, [loadBadges]);
 
+  const updateProjectStatus = useCallback(async (newStatus: string) => {
+    setUpdatingStatus(true);
+    setStatusMenuOpen(false);
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) setProjectStatus(newStatus);
+    } finally {
+      setUpdatingStatus(false);
+    }
+  }, [project.id]);
+
   const tabKey = tab.toLowerCase().replace(/ /g, "_");
   const panelTabKey = tab === "Scope Control" ? "scope" : tabKey;
 
@@ -3278,6 +3310,53 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <span style={{ fontSize: 16, fontWeight: 600 }}>{project.name}</span>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: ragColor(project.healthStatus), display: "inline-block" }} />
+            {/* Clickable project status badge */}
+            <div style={{ position: "relative" }}>
+              {(() => {
+                const sc = STATUS_CONFIG[projectStatus] ?? STATUS_CONFIG.draft;
+                const nextOptions = STATUS_NEXT[projectStatus] ?? [];
+                const canChange = nextOptions.length > 0 && !updatingStatus;
+                return (
+                  <>
+                    <button
+                      onClick={() => canChange && setStatusMenuOpen(o => !o)}
+                      style={{
+                        fontSize: 11, fontWeight: 600, color: sc.color,
+                        background: sc.bg, border: `1px solid ${sc.border}`,
+                        borderRadius: 999, padding: "2px 9px",
+                        cursor: canChange ? "pointer" : "default",
+                        display: "flex", alignItems: "center", gap: 4,
+                        fontFamily: "'IBM Plex Sans',sans-serif",
+                      }}
+                    >
+                      {sc.label}
+                      {canChange && <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>}
+                    </button>
+                    {statusMenuOpen && (
+                      <div style={{
+                        position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 50,
+                        background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8,
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.10)", minWidth: 140, overflow: "hidden",
+                      }}>
+                        {nextOptions.map(ns => {
+                          const nsc = STATUS_CONFIG[ns];
+                          return (
+                            <button key={ns} onClick={() => updateProjectStatus(ns)} style={{
+                              display: "block", width: "100%", textAlign: "left",
+                              padding: "9px 14px", border: "none", background: "transparent",
+                              cursor: "pointer", fontSize: 13, fontWeight: 500,
+                              color: nsc.color, fontFamily: "'IBM Plex Sans',sans-serif",
+                            }}>
+                              → Mark as {nsc.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
             <span style={{ fontSize: 11, fontWeight: 600, color: C.text2, border: `1px solid #d3d7de`, borderRadius: 999, padding: "2px 9px" }}>
               {project.engagementMode === "high_level" ? "Governance Mode" : "Detailed Mode"}
             </span>
