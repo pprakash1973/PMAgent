@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, Loader2, X, ChevronDown, ToggleLeft, ToggleRight } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Plus, Pencil, Trash2, Loader2, X, ChevronDown, ToggleLeft, ToggleRight, Upload } from "lucide-react";
 import { toast } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +71,9 @@ export default function TemplatesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState<"system" | "user" | null>(null);
+  const systemFileRef = useRef<HTMLInputElement>(null);
+  const userFileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -152,6 +155,24 @@ export default function TemplatesPage() {
       toast({ title: "Error", description: e.message, variant: "destructive" });
     } finally {
       setDeleting(null);
+    }
+  }
+
+  async function uploadAndExtract(field: "system" | "user", file: File) {
+    setExtracting(field);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/templates/extract", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Extraction failed");
+      const key = field === "system" ? "systemAddendum" : "userAddendum";
+      setForm(f => ({ ...f, [key]: (f[key] ? f[key] + "\n\n" : "") + data.text }));
+      toast({ title: "File extracted", description: `${data.chars} characters added to ${field === "system" ? "System Role" : "Content"} addendum` });
+    } catch (e: any) {
+      toast({ title: "Extraction failed", description: e.message, variant: "destructive" });
+    } finally {
+      setExtracting(null);
     }
   }
 
@@ -403,7 +424,20 @@ export default function TemplatesPage() {
 
               {/* System addendum */}
               <div style={fGroup}>
-                <label style={fLabel}>System Role Addendum</label>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <label style={{ ...fLabel, marginBottom: 0 }}>System Role Addendum</label>
+                  <button
+                    type="button"
+                    onClick={() => systemFileRef.current?.click()}
+                    disabled={extracting === "system"}
+                    style={uploadBtnStyle}
+                    title="Upload PDF, DOCX or TXT to populate this field"
+                  >
+                    {extracting === "system"
+                      ? <><Loader2 size={11} className="animate-spin" /> Extracting…</>
+                      : <><Upload size={11} /> Upload file</>}
+                  </button>
+                </div>
                 <div style={{ fontSize: 11, color: T.text3, marginBottom: 6, lineHeight: 1.5 }}>
                   Appended after the PMBOK expert role instruction. Use for client-specific methodology, terminology, governance framework, or standards (e.g. PRINCE2, ISO 21500).
                 </div>
@@ -418,7 +452,20 @@ export default function TemplatesPage() {
 
               {/* User/content addendum */}
               <div style={fGroup}>
-                <label style={fLabel}>Content Addendum</label>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <label style={{ ...fLabel, marginBottom: 0 }}>Content Addendum</label>
+                  <button
+                    type="button"
+                    onClick={() => userFileRef.current?.click()}
+                    disabled={extracting === "user"}
+                    style={uploadBtnStyle}
+                    title="Upload PDF, DOCX or TXT to populate this field"
+                  >
+                    {extracting === "user"
+                      ? <><Loader2 size={11} className="animate-spin" /> Extracting…</>
+                      : <><Upload size={11} /> Upload file</>}
+                  </button>
+                </div>
                 <div style={{ fontSize: 11, color: T.text3, marginBottom: 6, lineHeight: 1.5 }}>
                   Appended after the artifact-specific structure instructions. Use to require additional sections, specific subsections, mandatory tables, or formatting rules.
                 </div>
@@ -476,6 +523,12 @@ export default function TemplatesPage() {
                 </span>
               </div>
             </div>
+
+            {/* Hidden file inputs */}
+            <input ref={systemFileRef} type="file" accept=".pdf,.docx,.txt,.md" style={{ display: "none" }}
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) uploadAndExtract("system", f); }} />
+            <input ref={userFileRef} type="file" accept=".pdf,.docx,.txt,.md" style={{ display: "none" }}
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) uploadAndExtract("user", f); }} />
 
             {/* Form footer */}
             <div style={{
@@ -535,4 +588,10 @@ const ghostBtnStyle: React.CSSProperties = {
   fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", fontSize: 13, fontWeight: 500,
   background: "transparent", color: T2.text2, border: `1px solid ${T2.border}`,
   borderRadius: 8, padding: "9px 18px", cursor: "pointer",
+};
+const uploadBtnStyle: React.CSSProperties = {
+  fontFamily: "'IBM Plex Sans', -apple-system, sans-serif", fontSize: 11, fontWeight: 500,
+  background: "transparent", color: T2.text3, border: `1px solid ${T2.border}`,
+  borderRadius: 6, padding: "3px 9px", cursor: "pointer",
+  display: "flex", alignItems: "center", gap: 4,
 };
