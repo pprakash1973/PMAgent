@@ -12,6 +12,7 @@ import { extractAndStoreItems } from "@/lib/item-extractor";
 
 async function resolveTemplate(orgId: string, accountId: string | null | undefined, artifactType: string): Promise<ArtifactTemplateOverride | undefined> {
   const db = prisma as any;
+  console.log(`[resolveTemplate/copilot] orgId=${orgId} accountId=${accountId ?? "null"} type=${artifactType}`);
 
   // Preference order: account+type > account+"all" > global+type > global+"all"
   const candidates = await db.artifactTemplate.findMany({
@@ -31,6 +32,7 @@ async function resolveTemplate(orgId: string, accountId: string | null | undefin
     },
     orderBy: [{ scope: "desc" }, { artifactType: "desc" }], // account before global, exact before "all"
   });
+  console.log(`[resolveTemplate/copilot] found ${candidates.length} candidate(s):`, candidates.map((c: any) => ({ id: c.id, scope: c.scope, accountId: c.accountId, artifactType: c.artifactType })));
 
   if (candidates.length === 0) return undefined;
 
