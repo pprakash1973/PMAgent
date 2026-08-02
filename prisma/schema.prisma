@@ -960,20 +960,14 @@ model ProjectRoleAssignment {
 // ── Cadence & Sprint models (Phase B) ─────────────────────────────────────────
 
 model CadenceConfig {
-  id                   String   @id @default(cuid())
-  projectId            String
-  version              Int      @default(1)
-  sprintLengthDays     Int      @default(14)
-  sprintStartDow       Int      @default(1) // 1=Monday
-  sprintZeroDate       DateTime?
-  numberingScheme      String   @default("sequential") // sequential | release_scoped
-  releaseCalenceSprints Int     @default(6)
-  capacityModel        String   @default("velocity_based") // velocity_based | capacity_hours
-  defaultFocusFactor   Float    @default(0.7)
-  ceremonySchedule     Json?
-  effectiveFrom        DateTime @default(now())
-  createdBy            String?
-  createdAt            DateTime @default(now())
+  id                String    @id @default(cuid())
+  projectId         String
+  sprintLengthWeeks Int       @default(2)
+  cadenceStart      DateTime?
+  holidays          Json      @default("[]")
+  defaultCapacity   Float?
+  notes             String?
+  createdAt         DateTime  @default(now())
 
   project Project  @relation(fields: [projectId], references: [id])
   sprints Sprint[]
