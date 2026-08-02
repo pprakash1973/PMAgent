@@ -1,6 +1,10 @@
 "use client";
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
+import {
+  FileText, ShieldAlert, AlertCircle, Users, CalendarDays,
+  CircleDollarSign, Layers, BarChart2, GitCompare, Zap, Briefcase,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusQuestionnaire } from "@/components/status-questionnaire";
@@ -3220,6 +3224,20 @@ function BaselineTab({ project }: { project: any }) {
 const PREDICTIVE_TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
 const AGILE_TABS = ["Artifacts", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
 
+const TAB_META: Record<string, { icon: React.ReactNode }> = {
+  "Artifacts":        { icon: <FileText size={14} /> },
+  "Sprints":          { icon: <Zap size={14} /> },
+  "Risk":             { icon: <ShieldAlert size={14} /> },
+  "Issues":           { icon: <AlertCircle size={14} /> },
+  "Resources":        { icon: <Users size={14} /> },
+  "Schedule":         { icon: <CalendarDays size={14} /> },
+  "Cost":             { icon: <CircleDollarSign size={14} /> },
+  "Commercial":       { icon: <Briefcase size={14} /> },
+  "Scope Control":    { icon: <Layers size={14} /> },
+  "Status Reporting": { icon: <BarChart2 size={14} /> },
+  "Baseline":         { icon: <GitCompare size={14} /> },
+};
+
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
   const TABS = isAgile ? AGILE_TABS : PREDICTIVE_TABS;
@@ -3277,37 +3295,46 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
         onPhaseAdvanced={setCurrentPhase}
       />
 
-      {/* Tabs */}
-      <div style={{ display: "flex", gap: 0, borderBottom: `1.5px solid ${C.border}`, marginBottom: 20, alignItems: "flex-end" }}>
-        <div style={{ display: "flex", gap: 26, flex: 1 }}>
-          {TABS.map(t => {
-            const k = t.toLowerCase().replace(/ /g, "_") === "scope_control" ? "scope" : t.toLowerCase().replace(/ /g, "_");
-            const bc = badges[k] ?? 0;
-            return (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                style={{
-                  padding: "0 1px 13px", border: "none", background: "transparent", cursor: "pointer",
-                  fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "13.5px",
-                  fontWeight: tab === t ? 700 : 500,
-                  color: tab === t ? C.text : C.text3,
-                  borderBottom: tab === t ? `2.5px solid ${C.primary}` : "2.5px solid transparent",
-                  marginBottom: "-1.5px", transition: "color .15s",
-                  display: "flex", alignItems: "center", gap: 5,
-                }}
-              >
-                {t}
-                {bc > 0 && (
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, background: "#cf3f3a", color: "#fff",
-                    borderRadius: 99, padding: "1px 5px", lineHeight: "16px", minWidth: 16, textAlign: "center",
-                  }}>{bc}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+      {/* Tabs — segmented control */}
+      <div style={{
+        display: "flex", gap: 3, flexWrap: "wrap",
+        background: C.surface2, border: `1px solid ${C.border}`,
+        borderRadius: 10, padding: "5px 6px", marginBottom: 20,
+      }}>
+        {TABS.map(t => {
+          const k = t.toLowerCase().replace(/ /g, "_") === "scope_control" ? "scope" : t.toLowerCase().replace(/ /g, "_");
+          const bc = badges[k] ?? 0;
+          const isActive = tab === t;
+          return (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              style={{
+                padding: "6px 13px", cursor: "pointer",
+                background: isActive ? C.surface : "transparent",
+                border: isActive ? `1px solid ${C.border}` : "1px solid transparent",
+                borderRadius: 7,
+                boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.07)" : "none",
+                fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "13px",
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? C.primary : C.text3,
+                transition: "all .12s",
+                display: "flex", alignItems: "center", gap: 6,
+              }}
+            >
+              <span style={{ color: isActive ? C.primary : C.text3, display: "flex", alignItems: "center" }}>
+                {TAB_META[t]?.icon}
+              </span>
+              {t}
+              {bc > 0 && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, background: "#cf3f3a", color: "#fff",
+                  borderRadius: 99, padding: "1px 5px", lineHeight: "16px", minWidth: 16, textAlign: "center",
+                }}>{bc}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Tab content */}
