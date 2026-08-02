@@ -537,12 +537,13 @@ export function ArtifactPanel({
 }
 
 const GEN_STAGES = [
-  { key: "read",       label: "Reading project",              icon: "📂", delay: 400  },
-  { key: "guardrails", label: "Checking guardrails",           icon: "🛡️", delay: 600  },
-  { key: "templates",  label: "Checking for custom templates", icon: "📋", delay: 700  },
-  { key: "ai",         label: "Subagent working",              icon: "✨", delay: null },
-  { key: "saving",     label: "Saving",                        icon: "💾", delay: 300  },
-  { key: "done",       label: "Done",                          icon: "✓",  delay: null },
+  { key: "read",            label: "Reading project",              icon: "📂", delay: 400  },
+  { key: "guardrails",      label: "Checking guardrails",           icon: "🛡️", delay: 600  },
+  { key: "templates",       label: "Checking for custom templates", icon: "📋", delay: 700  },
+  { key: "template_result", label: "Template resolved",             icon: "📋", delay: 600  },
+  { key: "ai",              label: "Sub agent working",             icon: "✨", delay: null },
+  { key: "saving",          label: "Saving",                        icon: "💾", delay: 300  },
+  { key: "done",            label: "Done",                          icon: "✓",  delay: null },
 ];
 
 // Single-line variant of GenerationProgress, for the lifecycle-stepper card
