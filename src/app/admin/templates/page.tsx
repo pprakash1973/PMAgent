@@ -282,9 +282,14 @@ export default function TemplatesPage() {
                   <td style={{ padding: "11px 14px", verticalAlign: "top" }}>
                     <div style={{ fontWeight: 600, color: T.text, marginBottom: 2 }}>{t.name}</div>
                     {t.description && <div style={{ fontSize: 11, color: T.text3 }}>{t.description}</div>}
-                    <div style={{ fontSize: 10, color: T.text3, marginTop: 4, display: "flex", gap: 6 }}>
+                    <div style={{ fontSize: 10, color: T.text3, marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {t.systemAddendum && <span style={tagStyle}>Role addendum</span>}
                       {t.userAddendum && <span style={tagStyle}>Content addendum</span>}
+                      {!t.systemAddendum && !t.userAddendum && (
+                        <span style={{ ...tagStyle, background: "rgba(220,38,38,.08)", color: "#dc2626", border: "1px solid rgba(220,38,38,.2)" }}>
+                          ⚠ No addendum — template will not apply
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td style={{ padding: "11px 14px", verticalAlign: "middle" }}>

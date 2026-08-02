@@ -35,7 +35,8 @@ async function resolveTemplate(
     ?? candidates.find((t: any) => t.scope === "account" && t.artifactType === "all")
     ?? candidates.find((t: any) => t.scope === "global" && t.artifactType === artifactType)
     ?? candidates[0];
-  console.log(`[resolveTemplate] picked templateId=${pick.id} scope=${pick.scope}`);
+  // A template with no addendum content has zero effect — treat as no template
+  if (!pick.systemAddendum?.trim() && !pick.userAddendum?.trim()) return undefined;
   return { systemAddendum: pick.systemAddendum, userAddendum: pick.userAddendum, templateId: pick.id };
 }
 
