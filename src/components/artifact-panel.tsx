@@ -116,10 +116,14 @@ export function ArtifactPanel({
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
   const [versionRailFor, setVersionRailFor] = useState<{ id: string; type: string; currentVersion: number } | null>(null);
 
-  // Phase-lane selection state — persisted to DB via /artifacts/selections
+  // Phase-lane selection state — persisted to DB via /artifacts/selections.
+  // Only count records with selectionStatus "selected" (explicitly chosen via the modal).
+  // "active" records created by the generate/batch routes are shown via localArtifacts, not here.
   const [localSelections, setLocalSelections] = useState<Set<string>>(() => {
     const s = new Set<string>();
-    for (const sel of selections) s.add(sel.artifactType);
+    for (const sel of selections) {
+      if (sel.selectionStatus === "selected") s.add(sel.artifactType);
+    }
     for (const a of artifacts) s.add(a.artifactType);
     return s;
   });
@@ -273,7 +277,10 @@ export function ArtifactPanel({
   function openModal(groupId: string) {
     const group = PHASE_GROUPS.find((g) => g.id === groupId)!;
     const groupTypes = catalog.filter((c) => group.phases.includes(c.phase)).map((c) => c.type);
-    setModalPicks(new Set(groupTypes.filter((t) => localSelections.has(t))));
+    const currentPicks = groupTypes.filter((t) => localSelections.has(t));
+    // Edit mode (lane already has items): pre-populate current selections.
+    // Add mode (empty lane): start with nothing checked so PM consciously picks.
+    setModalPicks(new Set(currentPicks));
     setActiveModal(groupId);
   }
 
