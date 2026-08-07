@@ -781,7 +781,7 @@ export default function DhDashboardClient({
                             height: 30, padding: "0 12px", background: "#006E74", color: "#fff",
                             border: "none", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
                             cursor: "pointer", display: "flex", alignItems: "center",
-                          }}>Drill in →</button>
+                          }}>View Project Data</button>
                           <button style={{ height: 30, padding: "0 12px", background: "#fff", border: "1px solid #d3d7de", color: "#5b616e", borderRadius: 8, fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>
                             Escalate
                           </button>
