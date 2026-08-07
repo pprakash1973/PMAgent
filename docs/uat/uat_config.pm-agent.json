@@ -1,0 +1,133 @@
+{
+  "_comment": "validate_uat.py config tailored to PM Agent (commit b4a2a4c). Targets the status_summary agent, which is the highest-impact surface: its output sets project.healthStatus and propagates to the Program and Executive dashboards. Add sibling configs for the requirements and artifact agents once the capture layer exists.",
+  "_agent": "status_summary  (src/lib/ai.ts:199 generateStatusSummary)",
+
+  "required_evidence_fields": [
+    "run_id", "model", "model_version", "params", "input_id",
+    "system_prompt", "user_prompt", "output"
+  ],
+
+  "output_schema": {
+    "_comment": "Mirrors the 9 fields the prompt at ai.ts:216-231 declares. assumptions and conflicts are REQUIRED here because GR-10.3 and GR-12 demand them - the schema currently omits them, which is DEF-009. Leaving them required makes the gap visible on every run instead of invisible.",
+    "summary":           {"type": "string",  "required": true,  "nullable": false},
+    "ragStatus":         {"type": "string",  "required": true,  "nullable": false,
+                          "enum": ["green", "amber", "red"]},
+    "healthScore":       {"type": "number",  "required": true,  "nullable": false},
+    "recommendations":   {"type": "array",   "required": true,  "nullable": false},
+    "accomplishments":   {"type": "array",   "required": true,  "nullable": false},
+    "nextWeekPlan":      {"type": "array",   "required": true,  "nullable": false},
+    "metricsNarrative":  {"type": "string",  "required": true,  "nullable": false},
+    "cpi":               {"type": "number",  "required": true,  "nullable": true},
+    "spi":               {"type": "number",  "required": true,  "nullable": true},
+    "assumptions":       {"type": "array",   "required": true,  "nullable": false},
+    "conflicts":         {"type": "array",   "required": true,  "nullable": false}
+  },
+
+  "allow_unlisted_fields": false,
+
+  "grounding": {
+    "_comment": "Numbers are the yield here, not names. Every figure the narrative states must exist in the PM Q&A or the live EVM block passed into the prompt. This is the automated form of GR-3.",
+    "verbatim_string_fields": [],
+    "verbatim_number_fields": ["spi", "cpi"],
+    "normalise": true,
+    "min_source_chars": 100
+  },
+
+  "reconciliation": [],
+
+  "cross_field_rules": [
+    {
+      "_comment": "GR-11 HONEST STATUS, mechanised. This is the single most valuable rule in the file - it is the check that DEF-002 says the application is missing. Requires the capture layer to copy liveEVM.spi into output._observed_spi, or run it against the DB-persisted StatusReport row.",
+      "name": "GR11_no_greenwash_on_spi",
+      "if_field": "ragStatus",
+      "equals": "green",
+      "then_fields_must_be_null": [],
+      "then_numeric_must_satisfy": {"field": "spi", "min": 0.85},
+      "severity": "Critical"
+    },
+    {
+      "name": "GR11_no_greenwash_on_cpi",
+      "if_field": "ragStatus",
+      "equals": "green",
+      "then_numeric_must_satisfy": {"field": "cpi", "min": 0.9},
+      "severity": "Critical"
+    },
+    {
+      "_comment": "DEF-004: cpi is not derivable from narrative PM answers. Until it is computed in code, any non-null cpi is a fabricated financial index. Flip this rule off once cpi is passed in as read-only context.",
+      "name": "DEF004_cpi_must_be_null_until_computed_in_code",
+      "if_field": "cpi",
+      "not_equals": null,
+      "severity": "Critical",
+      "note": "CPI = EV/AC. A model cannot derive it from free text."
+    },
+    {
+      "_comment": "GR-3: where data is absent the model must mark it, not invent it. A narrative that asserts budget performance while cpi is null is asserting a fact it declared it lacks.",
+      "name": "GR3_no_budget_assertion_when_cpi_null",
+      "if_field": "cpi",
+      "equals": null,
+      "then_text_field_must_not_match": {
+        "field": "metricsNarrative",
+        "patterns": ["under budget", "over budget", "on budget",
+                     "cost performance is", "CPI of", "budget is (healthy|strong|good)"]
+      },
+      "severity": "Critical"
+    },
+    {
+      "name": "GR3_no_schedule_assertion_when_spi_null",
+      "if_field": "spi",
+      "equals": null,
+      "then_text_field_must_not_match": {
+        "field": "metricsNarrative",
+        "patterns": ["on schedule", "ahead of schedule", "behind schedule", "SPI of"]
+      },
+      "severity": "Critical"
+    }
+  ],
+
+  "numeric_ranges": {
+    "healthScore": {"min": 0, "max": 100},
+    "spi": {"min": 0, "max": 3},
+    "cpi": {"min": 0, "max": 3}
+  },
+
+  "date_fields": {},
+
+  "placeholder_patterns": [
+    "\\bTBD\\b",
+    "\\bTODO\\b",
+    "\\bXXX+\\b",
+    "\\[insert[^\\]]*\\]",
+    "lorem ipsum",
+    "\\bplaceholder\\b",
+    "\\bFIXME\\b",
+    "as an AI language model",
+    "I don't have access to",
+    "\\bAcme (Corp|Inc|Ltd)\\b",
+    "\\bJohn Doe\\b",
+    "\\bexample\\.com\\b"
+  ],
+  "_placeholder_note": "GR-3 legitimately instructs the model to emit [ASSUMPTION: ...] and <TBD - confirm with sponsor>. Those are compliant, not defects. The bare \\bTBD\\b pattern above will flag them - keep it, and disposition each hit: a marked assumption is a PASS, an unmarked TBD is a defect. If the noise becomes unmanageable, replace the TBD pattern with (?<!<)\\bTBD\\b(?! . confirm).",
+
+  "hedging_patterns": {
+    "_comment": "Hedging in metricsNarrative usually marks an inference over data the PM never supplied. Route each hit to manual claim review rather than accepting it.",
+    "patterns": [
+      "\\blikely\\b", "\\bpresumably\\b", "\\bit appears that\\b",
+      "\\btypically\\b", "\\bgenerally\\b", "\\bshould be\\b",
+      "\\bis probably\\b", "\\bwe can assume\\b", "\\bin most cases\\b",
+      "\\bappears to be on track\\b", "\\bbroadly\\b"
+    ],
+    "apply_to_fields": ["metricsNarrative", "summary"],
+    "severity": "Major"
+  },
+
+  "stability": {
+    "_comment": "These five fields drive executive decisions. All must be byte-identical across repeated runs of the same input. Meaningless until temperature is pinned to 0 (DEF-001).",
+    "compare_fields": ["ragStatus", "healthScore", "spi", "cpi", "metricsNarrative"],
+    "min_runs": 5,
+    "pass_threshold": 1.0
+  },
+
+  "severity_gate": {
+    "fail_on": ["Critical"]
+  }
+}
