@@ -296,11 +296,12 @@ function Stat({ label, value, color }: { label: string; value: string; color: st
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem }: {
+export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem, hideActionItem = false }: {
   projectId: string;
   onClose: () => void;
   initialTab: Tab;
   openActionItem: () => void;
+  hideActionItem?: boolean;
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -391,7 +392,7 @@ export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 4, padding: "10px 16px", borderBottom: `1px solid ${UST_BORDER}` }}>
           {tabBtn("review", "Project Review")}
-          {tabBtn("action-item", "Create Action Item")}
+          {!hideActionItem && tabBtn("action-item", "Create Action Item")}
         </div>
 
         {/* Body */}

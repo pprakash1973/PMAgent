@@ -424,6 +424,7 @@ export default function DhDashboardClient({
   }, [filtered]);
 
   const atRisk = filtered.filter(p => p.rag !== "green");
+  const otherProjects = filtered.filter(p => p.rag === "green");
 
   // clusters from unfiltered (for cluster tab)
   const clusters = useMemo(() => {
@@ -796,7 +797,7 @@ export default function DhDashboardClient({
             {/* All projects */}
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <span style={{ fontSize: 15, fontWeight: 700 }}>All projects</span>
+                <span style={{ fontSize: 15, fontWeight: 700 }}>Other projects</span>
                 <div style={{ flex: 1 }} />
                 <div style={{ display: "flex", background: "#f0f1f4", borderRadius: 8, padding: 3, gap: 0 }}>
                   <button style={viewBtn(view === "table")} onClick={() => setView("table")}>Table</button>
@@ -820,9 +821,9 @@ export default function DhDashboardClient({
                     <span style={{ width: 80 }}>Phase</span>
                     <span style={{ width: 54 }} />
                   </div>
-                  {filtered.length === 0
-                    ? <div style={{ padding: "28px 18px", textAlign: "center", color: "#8a909c", fontSize: 14 }}>No projects match the current filters.</div>
-                    : filtered.map((p, i) => (
+                  {otherProjects.length === 0
+                    ? <div style={{ padding: "28px 18px", textAlign: "center", color: "#8a909c", fontSize: 14 }}>No other projects match the current filters.</div>
+                    : otherProjects.map((p, i) => (
                       <div key={p.id} style={{
                         display: "flex", alignItems: "center", padding: "12px 18px",
                         borderTop: i === 0 ? "none" : "1px solid #eceef2",
@@ -863,7 +864,7 @@ export default function DhDashboardClient({
               {/* GRID VIEW */}
               {view === "grid" && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
-                  {filtered.map(p => (
+                  {otherProjects.map(p => (
                     <div key={p.id} style={{ background: "#fff", border: `1px solid ${p.rag === "green" ? "#e2e5ea" : ragBg(p.rag)}`, borderRadius: 14, padding: "16px" }}>
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
                         <span style={{ width: 10, height: 10, borderRadius: "50%", background: ragColor(p.rag), flexShrink: 0, marginTop: 4 }} />
@@ -1140,6 +1141,7 @@ export default function DhDashboardClient({
           onClose={() => setDrillId(null)}
           initialTab="review"
           openActionItem={() => {}}
+          hideActionItem={true}
         />
       )}
     </div>
