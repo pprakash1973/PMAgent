@@ -241,17 +241,25 @@ function ActionItemTab({ projectId, onCreated }: { projectId: string; onCreated:
           placeholder="What does 'done' look like?" />
       </div>
 
-      <button
-        onClick={submit}
-        disabled={saving}
-        style={{
-          padding: "10px 20px", background: UST_PETROL, color: "#fff", border: "none",
-          borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
-          opacity: saving ? 0.7 : 1, alignSelf: "flex-start",
-        }}
-      >
-        {saving ? "Creating…" : "Create Action Item"}
-      </button>
+      {(() => {
+        const titleOk = form.title.trim().length > 0;
+        const descOk = form.priority !== "p1" || form.description.trim().length >= 40;
+        const canSubmit = titleOk && descOk && !saving;
+        return (
+          <button
+            onClick={submit}
+            disabled={!canSubmit}
+            style={{
+              padding: "10px 20px", background: UST_PETROL, color: "#fff", border: "none",
+              borderRadius: 8, fontSize: 14, fontWeight: 600,
+              cursor: canSubmit ? "pointer" : "not-allowed",
+              opacity: canSubmit ? 1 : 0.45, alignSelf: "flex-start",
+            }}
+          >
+            {saving ? "Creating…" : "Create Action Item"}
+          </button>
+        );
+      })()}
     </div>
   );
 }

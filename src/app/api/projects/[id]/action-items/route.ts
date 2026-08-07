@@ -63,12 +63,16 @@ export async function POST(
   const project = await prisma.project.findUnique({ where: { id } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  // Scope check — hierarchy: dm→Account, pgm→Program
+  // Scope check — mirrors dm-review route exactly (supports unassigned projects)
+  const isUnassigned = project.accountId === null && project.programId === null;
   if (user.role === "dm") {
-    const assignment = await prisma.accountAssignment.findFirst({
-      where: { userId: user.id, accountId: project.accountId ?? "" },
-    });
-    if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    if (!isUnassigned) {
+      if (!project.accountId) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      const assignment = await prisma.accountAssignment.findFirst({
+        where: { userId: user.id, accountId: project.accountId },
+      });
+      if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
   } else if (user.role === "pgm") {
     if (!project.programId) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     const assignment = await prisma.programAssignment.findFirst({
