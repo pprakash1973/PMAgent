@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toaster";
 import { Loader2, Save, RotateCcw, Cpu, AlertTriangle, Key, Eye, EyeOff, CheckCircle2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isModelUncertified, type AgentId } from "@/lib/model-router";
+import { isModelUncertified, type AgentId } from "@/lib/model-tiers";
 
 type Provider = "anthropic" | "openai" | "deepseek";
 
