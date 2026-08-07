@@ -256,7 +256,7 @@ function BandSection({ label, dotColor, projects, onReview, onEscalate, escalate
         <span style={{ marginLeft: "auto", color: C.textFaint, fontSize: 13 }}>{collapsed ? "▸" : "▾"}</span>
       </div>
       {!collapsed && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
           {projects.map(p => (
             <ProjectTile
               key={p.id}

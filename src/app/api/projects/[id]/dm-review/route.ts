@@ -29,18 +29,34 @@ export async function GET(
 
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  // Scope check — hierarchy: dm→Account, pgm→Program
+  // Scope check — mirrors triage page.tsx logic exactly.
+  // Projects with accountId=null AND programId=null are "unassigned" and visible to any dm/pgm.
+  const isUnassigned = project.accountId === null && project.programId === null;
+
   if (user.role === "dm") {
-    const assignment = await prisma.accountAssignment.findFirst({
-      where: { userId: user.id, accountId: project.accountId ?? "" },
-    });
-    if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    if (!isUnassigned) {
+      if (!project.accountId) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      const assignment = await prisma.accountAssignment.findFirst({
+        where: { userId: user.id, accountId: project.accountId },
+      });
+      if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
   } else if (user.role === "pgm") {
-    if (!project.programId) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
-    const assignment = await prisma.programAssignment.findFirst({
-      where: { userId: user.id, programId: project.programId },
-    });
-    if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    if (!isUnassigned) {
+      if (project.programId) {
+        const assignment = await prisma.programAssignment.findFirst({
+          where: { userId: user.id, programId: project.programId },
+        });
+        if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      } else if (project.accountId) {
+        const assignment = await prisma.accountAssignment.findFirst({
+          where: { userId: user.id, accountId: project.accountId },
+        });
+        if (!assignment) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      } else {
+        return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+      }
+    }
   }
 
   const [latestReport, risks, issues, milestones, artifacts] = await Promise.all([
