@@ -3,8 +3,9 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toaster";
-import { Loader2, Save, RotateCcw, Cpu, AlertTriangle, Key, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { Loader2, Save, RotateCcw, Cpu, AlertTriangle, Key, Eye, EyeOff, CheckCircle2, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isModelUncertified, type AgentId } from "@/lib/model-router";
 
 type Provider = "anthropic" | "openai" | "deepseek";
 
@@ -15,6 +16,7 @@ interface AgentRow {
   model: string;
   provider: Provider;
   maxTokens: number;
+  temperature: number;
   notes: string;
   updatedAt: string | null;
   updatedBy: string | null;
@@ -50,7 +52,7 @@ export default function ModelConfigPage() {
   const [keyStatus, setKeyStatus] = useState<ProviderKeyStatus>({ anthropic: true, openai: false, deepseek: false });
   const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [edits, setEdits]         = useState<Record<string, { model: string; provider: Provider; maxTokens: number; notes: string }>>({});
+  const [edits, setEdits]         = useState<Record<string, { model: string; provider: Provider; maxTokens: number; temperature: number; notes: string }>>({});
   const [saving, setSaving]       = useState<Record<string, boolean>>({});
 
   // ── API Keys state ───────────────────────────────────────────────────────────
@@ -61,9 +63,11 @@ export default function ModelConfigPage() {
   const [keysLoading, setKeysLoading] = useState(true);
 
   // Safe JSON fetch — never throws on empty/non-JSON body, returns null instead
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function safeFetch(url: string, opts?: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
     const res  = await fetch(url, opts);
     const text = await res.text();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let data: any = null;
     try { if (text) data = JSON.parse(text); } catch { /* swallow parse errors */ }
     return { ok: res.ok, status: res.status, data };
@@ -95,20 +99,18 @@ export default function ModelConfigPage() {
       setKeyStatus(data.providerKeyStatus ?? { anthropic: true, openai: false, deepseek: false });
       const initial: typeof edits = {};
       for (const a of (data.agents ?? [])) {
-        initial[a.agent] = { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" };
+        initial[a.agent] = { model: a.model, provider: a.provider, maxTokens: a.maxTokens, temperature: a.temperature ?? 0, notes: a.notes ?? "" };
       }
       setEdits(initial);
-    } catch (err: any) {
-      setLoadError(err.message || "Unexpected error loading model config.");
+    } catch (err: unknown) {
+      setLoadError((err as Error).message || "Unexpected error loading model config.");
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    load();
-    loadApiKeys();
-  }, [load, loadApiKeys]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { load(); loadApiKeys(); }, [load, loadApiKeys]);
 
   async function saveApiKey(provider: Provider) {
     const val = keyInputs[provider].trim();
@@ -126,8 +128,8 @@ export default function ModelConfigPage() {
       toast({ title: "API key saved", description: `${PROVIDER_STYLE[provider].label} key stored securely.` });
       setKeyInputs((prev) => ({ ...prev, [provider]: "" }));
       setKeyStatus((prev) => ({ ...prev, [provider]: true }));
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
     } finally {
       setKeySaving((s) => ({ ...s, [provider]: false }));
     }
@@ -144,7 +146,7 @@ export default function ModelConfigPage() {
     }));
   }
 
-  function patch(agent: string, field: "maxTokens" | "notes", value: string | number) {
+  function patch(agent: string, field: "maxTokens" | "temperature" | "notes", value: string | number) {
     setEdits((prev) => ({ ...prev, [agent]: { ...prev[agent], [field]: value } }));
   }
 
@@ -152,7 +154,7 @@ export default function ModelConfigPage() {
     setSaving((s) => ({ ...s, [agent]: true }));
     try {
       const e          = edits[agent];
-      const body       = { agent, model: e.model, provider: e.provider, maxTokens: Number(e.maxTokens), notes: e.notes };
+      const body       = { agent, model: e.model, provider: e.provider, maxTokens: Number(e.maxTokens), temperature: Number(e.temperature), notes: e.notes };
       const { ok, data } = await safeFetch("/api/admin/model-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -161,8 +163,8 @@ export default function ModelConfigPage() {
       if (!ok) throw new Error(data?.error?.message || "Save failed");
       toast({ title: "Saved", description: `${agent} → ${e.model} (${PROVIDER_STYLE[e.provider]?.label ?? e.provider})` });
       try { await load(); } catch { /* silent refresh */ }
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSaving((s) => ({ ...s, [agent]: false }));
     }
@@ -171,11 +173,11 @@ export default function ModelConfigPage() {
   function isDirty(a: AgentRow) {
     const e = edits[a.agent];
     if (!e) return false;
-    return e.model !== a.model || e.provider !== a.provider || e.maxTokens !== a.maxTokens || e.notes !== (a.notes ?? "");
+    return e.model !== a.model || e.provider !== a.provider || e.maxTokens !== a.maxTokens || e.temperature !== (a.temperature ?? 0) || e.notes !== (a.notes ?? "");
   }
 
   function reset(a: AgentRow) {
-    setEdits((prev) => ({ ...prev, [a.agent]: { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" } }));
+    setEdits((prev) => ({ ...prev, [a.agent]: { model: a.model, provider: a.provider, maxTokens: a.maxTokens, temperature: a.temperature ?? 0, notes: a.notes ?? "" } }));
   }
 
   const modelsByProvider = models.reduce<Record<string, ModelOption[]>>((acc, m) => {
@@ -327,11 +329,12 @@ export default function ModelConfigPage() {
       ) : (
         <div className="space-y-3">
           {agents.map((a) => {
-            const e    = edits[a.agent] ?? { model: a.model, provider: a.provider, maxTokens: a.maxTokens, notes: a.notes ?? "" };
+            const e    = edits[a.agent] ?? { model: a.model, provider: a.provider, maxTokens: a.maxTokens, temperature: a.temperature ?? 0, notes: a.notes ?? "" };
             const meta = models.find((m) => m.id === e.model);
             const tier = meta?.tier ?? "";
             const dirty = isDirty(a);
-            const keyMissing = !effectiveKeyStatus[e.provider];
+            const keyMissing    = !effectiveKeyStatus[e.provider];
+            const uncertified   = isModelUncertified(a.agent as AgentId, e.model);
 
             return (
               <div
@@ -367,12 +370,17 @@ export default function ModelConfigPage() {
                         <AlertTriangle className="w-3 h-3" /> No key
                       </span>
                     )}
+                    {uncertified && (
+                      <span title="This model has no compliance evidence for this agent — guardrail accuracy unverified" className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 flex items-center gap-1">
+                        <ShieldAlert className="w-3 h-3" /> Uncertified
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-12 gap-3 items-end">
                   {/* Model selector */}
-                  <div className="col-span-5 space-y-1">
+                  <div className="col-span-4 space-y-1">
                     <label className="text-xs font-medium text-slate-600">Model</label>
                     <select
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#006E74] bg-white"
@@ -407,8 +415,25 @@ export default function ModelConfigPage() {
                     />
                   </div>
 
+                  {/* Temperature */}
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-xs font-medium text-slate-600">
+                      Temperature
+                      {e.temperature === 0 && <span className="ml-1 text-[10px] text-emerald-600 font-semibold">(deterministic)</span>}
+                    </label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={e.temperature}
+                      onChange={(ev) => patch(a.agent, "temperature", parseFloat(ev.target.value) || 0)}
+                      className="text-sm"
+                    />
+                  </div>
+
                   {/* Notes */}
-                  <div className="col-span-3 space-y-1">
+                  <div className="col-span-2 space-y-1">
                     <label className="text-xs font-medium text-slate-600">Notes</label>
                     <Input
                       placeholder="e.g. switched to GPT-4o for cost"

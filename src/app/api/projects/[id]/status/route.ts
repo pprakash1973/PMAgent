@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateStatusSummary } from "@/lib/ai";
+import { assertStatusIntegrity, computeHealthScore } from "@/lib/status-integrity";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
@@ -86,52 +87,77 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     liveEVM = { pv: Math.round(pv * 10) / 10, ev: Math.round(ev * 10) / 10, sv, spi, overdueTasks: overdueCount, ac: totalAC, cpi: computedCpi };
   }
 
-  let aiResult;
+  let aiResult: {
+    summary: string;
+    ragStatus: string;
+    recommendations: string[];
+    accomplishments: string[];
+    nextWeekPlan: string[];
+    metricsNarrative: string;
+    assumptions: string[];
+    conflicts: string[];
+  };
   try {
     aiResult = await generateStatusSummary(rawInput, projectContext, liveEVM);
   } catch {
     aiResult = {
       summary: "Status report submitted. AI summary generation failed — please review manually.",
       ragStatus: (rawInput.ragStatus as string) || "amber",
-      healthScore: 60,
       recommendations: [] as string[],
       accomplishments: [] as string[],
       nextWeekPlan: [] as string[],
       metricsNarrative: "",
-      cpi: null,
-      spi: null,
+      assumptions: [] as string[],
+      conflicts: [] as string[],
     };
   }
+
+  // WP-3 (DEF-002): Enforce GR-11 thresholds in code — model RAG verdict is an input, not final word
+  const { ragStatus: correctedRagStatus, violations } = assertStatusIntegrity(aiResult, {
+    spi: computedSpi,
+    cpi: computedCpi,
+  });
+
+  // WP-5 (DEF-006): Health score computed deterministically from measured inputs
+  const healthScore = computeHealthScore({
+    spi:          computedSpi,
+    cpi:          computedCpi,
+    overdueTasks: liveEVM?.overdueTasks ?? 0,
+    openRisks:    project.risks.length,
+  });
 
   // Preview mode: return AI result without touching the DB
   if (preview) {
     return NextResponse.json({
-      recommendations: aiResult.recommendations,
-      accomplishments: aiResult.accomplishments,
-      nextWeekPlan: aiResult.nextWeekPlan,
+      recommendations:  aiResult.recommendations,
+      accomplishments:  aiResult.accomplishments,
+      nextWeekPlan:     aiResult.nextWeekPlan,
       metricsNarrative: aiResult.metricsNarrative,
-      summary: aiResult.summary,
-      ragStatus: aiResult.ragStatus,
-      healthScore: aiResult.healthScore,
-      spi: computedSpi ?? aiResult.spi ?? null,
-      cpi: computedCpi ?? aiResult.cpi ?? null,
+      summary:          aiResult.summary,
+      ragStatus:        correctedRagStatus,
+      healthScore,
+      spi:              computedSpi ?? null,
+      cpi:              computedCpi ?? null,
+      violations,
     });
   }
 
   const savedAt = new Date();
-  const report = await prisma.statusReport.create({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const report = await (prisma.statusReport as any).create({
     data: {
-      projectId: id,
-      ragStatus: aiResult.ragStatus,
-      aiSummary: aiResult.summary,
+      projectId:  id,
+      ragStatus:  correctedRagStatus,
+      aiSummary:  aiResult.summary,
       rawInput,
       submittedAt: savedAt,
+      violations:  violations.length > 0 ? violations : undefined,
       healthScore: {
         create: {
-          compositeScore: aiResult.healthScore,
-          ragStatus: aiResult.ragStatus,
-          spi: computedSpi ?? aiResult.spi ?? (rawInput.spi as number) ?? null,
-          cpi: computedCpi ?? aiResult.cpi ?? (rawInput.cpi as number) ?? null,
+          compositeScore: healthScore,
+          ragStatus:      correctedRagStatus,
+          spi:            computedSpi ?? null,
+          cpi:            computedCpi ?? null,
         },
       },
     },
@@ -140,18 +166,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   await prisma.project.update({
     where: { id },
-    data: { healthStatus: aiResult.ragStatus },
+    data: { healthStatus: correctedRagStatus },
   });
 
   return NextResponse.json({
     report,
-    savedAt: savedAt.toISOString(),
-    recommendations: aiResult.recommendations,
-    accomplishments: aiResult.accomplishments,
-    nextWeekPlan: aiResult.nextWeekPlan,
+    savedAt:          savedAt.toISOString(),
+    recommendations:  aiResult.recommendations,
+    accomplishments:  aiResult.accomplishments,
+    nextWeekPlan:     aiResult.nextWeekPlan,
     metricsNarrative: aiResult.metricsNarrative,
-    summary: aiResult.summary,
-    ragStatus: aiResult.ragStatus,
-    healthScore: aiResult.healthScore,
+    summary:          aiResult.summary,
+    ragStatus:        correctedRagStatus,
+    healthScore,
+    violations,
   }, { status: 201 });
 }

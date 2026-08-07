@@ -12,6 +12,7 @@ export async function callDeepSeek(opts: LLMCallOptions): Promise<LLMResponse> {
   const response = await client.chat.completions.create({
     model: opts.model,
     max_tokens: opts.maxTokens,
+    temperature: opts.temperature ?? 0,
     messages: [
       { role: "system", content: opts.system },
       ...opts.messages.map((m) => ({ role: m.role, content: m.content })),

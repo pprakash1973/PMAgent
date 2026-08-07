@@ -3,15 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 import { getSystemSettings } from "@/lib/system-settings";
-import { AGENTS, AVAILABLE_MODELS, DEFAULT_MODEL, DEFAULT_MAX_TOKENS, DEFAULT_PROVIDER, invalidateCache } from "@/lib/model-router";
+import { AGENTS, AVAILABLE_MODELS, DEFAULT_MODEL, DEFAULT_MAX_TOKENS, DEFAULT_PROVIDER, DEFAULT_TEMPERATURE, invalidateCache } from "@/lib/model-router";
 import { z } from "zod";
 
 const putSchema = z.object({
-  agent:     z.string().min(1),
-  model:     z.string().min(1),
-  provider:  z.string().min(1),
-  maxTokens: z.number().int().min(256).max(32000),
-  notes:     z.string().optional(),
+  agent:       z.string().min(1),
+  model:       z.string().min(1),
+  provider:    z.string().min(1),
+  maxTokens:   z.number().int().min(256).max(32000),
+  temperature: z.number().min(0).max(1).optional(),
+  notes:       z.string().optional(),
 });
 
 async function providerKeyStatus() {
@@ -37,11 +38,12 @@ export async function GET() {
     const rowMap = new Map(rows.map((r) => [r.agent, r]));
     const validModelIds = new Set(AVAILABLE_MODELS.map((m) => m.id));
 
+    type ExtendedRow = { model: string; maxTokens: number; provider?: string; temperature?: number; notes?: string | null; updatedAt?: Date | null; updatedBy?: string | null } | undefined;
     const result = AGENTS.map((agent) => {
-      const row = rowMap.get(agent.id);
+      const row = rowMap.get(agent.id) as ExtendedRow;
       const modelId = row?.model && validModelIds.has(row.model) ? row.model : DEFAULT_MODEL;
       const modelMeta = AVAILABLE_MODELS.find((m) => m.id === modelId);
-      const provider = (row as any)?.provider ?? modelMeta?.provider ?? DEFAULT_PROVIDER;
+      const provider = (row?.provider as string | undefined) ?? modelMeta?.provider ?? DEFAULT_PROVIDER;
       return {
         agent:       agent.id,
         label:       agent.label,
@@ -49,6 +51,7 @@ export async function GET() {
         model:       modelId,
         provider,
         maxTokens:   row?.maxTokens ?? DEFAULT_MAX_TOKENS,
+        temperature: row?.temperature ?? DEFAULT_TEMPERATURE,
         notes:       row?.notes ?? "",
         updatedAt:   row?.updatedAt ?? null,
         updatedBy:   row?.updatedBy ?? null,
@@ -71,7 +74,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   const { error, user } = await requireAdmin();
   if (error) return error;
-  const admin = user as any;
+  const admin = user as { email: string };
 
   try {
     const body = await req.json();
@@ -89,22 +92,26 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: { code: "PROVIDER_MODEL_MISMATCH", message: `Model ${data.model} belongs to provider "${modelMeta.provider}", not "${data.provider}".` } }, { status: 400 });
     }
 
+    const temperature = data.temperature ?? DEFAULT_TEMPERATURE;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = await (prisma.modelConfig as any).upsert({
       where: { agent: data.agent },
       create: {
-        agent:     data.agent,
-        model:     data.model,
-        provider:  data.provider,
-        maxTokens: data.maxTokens,
-        notes:     data.notes ?? null,
-        updatedBy: admin.email,
+        agent:       data.agent,
+        model:       data.model,
+        provider:    data.provider,
+        maxTokens:   data.maxTokens,
+        temperature,
+        notes:       data.notes ?? null,
+        updatedBy:   admin.email,
       },
       update: {
-        model:     data.model,
-        provider:  data.provider,
-        maxTokens: data.maxTokens,
-        notes:     data.notes ?? null,
-        updatedBy: admin.email,
+        model:       data.model,
+        provider:    data.provider,
+        maxTokens:   data.maxTokens,
+        temperature,
+        notes:       data.notes ?? null,
+        updatedBy:   admin.email,
       },
     });
 

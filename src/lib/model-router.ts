@@ -5,6 +5,7 @@ export interface AgentConfig {
   model: string;
   maxTokens: number;
   provider: Provider;
+  temperature: number;
 }
 
 // All logical AI agents in the platform
@@ -45,6 +46,38 @@ export const AVAILABLE_MODELS: {
 export const DEFAULT_MODEL     = "claude-sonnet-4-6";
 export const DEFAULT_PROVIDER: Provider = "anthropic";
 export const DEFAULT_MAX_TOKENS = 8192;
+export const DEFAULT_TEMPERATURE = 0;
+
+/**
+ * Per-agent allowed model IDs (WP-6, AC-10.3).
+ * Critical agents that enforce GR-11 and schema validation are restricted to
+ * Balanced/Latest/Quality/Smart tiers. Fast-tier models (Haiku, GPT-4o mini)
+ * have not been compliance-tested against the full 12-guardrail instruction set.
+ * Unrestricted agents ("chat", "portfolio_chat") can use any model.
+ */
+export const AGENT_ALLOWED_TIERS: Record<AgentId, string[] | null> = {
+  artifact:          ["Balanced", "Latest", "Quality", "Smart"],
+  nl_project:        ["Balanced", "Latest", "Quality", "Smart", "Fast"],
+  status_questions:  ["Balanced", "Latest", "Quality", "Smart", "Fast"],
+  status_summary:    ["Balanced", "Latest", "Quality", "Smart"],
+  schedule_recovery: ["Balanced", "Latest", "Quality", "Smart"],
+  requirements:      ["Balanced", "Latest", "Quality", "Smart"],
+  chat:              null, // unrestricted
+  portfolio_chat:    null, // unrestricted
+};
+
+/** Returns the subset of AVAILABLE_MODELS permitted for a given agent. */
+export function allowedModelsForAgent(agentId: AgentId): typeof AVAILABLE_MODELS {
+  const tiers = AGENT_ALLOWED_TIERS[agentId];
+  if (!tiers) return AVAILABLE_MODELS;
+  return AVAILABLE_MODELS.filter((m) => tiers.includes(m.tier));
+}
+
+/** Returns true when a model has no compliance evidence for the given agent. */
+export function isModelUncertified(agentId: AgentId, modelId: string): boolean {
+  const allowed = allowedModelsForAgent(agentId);
+  return !allowed.some((m) => m.id === modelId);
+}
 
 // In-process TTL cache — avoids a DB hit on every generation call
 const cache = new Map<string, AgentConfig & { exp: number }>();
@@ -53,20 +86,21 @@ const TTL_MS = 60_000; // 1 minute; invalidated immediately on admin save
 export async function resolveModel(agent: AgentId): Promise<AgentConfig> {
   const now = Date.now();
   const hit = cache.get(agent);
-  if (hit && hit.exp > now) return { model: hit.model, maxTokens: hit.maxTokens, provider: hit.provider };
+  if (hit && hit.exp > now) return { model: hit.model, maxTokens: hit.maxTokens, provider: hit.provider, temperature: hit.temperature };
 
-  const row = await prisma.modelConfig.findUnique({ where: { agent } });
+  type ExtendedRow = { model: string; maxTokens: number; provider?: string; temperature?: number } | null;
+  const row = await prisma.modelConfig.findUnique({ where: { agent } }) as ExtendedRow;
 
-  // Derive provider from the model list if the DB row doesn't have it yet
-  const storedProvider = (row as any)?.provider as Provider | undefined;
+  const storedProvider = row?.provider as Provider | undefined;
   const derivedProvider: Provider = storedProvider
     ?? AVAILABLE_MODELS.find((m) => m.id === row?.model)?.provider
     ?? DEFAULT_PROVIDER;
 
   const result: AgentConfig = {
-    model:     row?.model     ?? DEFAULT_MODEL,
-    maxTokens: row?.maxTokens ?? DEFAULT_MAX_TOKENS,
-    provider:  derivedProvider,
+    model:       row?.model       ?? DEFAULT_MODEL,
+    maxTokens:   row?.maxTokens   ?? DEFAULT_MAX_TOKENS,
+    provider:    derivedProvider,
+    temperature: row?.temperature ?? DEFAULT_TEMPERATURE,
   };
   cache.set(agent, { ...result, exp: now + TTL_MS });
   return result;

@@ -1,8 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
 import { GUARDRAIL_SYSTEM_ADDENDUM } from "@/lib/guardrails";
 import { resolveModel } from "@/lib/model-router";
 import { callLLM, streamLLM } from "@/lib/providers";
 import { formatEvidenceForPrompt, type EvidenceContext } from "@/lib/evidence-assembler";
+import { StatusSummarySchema } from "@/lib/schemas/status-summary.schema";
+import { StatusQuestionsSchema } from "@/lib/schemas/status-questions.schema";
+import { RequirementsSchema } from "@/lib/schemas/requirements.schema";
+import { ScheduleRecoverySchema } from "@/lib/schemas/schedule-recovery.schema";
+import { NlProjectSchema } from "@/lib/schemas/nl-project.schema";
 
 // Re-exported for routes that call Anthropic APIs directly (streaming, tool use, etc.)
 // These are not routed through the provider abstraction.
@@ -11,20 +17,39 @@ export const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }
 function extractJson(text: string): Record<string, unknown> {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
   if (fenced) return JSON.parse(fenced[1]);
-  let depth = 0, start = -1;
+  // Use the LAST balanced JSON object — preamble prose precedes the payload far more often
+  // than trailing prose follows it, so last-match gives higher hit rate (AC-7.4).
+  let depth = 0, lastStart = -1, lastEnd = -1;
   for (let i = 0; i < text.length; i++) {
-    if (text[i] === "{") { if (depth++ === 0) start = i; }
-    else if (text[i] === "}") { if (--depth === 0 && start !== -1) return JSON.parse(text.slice(start, i + 1)); }
+    if (text[i] === "{") { if (depth++ === 0) lastStart = i; }
+    else if (text[i] === "}") { if (--depth === 0 && lastStart !== -1) lastEnd = i; }
   }
+  if (lastStart !== -1 && lastEnd !== -1) return JSON.parse(text.slice(lastStart, lastEnd + 1));
   throw new Error("AI did not return valid JSON");
 }
 
-// Guards every JSON-producing AI call against silent truncation.
-function parseAIJson(text: string, stopReason: string, label: string): Record<string, unknown> {
+// Guards every JSON-producing AI call against silent truncation and schema violations (AC-7.2).
+function parseAIJson(text: string, stopReason: string, label: string): Record<string, unknown>;
+function parseAIJson<T>(text: string, stopReason: string, label: string, schema: z.ZodType<T>): T;
+function parseAIJson<T>(
+  text: string,
+  stopReason: string,
+  label: string,
+  schema?: z.ZodType<T>
+): T | Record<string, unknown> {
   if (stopReason === "max_tokens") {
     throw new Error(`AI response for "${label}" was truncated (hit token limit). Try a smaller input.`);
   }
-  return extractJson(text);
+  const raw = extractJson(text);
+  if (!schema) return raw;
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    const issues = String((result as { success: false; error: unknown }).error);
+    throw new Error(
+      `AI response for "${label}" failed schema validation: ${issues}\nRaw (first 400 chars): ${JSON.stringify(raw).slice(0, 400)}`
+    );
+  }
+  return (result as { success: true; data: T }).data;
 }
 
 const PMI_SYSTEM_PROMPT = `You are a senior PMO AI assistant with deep expertise in:
@@ -103,9 +128,18 @@ export async function generateArtifact(
     : PMI_SYSTEM_PROMPT;
 
   const userContent = content.map((b) => b.text).join("\n\n");
+  const evidenceText = evidenceContext?.hasEvidence ? formatEvidenceForPrompt(evidenceContext) : undefined;
 
   const response = await streamLLM(
-    { model: config.model, maxTokens: ARTIFACT_MAX_TOKENS, system: systemText, messages: [{ role: "user", content: userContent }] },
+    {
+      model:            config.model,
+      maxTokens:        ARTIFACT_MAX_TOKENS,
+      system:           systemText,
+      messages:         [{ role: "user", content: userContent }],
+      temperature:      0,
+      agent:            "artifact",
+      retrievedContext: evidenceText,
+    },
     config
   );
 
@@ -134,20 +168,23 @@ Return JSON with these fields (infer from context; leave null if not found):
 - scopeExcludes (array of strings): explicit exclusions
 - constraints (array of strings): budget/schedule/regulatory constraints
 - assumptions (array of strings): key assumptions
+- conflicts (array of strings): REQUIRED — any conflicting requirements or contradictory statements found; empty array if none
 - sponsor (string): executive sponsor name/role if mentioned
 - clarifyingQuestions (array of strings): questions if critical info is missing`;
 
   const response = await callLLM(
     {
-      model: config.model,
-      maxTokens: config.maxTokens,
+      model:       config.model,
+      maxTokens:   config.maxTokens,
       system,
-      messages: [{ role: "user", content: `Extract project fields from this description:\n\n${description}\n\nReturn JSON only.` }],
+      messages:    [{ role: "user", content: `Extract project fields from this description:\n\n${description}\n\nReturn JSON only.` }],
+      temperature: 0,
+      agent:       "nl_project",
     },
     config
   );
 
-  return parseAIJson(response.text, response.stopReason, "project-from-document");
+  return parseAIJson(response.text, response.stopReason, "project-from-document", NlProjectSchema);
 }
 
 export interface StatusQuestion {
@@ -184,89 +221,106 @@ Rules:
 
   const response = await callLLM(
     {
-      model: config.model,
-      maxTokens: config.maxTokens,
+      model:       config.model,
+      maxTokens:   config.maxTokens,
       system,
-      messages: [{ role: "user", content: `Generate 10 weekly status questions for this project:\n\n${JSON.stringify(projectContext, null, 2)}\n\nReturn JSON only.` }],
+      messages:    [{ role: "user", content: `Generate 10 weekly status questions for this project:\n\n${JSON.stringify(projectContext, null, 2)}\n\nReturn JSON only.` }],
+      temperature: 0,
+      agent:       "status_questions",
     },
     config
   );
 
-  const result = parseAIJson(response.text, response.stopReason, "status-questions") as any;
-  return result.questions as StatusQuestion[];
+  const result = parseAIJson(response.text, response.stopReason, "status-questions", StatusQuestionsSchema);
+  return result.questions;
 }
 
 export async function generateStatusSummary(
   rawInput: Record<string, unknown>,
   projectContext: Record<string, unknown>,
-  liveEVM?: { pv: number; ev: number; sv: number; spi: number | null; overdueTasks: number }
-): Promise<{ summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null }> {
+  liveEVM?: { pv: number; ev: number; sv: number; spi: number | null; overdueTasks: number; ac?: number; cpi?: number | null }
+): Promise<{ summary: string; ragStatus: string; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; assumptions: string[]; conflicts: string[] }> {
   const evmSection = liveEVM
-    ? `\n\nLIVE SCHEDULE EVM (computed from actual task progress — use these numbers directly in your report, do not invent alternatives):
+    ? `\n\nLIVE EVM DATA (computed from actual progress and cost entries — use these numbers directly in your report, do not invent alternatives):
 - Planned Value (PV): ${liveEVM.pv.toFixed(1)} task-days
 - Earned Value (EV): ${liveEVM.ev.toFixed(1)} task-days
 - Schedule Variance (SV): ${liveEVM.sv > 0 ? "+" : ""}${liveEVM.sv.toFixed(1)} task-days
 - Schedule Performance Index (SPI): ${liveEVM.spi != null ? liveEVM.spi.toFixed(2) : "N/A"}${liveEVM.spi != null ? (liveEVM.spi >= 1 ? " (on/ahead of schedule)" : liveEVM.spi >= 0.85 ? " (slight delay)" : " (significantly behind schedule)") : ""}
+- Actual Cost (AC): ${liveEVM.ac != null && liveEVM.ac > 0 ? liveEVM.ac.toFixed(2) : "N/A — no cost entries recorded"}
+- Cost Performance Index (CPI): ${liveEVM.cpi != null ? liveEVM.cpi.toFixed(3) : "N/A — no cost entries recorded"}${liveEVM.cpi != null ? (liveEVM.cpi >= 1 ? " (under/on budget)" : liveEVM.cpi >= 0.9 ? " (slight cost overrun)" : " (significant cost overrun)") : ""}
 - Overdue tasks: ${liveEVM.overdueTasks}`
     : "";
 
   const config = await resolveModel("status_summary");
   const system = `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
 Apply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.
-When live EVM data is provided, use those exact numbers in metricsNarrative and spi field — do not override them.
+When live EVM data is provided, use those exact numbers in metricsNarrative — do not override them.
 
 Return JSON with:
 - summary (string): 2–3 sentence executive summary, stakeholder-ready
 - ragStatus (string): "green" | "amber" | "red" with clear rationale from the answers
-- healthScore (number 0–100): composite project health
 - recommendations (array of strings): 2–4 specific, actionable recommendations for the PM
 - accomplishments (array of strings): bulleted accomplishments extracted from answers
 - nextWeekPlan (array of strings): bulleted plan for next week extracted from answers
-- metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status; include SPI and SV if EVM data is provided
-- cpi (number | null): cost performance index if derivable from answers, else null
-- spi (number | null): use the live SPI value if provided, else derive from PM answers, else null`;
+- metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status; include SPI, CPI, and SV if EVM data is provided
+- assumptions (array of strings): REQUIRED — list any [ASSUMPTION] items or unstated assumptions identified in the PM answers; empty array if none
+- conflicts (array of strings): REQUIRED — list any conflicting inputs or inconsistencies in the PM answers; empty array if none`;
 
   const response = await callLLM(
     {
-      model: config.model,
-      maxTokens: config.maxTokens,
+      model:       config.model,
+      maxTokens:   config.maxTokens,
       system,
-      messages: [{ role: "user", content: `Project context:\n${JSON.stringify(projectContext, null, 2)}${evmSection}\n\nPM Q&A responses:\n${JSON.stringify(rawInput, null, 2)}\n\nGenerate the Weekly Status Report. Return JSON only.` }],
+      messages:    [{ role: "user", content: `Project context:\n${JSON.stringify(projectContext, null, 2)}${evmSection}\n\nPM Q&A responses:\n${JSON.stringify(rawInput, null, 2)}\n\nGenerate the Weekly Status Report. Return JSON only.` }],
+      temperature: 0,
+      agent:       "status_summary",
     },
     config
   );
 
-  return parseAIJson(response.text, response.stopReason, "status-summary") as unknown as { summary: string; ragStatus: string; healthScore: number; recommendations: string[]; accomplishments: string[]; nextWeekPlan: string[]; metricsNarrative: string; cpi: number | null; spi: number | null };
+  return parseAIJson(response.text, response.stopReason, "status-summary", StatusSummarySchema);
 }
 
 export async function generateScheduleRecovery(
   projectContext: Record<string, unknown>,
   evm: { pv: number; ev: number; sv: number; spi: number; overdueTasks: number; overdueTaskNames: string[] },
   tasks: { name: string; phase: string; percentComplete: number; baselineDays: number; status: string }[]
-): Promise<{ headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string }> {
+): Promise<{ headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string; assumptions: string[]; conflicts: string[] }> {
   const config = await resolveModel("schedule_recovery");
   const system = `You are a PMO recovery specialist. A project is behind schedule (SPI < 0.8) and the PM needs a concrete recovery plan.
 Apply PMBOK schedule compression techniques: fast-tracking, crashing, scope reduction, resource reallocation.
 Return JSON with:
 - headline (string): 1-sentence diagnosis of the delay root cause based on the data
 - steps (array of 4–6 objects): each has title (short action name), action (specific what-to-do in 2 sentences), effort ("Low"|"Medium"|"High"), impact ("Low"|"Medium"|"High")
-- estimatedRecovery (string): realistic estimate of how many days/weeks recovery will take if steps are followed`;
+- estimatedRecovery (string): realistic estimate of how many days/weeks recovery will take if steps are followed; label this as INDICATIVE since it is based on narrative analysis
+- assumptions (array of strings): REQUIRED — assumptions made in this recovery plan; empty array if none
+- conflicts (array of strings): REQUIRED — any conflicting constraints identified in the data; empty array if none`;
 
+  const taskCap = 10;
   const response = await callLLM(
     {
-      model: config.model,
-      maxTokens: config.maxTokens,
+      model:       config.model,
+      maxTokens:   config.maxTokens,
       system,
-      messages: [{ role: "user", content: `Project: ${JSON.stringify(projectContext)}\n\nEVM metrics: SPI=${evm.spi}, SV=${evm.sv} task-days, PV=${evm.pv}, EV=${evm.ev}, Overdue tasks: ${evm.overdueTasks} (${evm.overdueTaskNames.join(", ")})\n\nTask breakdown (top 10): ${JSON.stringify(tasks.slice(0, 10))}\n\nGenerate recovery plan JSON only.` }],
+      messages:    [{ role: "user", content: `Project: ${JSON.stringify(projectContext)}\n\nEVM metrics: SPI=${evm.spi}, SV=${evm.sv} task-days, PV=${evm.pv}, EV=${evm.ev}, Overdue tasks: ${evm.overdueTasks} (${evm.overdueTaskNames.join(", ")})\n\nTask breakdown (top ${taskCap} of ${tasks.length} total tasks shown — full list truncated for context limit): ${JSON.stringify(tasks.slice(0, taskCap))}\n\nGenerate recovery plan JSON only.` }],
+      temperature: 0,
+      agent:       "schedule_recovery",
     },
     config
   );
 
-  return parseAIJson(response.text, response.stopReason, "schedule-recovery") as unknown as { headline: string; steps: { title: string; action: string; effort: string; impact: string }[]; estimatedRecovery: string };
+  return parseAIJson(response.text, response.stopReason, "schedule-recovery", ScheduleRecoverySchema);
 }
+
+// Max chars processed in a single requirements extraction call (~75k tokens; AC-3.1/AC-3.3)
+const REQUIREMENTS_MAX_CHARS = 100_000;
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
   const config = await resolveModel("requirements");
+  const totalChars    = text.length;
+  const processedText = text.slice(0, REQUIREMENTS_MAX_CHARS);
+  const processedChars = processedText.length;
+
   const system = `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
 Return JSON with:
 - goals (array of strings): business/project goals
@@ -274,24 +328,28 @@ Return JSON with:
 - outOfScope (array of strings): explicit exclusions if mentioned
 - stakeholders (array of {name, role, interest}): key stakeholders
 - constraints (array of strings): budget, schedule, regulatory, technical constraints
-- assumptions (array of strings): stated or implied assumptions
+- assumptions (array of strings): REQUIRED — stated or implied assumptions; empty array if none
+- conflicts (array of strings): REQUIRED — any conflicting requirements or contradictory statements; empty array if none
 - timeline (string): timeline description
 - budgetSignals (string): any budget figures or signals
 - methodology (string): delivery approach if mentioned
-- risks (array of strings): any risks or concerns mentioned
-- confidence (number 0-1): confidence in extraction quality`;
+- risks (array of strings): any risks or concerns mentioned`;
 
   const response = await callLLM(
     {
-      model: config.model,
-      maxTokens: config.maxTokens,
+      model:       config.model,
+      maxTokens:   config.maxTokens,
       system,
-      messages: [{ role: "user", content: `Extract requirements from this document:\n\n${text.slice(0, 12000)}\n\nReturn JSON only.` }],
+      messages:    [{ role: "user", content: `Extract requirements from this document:\n\n${processedText}\n\nReturn JSON only.` }],
+      temperature: 0,
+      agent:       "requirements",
     },
     config
   );
 
-  return parseAIJson(response.text, response.stopReason, "requirements-extraction");
+  const result = parseAIJson(response.text, response.stopReason, "requirements-extraction");
+  // Always include source char counts so callers can surface a warning when truncated (AC-3.4)
+  return { ...result, sourceCharsProcessed: processedChars, sourceCharsTotal: totalChars };
 }
 
 export async function chatCommand(
@@ -306,10 +364,11 @@ Reference PMBOK processes, knowledge areas, and principles where relevant.`;
 
   const response = await callLLM(
     {
-      model: config.model,
+      model:     config.model,
       maxTokens: config.maxTokens,
       system,
-      messages: [{ role: "user", content: `Context: ${JSON.stringify(context, null, 2)}\n\nUser command: ${command}` }],
+      messages:  [{ role: "user", content: `Context: ${JSON.stringify(context, null, 2)}\n\nUser command: ${command}` }],
+      agent:     "chat",
     },
     config
   );
@@ -340,10 +399,11 @@ Use markdown formatting (bold, bullet lists) sparingly for readability in a chat
 
   const response = await callLLM(
     {
-      model: config.model,
+      model:     config.model,
       maxTokens: config.maxTokens,
       system,
-      messages: [{ role: "user", content: `Portfolio context:\n${JSON.stringify(context, null, 2)}\n\nQuestion: ${question}` }],
+      messages:  [{ role: "user", content: `Portfolio context:\n${JSON.stringify(context, null, 2)}\n\nQuestion: ${question}` }],
+      agent:     "portfolio_chat",
     },
     config
   );

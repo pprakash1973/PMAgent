@@ -977,6 +977,17 @@ async function main() {
 
     console.log("✓ Seed data");
 
+    // ── UAT Cycle 1 Remediation — WP-2/WP-3 schema additions ─────────────────
+    await run(pool, `
+      ALTER TABLE "ModelConfig"
+        ADD COLUMN IF NOT EXISTS "temperature" DOUBLE PRECISION NOT NULL DEFAULT 0
+    `, "ModelConfig.temperature column");
+
+    await run(pool, `
+      ALTER TABLE "StatusReport"
+        ADD COLUMN IF NOT EXISTS "violations" JSONB
+    `, "StatusReport.violations column");
+
     // ── Artifact Templates ─────────────────────────────────────────────────────
     await pool.query(`
       CREATE TABLE IF NOT EXISTS "ArtifactTemplate" (

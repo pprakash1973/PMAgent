@@ -12,6 +12,7 @@ export async function callAnthropic(opts: LLMCallOptions): Promise<LLMResponse> 
   const message = await client.messages.create({
     model: opts.model,
     max_tokens: opts.maxTokens,
+    temperature: opts.temperature ?? 0,
     system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
     messages: opts.messages,
   });
@@ -30,6 +31,7 @@ export async function streamAnthropic(opts: LLMCallOptions): Promise<LLMResponse
   const stream = client.messages.stream({
     model: opts.model,
     max_tokens: opts.maxTokens,
+    temperature: opts.temperature ?? 0,
     system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
     messages: opts.messages,
   });
