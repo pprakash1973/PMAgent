@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback } from "react";
 import { useCopilot } from "@/components/copilot/CopilotContext";
+import { DrillDownPanel } from "@/app/dashboard/dm/drill-down-panel";
 
 export interface DhProject {
   id: string;
@@ -358,6 +359,7 @@ export default function DhDashboardClient({
   const [resolveNote,   setResolveNote]   = useState("");
   const [resolving,     setResolving]     = useState(false);
   const [resolveError,  setResolveError]  = useState("");
+  const [drillId, setDrillId] = useState<string | null>(null);
 
   const handleResolve = useCallback(async () => {
     if (!resolveTarget) return;
@@ -775,11 +777,11 @@ export default function DhDashboardClient({
                         </div>
                         {/* Actions */}
                         <div style={{ display: "flex", flexDirection: "column", gap: 7, flexShrink: 0 }}>
-                          <a href={`/dashboard/projects/${p.id}`} style={{
+                          <button onClick={() => setDrillId(p.id)} style={{
                             height: 30, padding: "0 12px", background: "#006E74", color: "#fff",
                             border: "none", borderRadius: 8, fontSize: 12.5, fontWeight: 600,
-                            cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center",
-                          }}>Drill in →</a>
+                            cursor: "pointer", display: "flex", alignItems: "center",
+                          }}>Drill in →</button>
                           <button style={{ height: 30, padding: "0 12px", background: "#fff", border: "1px solid #d3d7de", color: "#5b616e", borderRadius: 8, fontSize: 12.5, fontWeight: 500, cursor: "pointer" }}>
                             Escalate
                           </button>
@@ -851,7 +853,7 @@ export default function DhDashboardClient({
                         </div>
                         <div style={{ width: 110, paddingRight: 10 }}><PmMeter spi={p.spi} cpi={p.cpi} rag={p.rag} /></div>
                         <span style={{ width: 80, fontSize: 12.5, color: "#5b616e", textTransform: "capitalize" }}>{p.phase}</span>
-                        <a href={`/dashboard/projects/${p.id}`} style={{ width: 54, fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View →</a>
+                        <button onClick={() => setDrillId(p.id)} style={{ width: 54, fontSize: 13, fontWeight: 600, color: "#006E74", background: "none", border: "none", cursor: "pointer", padding: 0 }}>View →</button>
                       </div>
                     ))
                   }
@@ -902,7 +904,7 @@ export default function DhDashboardClient({
                         <span style={{ color: "#d3d7de" }}>·</span>
                         <span>{p.programName}</span>
                         <div style={{ flex: 1 }} />
-                        <a href={`/dashboard/projects/${p.id}`} style={{ fontSize: 13, fontWeight: 600, color: "#006E74", textDecoration: "none" }}>View →</a>
+                        <button onClick={() => setDrillId(p.id)} style={{ fontSize: 13, fontWeight: 600, color: "#006E74", background: "none", border: "none", cursor: "pointer", padding: 0 }}>View →</button>
                       </div>
                     </div>
                   ))}
@@ -1129,6 +1131,16 @@ export default function DhDashboardClient({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Project drill-in panel */}
+      {drillId && (
+        <DrillDownPanel
+          projectId={drillId}
+          onClose={() => setDrillId(null)}
+          initialTab="review"
+          openActionItem={() => {}}
+        />
       )}
     </div>
   );
