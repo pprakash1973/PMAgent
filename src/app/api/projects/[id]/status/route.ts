@@ -3,12 +3,34 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateStatusSummary } from "@/lib/ai";
 import { assertStatusIntegrity, computeHealthScore } from "@/lib/status-integrity";
+import { z } from "zod";
+
+// Bounds user-supplied status input — arbitrary keys allowed for question answers,
+// but value types and sizes are constrained to prevent oversized payloads (BUG-5).
+const StatusInputSchema = z.object({
+  preview: z.boolean().optional(),
+  ragStatus: z.string().max(10).optional(),
+}).catchall(
+  z.union([
+    z.string().max(2000),
+    z.array(z.string().max(500)).max(20),
+    z.number(),
+    z.boolean(),
+    z.null(),
+  ])
+);
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
 
+  const user = session.user as { id: string; orgId: string };
   const { id } = await params;
+
+  const project = await prisma.project.findUnique({ where: { id }, select: { orgId: true } });
+  if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
+  if (project.orgId !== user.orgId) return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
+
   const reports = await prisma.statusReport.findMany({
     where: { projectId: id },
     include: { healthScore: true },
@@ -23,17 +45,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
 
+  const user = session.user as { id: string; orgId: string };
   const { id } = await params;
-  const rawInput = await req.json();
 
-  const project = await prisma.project.findUnique({
-    where: { id },
-    include: {
-      risks: { where: { status: "open" }, take: 5 },
-      milestones: { orderBy: { dueDate: "asc" }, take: 3 },
-    },
-  });
+  // Validate and bound the incoming payload before any processing (BUG-5)
+  const body = await req.json();
+  const parsed = StatusInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION", message: parsed.error.issues[0]?.message ?? "Invalid input" } },
+      { status: 400 }
+    );
+  }
+  const rawInput = parsed.data;
+
+  const [project, openRiskCount] = await Promise.all([
+    prisma.project.findUnique({
+      where: { id },
+      include: {
+        risks: { where: { status: "open" }, take: 5 },
+        milestones: { orderBy: { dueDate: "asc" }, take: 3 },
+      },
+    }),
+    // Accurate risk count — not capped by the take:5 used for context (BUG-2)
+    prisma.risk.count({ where: { projectId: id, status: "open" } }),
+  ]);
   if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
+
+  // Org-level ownership check (SEC-3)
+  if (project.orgId !== user.orgId) {
+    return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
+  }
 
   const projectContext = {
     name: project.name,
@@ -123,7 +165,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     spi:          computedSpi,
     cpi:          computedCpi,
     overdueTasks: liveEVM?.overdueTasks ?? 0,
-    openRisks:    project.risks.length,
+    openRisks:    openRiskCount,        // use accurate count, not the take:5 sample (BUG-2)
   });
 
   // Preview mode: return AI result without touching the DB
@@ -143,8 +185,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const savedAt = new Date();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const report = await (prisma.statusReport as any).create({
+  const report = await prisma.statusReport.create({
     data: {
       projectId:  id,
       ragStatus:  correctedRagStatus,

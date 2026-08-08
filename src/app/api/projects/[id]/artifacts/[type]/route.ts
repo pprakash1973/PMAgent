@@ -10,16 +10,21 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; type: string }> }
 ) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
 
+  const user = session.user as { id: string; orgId: string };
   const { id, type } = await params;
+
+  const project = await prisma.project.findUnique({ where: { id }, select: { orgId: true } });
+  if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
+  if (project.orgId !== user.orgId) return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
 
   const artifact = await prisma.artifact.findFirst({
     where: { projectId: id, artifactType: type },
   });
 
   if (!artifact) {
-    return NextResponse.json({ error: "Artifact not found" }, { status: 404 });
+    return NextResponse.json({ error: { code: "NOT_FOUND", message: "Artifact not found" } }, { status: 404 });
   }
 
   await prisma.$transaction([

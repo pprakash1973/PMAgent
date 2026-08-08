@@ -1,9 +1,15 @@
 import { prisma } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 // Runs hourly (configured via Vercel Cron or external scheduler)
 // Marks escalations that have passed their SLA deadline without acknowledgement
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
+  }
+
   const now = new Date();
 
   const breached = await prisma.escalation.findMany({

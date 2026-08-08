@@ -6,27 +6,13 @@ import { callLLM, streamLLM } from "@/lib/providers";
 import { formatEvidenceForPrompt, type EvidenceContext } from "@/lib/evidence-assembler";
 import { StatusSummarySchema } from "@/lib/schemas/status-summary.schema";
 import { StatusQuestionsSchema } from "@/lib/schemas/status-questions.schema";
-import { RequirementsSchema } from "@/lib/schemas/requirements.schema";
 import { ScheduleRecoverySchema } from "@/lib/schemas/schedule-recovery.schema";
 import { NlProjectSchema } from "@/lib/schemas/nl-project.schema";
+import { extractJson } from "@/lib/extract-json";
 
 // Re-exported for routes that call Anthropic APIs directly (streaming, tool use, etc.)
 // These are not routed through the provider abstraction.
 export const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-function extractJson(text: string): Record<string, unknown> {
-  const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
-  if (fenced) return JSON.parse(fenced[1]);
-  // Use the LAST balanced JSON object — preamble prose precedes the payload far more often
-  // than trailing prose follows it, so last-match gives higher hit rate (AC-7.4).
-  let depth = 0, lastStart = -1, lastEnd = -1;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === "{") { if (depth++ === 0) lastStart = i; }
-    else if (text[i] === "}") { if (--depth === 0 && lastStart !== -1) lastEnd = i; }
-  }
-  if (lastStart !== -1 && lastEnd !== -1) return JSON.parse(text.slice(lastStart, lastEnd + 1));
-  throw new Error("AI did not return valid JSON");
-}
 
 // Guards every JSON-producing AI call against silent truncation and schema violations (AC-7.2).
 function parseAIJson(text: string, stopReason: string, label: string): Record<string, unknown>;

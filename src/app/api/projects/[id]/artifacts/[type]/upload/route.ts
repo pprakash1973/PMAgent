@@ -5,20 +5,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic, ARTIFACT_SCHEMA_HINTS } from "@/lib/ai";
+import { resolveModel } from "@/lib/model-router";
+import { extractJson } from "@/lib/extract-json";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
 import { extractAndStoreItems } from "@/lib/item-extractor";
-
-function extractJson(text: string): Record<string, unknown> {
-  const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
-  if (fenced) return JSON.parse(fenced[1]);
-  let depth = 0, start = -1;
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === "{") { if (depth++ === 0) start = i; }
-    else if (text[i] === "}") { if (--depth === 0 && start !== -1) return JSON.parse(text.slice(start, i + 1)); }
-  }
-  throw new Error("AI did not return valid JSON");
-}
 
 async function extractFileText(file: File): Promise<string> {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -96,7 +87,12 @@ export async function POST(
     prisma.artifact.findFirst({ where: { projectId: id, artifactType: type } }),
   ]);
 
-  if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
+
+  const uploader = session!.user as { id: string; orgId: string };
+  if (project.orgId !== uploader.orgId) {
+    return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
+  }
 
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
@@ -157,9 +153,11 @@ ${extractedText.slice(0, 12000)}
 
 Merge the uploaded data into the artifact JSON, making sure every addition and edit from the upload is reflected. Return the complete updated artifact as JSON only.`;
 
+  const artifactConfig = await resolveModel("artifact");
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+    model: artifactConfig.model,
     max_tokens: 16000,
+    temperature: 0,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
   });
@@ -182,8 +180,6 @@ Merge the uploaded data into the artifact JSON, making sure every addition and e
     );
   }
 
-  const session2 = await auth();
-  const uploader = session2!.user as any;
   const newHash = hashArtifactContent(mergedContent);
 
   let artifact;

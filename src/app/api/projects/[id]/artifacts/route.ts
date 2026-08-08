@@ -77,6 +77,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
 
+  // Org-level ownership check (SEC-3)
+  if (project.orgId !== user.orgId) {
+    return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
+  }
+
   const catalogEntry = ARTIFACT_CATALOG.find((a) => a.type === artifactType);
   if (!catalogEntry) {
     return NextResponse.json({ error: { code: "INVALID_ARTIFACT" } }, { status: 400 });
@@ -89,6 +94,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       ? prisma.costEntry.count({ where: { projectId: id } })
       : Promise.resolve(0),
   ]);
+  let guardrailWarnings: string[] = [];
   try {
     const guardrailResult = runGuardrails(artifactType, {
       name: project.name,
@@ -102,9 +108,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       milestoneCount: project.milestones.length,
       riskCount: project.risks.length,
     });
-    // Attach non-blocking warnings to response header for UI to surface
-    if (guardrailResult.warnings.length > 0) {
-      console.warn(`[guardrails] ${artifactType}:`, guardrailResult.warnings);
+    guardrailWarnings = guardrailResult.warnings;
+    if (guardrailWarnings.length > 0) {
+      console.warn(`[guardrails] ${artifactType}:`, guardrailWarnings);
     }
   } catch (err) {
     if (err instanceof GuardrailError) {
@@ -192,9 +198,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   const newHash = hashArtifactContent(content);
 
+  // Wrap artifact + version creation in a single transaction (BUG-4).
+  // Returns the version ID so the post-commit extraction step needs no extra query.
   let artifact;
+  let versionId: string;
+
   if (existing) {
-    const currentHash = (existing.versions[0] as any)?.contentHash ?? null;
+    const currentHash = existing.versions[0]?.contentHash ?? null;
     if (currentHash && currentHash === newHash) {
       return NextResponse.json(
         { noChange: true, currentVersion: existing.currentVersion, artifact: existing },
@@ -203,47 +213,53 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const newVersion = existing.currentVersion + 1;
     const parentVersionId = existing.versions[0]?.id ?? null;
-    artifact = await prisma.artifact.update({
-      where: { id: existing.id },
-      data: { content, currentVersion: newVersion, status: "draft" },
-    });
-    await (prisma.artifactVersion as any).create({
-      data: {
-        artifactId: existing.id,
-        versionNumber: newVersion,
-        content,
-        contentHash: newHash,
-        source: "ai_regenerated",
-        approvalStatus: "unreviewed",
-        parentVersionId,
-        editedById: user.id,
-        appliedTemplateId: templateOverride?.templateId ?? null,
-      },
-    });
+    ({ artifact, versionId } = await prisma.$transaction(async (tx) => {
+      const a = await tx.artifact.update({
+        where: { id: existing.id },
+        data: { content, currentVersion: newVersion, status: "draft" },
+      });
+      const v = await tx.artifactVersion.create({
+        data: {
+          artifactId: existing.id,
+          versionNumber: newVersion,
+          content,
+          contentHash: newHash,
+          source: "ai_regenerated",
+          approvalStatus: "unreviewed",
+          parentVersionId,
+          editedById: user.id,
+          appliedTemplateId: templateOverride?.templateId ?? null,
+        },
+      });
+      return { artifact: a, versionId: v.id };
+    }));
   } else {
-    artifact = await prisma.artifact.create({
-      data: {
-        projectId: id,
-        artifactType,
-        phase: catalogEntry.phase,
-        content,
-        currentVersion: 1,
-        status: "draft",
-      },
-    });
-    await (prisma.artifactVersion as any).create({
-      data: {
-        artifactId: artifact.id,
-        versionNumber: 1,
-        content,
-        contentHash: newHash,
-        source: "ai_generated",
-        approvalStatus: "unreviewed",
-        parentVersionId: null,
-        editedById: user.id,
-        appliedTemplateId: templateOverride?.templateId ?? null,
-      },
-    });
+    ({ artifact, versionId } = await prisma.$transaction(async (tx) => {
+      const a = await tx.artifact.create({
+        data: {
+          projectId: id,
+          artifactType,
+          phase: catalogEntry.phase,
+          content,
+          currentVersion: 1,
+          status: "draft",
+        },
+      });
+      const v = await tx.artifactVersion.create({
+        data: {
+          artifactId: a.id,
+          versionNumber: 1,
+          content,
+          contentHash: newHash,
+          source: "ai_generated",
+          approvalStatus: "unreviewed",
+          parentVersionId: null,
+          editedById: user.id,
+          appliedTemplateId: templateOverride?.templateId ?? null,
+        },
+      });
+      return { artifact: a, versionId: v.id };
+    }));
   }
 
   // Mark selection as active
@@ -265,16 +281,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   // BL-P2: extract canonical items async (non-blocking — never delays the response)
-  const latestVersion = await (prisma.artifactVersion as any).findFirst({
-    where: { artifactId: artifact.id },
-    orderBy: { versionNumber: "desc" },
-    select: { id: true },
+  extractAndStoreItems(versionId, artifactType, content).catch((e) => {
+    console.error("[item-extractor]", e);
   });
-  if (latestVersion) {
-    extractAndStoreItems(latestVersion.id, artifactType, content).catch((e) => {
-      console.error("[item-extractor]", e);
-    });
-  }
 
-  return NextResponse.json(artifact, { status: 201 });
+  return NextResponse.json(
+    { ...artifact, warnings: guardrailWarnings.length > 0 ? guardrailWarnings : undefined },
+    { status: 201 }
+  );
 }

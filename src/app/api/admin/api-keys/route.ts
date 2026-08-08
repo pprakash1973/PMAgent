@@ -65,7 +65,7 @@ export async function PUT(req: NextRequest) {
     }
     console.error("[api-keys PUT]", err);
     return NextResponse.json(
-      { error: { code: "SERVER_ERROR", message: (err as Error).message } },
+      { error: { code: "SERVER_ERROR", message: "An unexpected error occurred. Please try again." } },
       { status: 500 }
     );
   }

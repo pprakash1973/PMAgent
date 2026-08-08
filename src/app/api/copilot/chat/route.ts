@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
+import { resolveModel } from "@/lib/model-router";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 
 const TAB_QUICK_ACTIONS: Record<string, string[]> = {
@@ -113,10 +114,11 @@ function detectIntent(message: string): Intent {
   return null;
 }
 
-async function extractRiskParams(message: string, anthropicClient: typeof anthropic) {
+async function extractRiskParams(message: string, anthropicClient: typeof anthropic, model: string) {
   const res = await anthropicClient.messages.create({
-    model: "claude-sonnet-4-6",
+    model,
     max_tokens: 256,
+    temperature: 0,
     messages: [{
       role: "user",
       content: `Extract risk details from this PM request as JSON only (no markdown):
@@ -131,10 +133,11 @@ Request: "${message}"`,
   } catch { return { description: message, category: "Technical", probability: "medium", impact: "medium", owner: "" }; }
 }
 
-async function extractIssueParams(message: string, anthropicClient: typeof anthropic) {
+async function extractIssueParams(message: string, anthropicClient: typeof anthropic, model: string) {
   const res = await anthropicClient.messages.create({
-    model: "claude-sonnet-4-6",
+    model,
     max_tokens: 256,
+    temperature: 0,
     messages: [{
       role: "user",
       content: `Extract issue details from this PM request as JSON only (no markdown):
@@ -149,10 +152,11 @@ Request: "${message}"`,
   } catch { return { title: message, description: "", priority: "medium", owner: "" }; }
 }
 
-async function extractEntityRef(message: string, entityType: "task" | "risk" | "issue" | "milestone", anthropicClient: typeof anthropic): Promise<{ name?: string; id?: string }> {
+async function extractEntityRef(message: string, entityType: "task" | "risk" | "issue" | "milestone", anthropicClient: typeof anthropic, model: string): Promise<{ name?: string; id?: string }> {
   const res = await anthropicClient.messages.create({
-    model: "claude-sonnet-4-6",
+    model,
     max_tokens: 128,
+    temperature: 0,
     messages: [{
       role: "user",
       content: `Extract the ${entityType} name or ID being referenced in this PM request as JSON only (no markdown):
@@ -378,6 +382,10 @@ export async function POST(req: NextRequest) {
   if (!user?.copilotEnabled)
     return NextResponse.json({ error: "AI Assistant is disabled for your account" }, { status: 403 });
 
+  // Resolve the configured model once — used for both streaming and helper extraction calls (ARCH-1)
+  const chatConfig = await resolveModel("chat");
+  const chatModel = chatConfig.model;
+
   const body = await req.json();
   const { message, projectId, tab = "default", history = [], kpiSnapshot } = body as {
     message: string; projectId?: string; tab?: string;
@@ -421,7 +429,7 @@ export async function POST(req: NextRequest) {
 
   if (intent && projectId) {
     if (intent.type === "LOG_RISK") {
-      const params = await extractRiskParams(message, anthropic);
+      const params = await extractRiskParams(message, anthropic, chatModel);
       // Execute Tier B immediately
       try {
         const risk = await prisma.risk.create({
@@ -450,7 +458,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.type === "LOG_ISSUE") {
-      const params = await extractIssueParams(message, anthropic);
+      const params = await extractIssueParams(message, anthropic, chatModel);
       try {
         const issue = await (prisma as any).issue.create({
           data: {
@@ -489,7 +497,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.type === "CLOSE_TASK") {
-      const ref = await extractEntityRef(intent.params.ref, "task", anthropic);
+      const ref = await extractEntityRef(intent.params.ref, "task", anthropic, chatModel);
       try {
         const task = await prisma.scheduleTask.findFirst({
           where: {
@@ -512,7 +520,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.type === "UPDATE_TASK_PROGRESS") {
-      const ref = await extractEntityRef(intent.params.ref, "task", anthropic);
+      const ref = await extractEntityRef(intent.params.ref, "task", anthropic, chatModel);
       try {
         const task = await prisma.scheduleTask.findFirst({
           where: {
@@ -536,7 +544,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.type === "CLOSE_RISK") {
-      const ref = await extractEntityRef(intent.params.ref, "risk", anthropic);
+      const ref = await extractEntityRef(intent.params.ref, "risk", anthropic, chatModel);
       try {
         const risk = await prisma.risk.findFirst({
           where: {
@@ -562,7 +570,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.type === "CLOSE_ISSUE") {
-      const ref = await extractEntityRef(intent.params.ref, "issue", anthropic);
+      const ref = await extractEntityRef(intent.params.ref, "issue", anthropic, chatModel);
       try {
         const issue = await (prisma as any).issue.findFirst({
           where: {
@@ -585,7 +593,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (intent.type === "CLOSE_MILESTONE") {
-      const ref = await extractEntityRef(intent.params.ref, "milestone", anthropic);
+      const ref = await extractEntityRef(intent.params.ref, "milestone", anthropic, chatModel);
       try {
         const milestone = await prisma.milestone.findFirst({
           where: {
@@ -621,8 +629,9 @@ export async function POST(req: NextRequest) {
             allTasks.map((t) => ({ id: t.id, name: t.name, phase: t.phase, status: t.status }))
           );
           const filterResp = await anthropic.messages.create({
-            model: "claude-sonnet-4-6",
+            model: chatModel,
             max_tokens: 400,
+            temperature: 0,
             messages: [{
               role: "user",
               content: `The PM wants to bulk-close tasks with this request: "${filterMsg}"\n\nCandidate tasks (JSON):\n${taskListJson}\n\nReturn a JSON array of task IDs that match the request. If the request says "all" with no phase filter, return all IDs. Return only a valid JSON array, no other text.`,
@@ -677,7 +686,7 @@ export async function POST(req: NextRequest) {
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const anthropicStream = anthropic.messages.stream({
-            model: "claude-sonnet-4-6",
+            model: chatModel,
             max_tokens: 4096,
             system: systemPrompt,
             tools: projectId ? (DOCUMENT_TOOLS as any) : [],

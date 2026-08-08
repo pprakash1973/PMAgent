@@ -7,7 +7,11 @@ import { z } from "zod";
 
 const schema = z.object({
   token: z.string().min(1),
-  password: z.string().min(8),
+  password: z.string()
+    .min(8)
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character"),
 });
 
 export async function POST(req: NextRequest) {

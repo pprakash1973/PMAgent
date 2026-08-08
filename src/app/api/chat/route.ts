@@ -11,7 +11,12 @@ export async function POST(req: NextRequest) {
   const { command, projectId } = await req.json();
   if (!command) return NextResponse.json({ error: { code: "MISSING_COMMAND" } }, { status: 400 });
 
-  let context: Record<string, unknown> = { user: session.user };
+  const sessionUser = session.user as { id: string; orgId: string; name?: string; role?: string };
+
+  // Strip sensitive fields (id, orgId) before sending to AI model (ARCH-6)
+  let context: Record<string, unknown> = {
+    user: { name: sessionUser.name, role: sessionUser.role },
+  };
 
   if (projectId) {
     const project = await prisma.project.findUnique({
@@ -22,6 +27,10 @@ export async function POST(req: NextRequest) {
         statusReports: { orderBy: { reportDate: "desc" }, take: 1 },
       },
     });
+    // Org-level ownership check (SEC-3)
+    if (project && project.orgId !== sessionUser.orgId) {
+      return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
+    }
     if (project) context = { ...context, project };
   }
 
