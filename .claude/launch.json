@@ -6,6 +6,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm run dev -- --port 3001"],
       "port": 3001
+    },
+    {
+      "name": "pm-agent-uat",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set UAT_CAPTURE=1 && set UAT_CAPTURE_DIR=uat/evidence && npm run dev -- --port 3002"],
+      "port": 3002
     }
   ]
 }

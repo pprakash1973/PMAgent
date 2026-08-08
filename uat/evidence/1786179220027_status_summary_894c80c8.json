@@ -1,0 +1,50 @@
+{
+  "run_id": "894c80c8-082c-4d2d-a768-cf1594eb4f57",
+  "timestamp": "2026-08-08T08:53:40.027Z",
+  "agent": "status_summary",
+  "model": "claude-sonnet-4-6",
+  "model_version": "claude-sonnet-4-6",
+  "provider": "anthropic",
+  "params": {
+    "temperature": 0,
+    "max_tokens": 8192
+  },
+  "input_id": "79542e2e9fecb168",
+  "system_prompt": "You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.\nApply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.\nWhen live EVM data is provided, use those exact numbers in metricsNarrative — do not override them.\n\nReturn JSON with:\n- summary (string): 2–3 sentence executive summary, stakeholder-ready\n- ragStatus (string): \"green\" | \"amber\" | \"red\" with clear rationale from the answers\n- recommendations (array of strings): 2–4 specific, actionable recommendations for the PM\n- accomplishments (array of strings): bulleted accomplishments extracted from answers\n- nextWeekPlan (array of strings): bulleted plan for next week extracted from answers\n- metricsNarrative (string): 1–2 sentences describing schedule, budget, and quality status; include SPI, CPI, and SV if EVM data is provided\n- assumptions (array of strings): REQUIRED — list any [ASSUMPTION] items or unstated assumptions identified in the PM answers; empty array if none\n- conflicts (array of strings): REQUIRED — list any conflicting inputs or inconsistencies in the PM answers; empty array if none",
+  "user_prompt": "[user]: Project context:\n{\n  \"name\": \"UAT-CRM-Implementation\",\n  \"methodology\": \"milestone_based\",\n  \"budget\": 500000,\n  \"currency\": \"USD\",\n  \"startDate\": \"2026-01-05T00:00:00.000Z\",\n  \"endDate\": \"2026-06-30T00:00:00.000Z\",\n  \"healthStatus\": \"amber\",\n  \"openRisks\": 0\n}\n\nPM Q&A responses:\n{\n  \"preview\": false,\n  \"ragStatus\": \"amber\",\n  \"spi\": 0.92,\n  \"accomplishments\": [\n    \"Completed requirements workshop\",\n    \"Finalized solution design\"\n  ],\n  \"nextWeekPlan\": [\n    \"Begin CRM configuration\",\n    \"Conduct stakeholder review\"\n  ],\n  \"risks\": [\n    \"Integration with legacy ERP\"\n  ],\n  \"issues\": [\n    \"Awaiting sign-off on functional specification\"\n  ],\n  \"budget\": 500000,\n  \"actualCost\": 85000,\n  \"completionPercent\": 20\n}\n\nGenerate the Weekly Status Report. Return JSON only.",
+  "retrieved_context": null,
+  "raw_response": "```json\n{\n  \"summary\": \"The UAT-CRM-Implementation project is progressing with key planning milestones achieved, including completion of the requirements workshop and finalization of the solution design. The project is currently tracking at an AMBER status due to a schedule performance index of 0.92, indicating a minor schedule lag relative to the baseline. Immediate focus is required on obtaining the outstanding functional specification sign-off to unblock the upcoming CRM configuration phase.\",\n  \"ragStatus\": \"amber\",\n  \"ragRationale\": \"SPI of 0.92 indicates the project is delivering approximately 8% behind schedule. An open issue around delayed sign-off on the functional specification poses a risk to the upcoming configuration milestone. No critical budget overrun is evident at this stage, but schedule slippage warrants close monitoring.\",\n  \"recommendations\": [\n    \"Escalate the pending functional specification sign-off to the appropriate stakeholder or sponsor immediately to prevent further schedule slippage before CRM configuration begins.\",\n    \"Develop and document a formal risk response plan for the legacy ERP integration risk, including identification of the integration owner, technical approach, and contingency timeline.\",\n    \"Conduct a schedule recovery analysis to identify opportunities to compress the plan and recover the 8% schedule variance (SPI 0.92) before it compounds in later phases.\",\n    \"Establish a baseline for Earned Value Management by confirming the planned value (PV) and earned value (EV) figures so that CPI and SV can be tracked alongside SPI in future reporting cycles.\"\n  ],\n  \"accomplishments\": [\n    \"Completed requirements workshop\",\n    \"Finalized solution design\"\n  ],\n  \"nextWeekPlan\": [\n    \"Begin CRM configuration\",\n    \"Conduct stakeholder review\"\n  ],\n  \"metricsNarrative\": \"The project has consumed $85,000 of the $500,000 budget (17% spend) against a reported 20% completion, suggesting cost performance is broadly in line at this early stage, though a formal CPI cannot be calculated without confirmed Earned Value figures. The Schedule Performance Index (SPI) stands at 0.92, indicating a schedule lag that requires corrective action to avoid downstream milestone impacts.\",\n  \"assumptions\": [\n    \"[ASSUMPTION] No CPI or Cost Variance (CV) data was provided; it is assumed actual cost of $85,000 is within the planned expenditure for the current phase, but this has not been formally validated against a time-phased budget baseline.\",\n    \"[ASSUMPTION] The 'openRisks: 0' field in the project context conflicts with the PM identifying an active risk (legacy ERP integration); it is assumed the risk register has not yet been formally updated to reflect this item.\",\n    \"[ASSUMPTION] The project methodology is milestone-based; it is assumed the 20% completion figure is derived from milestone achievement rather than a continuous earned value calculation.\",\n    \"[ASSUMPTION] The functional specification sign-off is on the critical path; it is assumed that CRM configuration cannot formally commence until this approval is obtained.\"\n  ],\n  \"conflicts\": [\n    \"The project context field 'openRisks' is set to 0, but the PM has identified an active risk regarding integration with the legacy ERP system. This inconsistency suggests the risk register may not be current and should be reconciled immediately.\",\n    \"The project context 'healthStatus' is listed as 'amber', which is consistent with the PM's self-reported RAG status; however, no formal issue log reference or risk ID was provided for the functional specification sign-off issue, making it unclear whether this is tracked as a formal issue or an informal observation.\"\n  ]\n}\n```",
+  "stop_reason": "end_turn",
+  "output": {
+    "summary": "The UAT-CRM-Implementation project is progressing with key planning milestones achieved, including completion of the requirements workshop and finalization of the solution design. The project is currently tracking at an AMBER status due to a schedule performance index of 0.92, indicating a minor schedule lag relative to the baseline. Immediate focus is required on obtaining the outstanding functional specification sign-off to unblock the upcoming CRM configuration phase.",
+    "ragStatus": "amber",
+    "ragRationale": "SPI of 0.92 indicates the project is delivering approximately 8% behind schedule. An open issue around delayed sign-off on the functional specification poses a risk to the upcoming configuration milestone. No critical budget overrun is evident at this stage, but schedule slippage warrants close monitoring.",
+    "recommendations": [
+      "Escalate the pending functional specification sign-off to the appropriate stakeholder or sponsor immediately to prevent further schedule slippage before CRM configuration begins.",
+      "Develop and document a formal risk response plan for the legacy ERP integration risk, including identification of the integration owner, technical approach, and contingency timeline.",
+      "Conduct a schedule recovery analysis to identify opportunities to compress the plan and recover the 8% schedule variance (SPI 0.92) before it compounds in later phases.",
+      "Establish a baseline for Earned Value Management by confirming the planned value (PV) and earned value (EV) figures so that CPI and SV can be tracked alongside SPI in future reporting cycles."
+    ],
+    "accomplishments": [
+      "Completed requirements workshop",
+      "Finalized solution design"
+    ],
+    "nextWeekPlan": [
+      "Begin CRM configuration",
+      "Conduct stakeholder review"
+    ],
+    "metricsNarrative": "The project has consumed $85,000 of the $500,000 budget (17% spend) against a reported 20% completion, suggesting cost performance is broadly in line at this early stage, though a formal CPI cannot be calculated without confirmed Earned Value figures. The Schedule Performance Index (SPI) stands at 0.92, indicating a schedule lag that requires corrective action to avoid downstream milestone impacts.",
+    "assumptions": [
+      "[ASSUMPTION] No CPI or Cost Variance (CV) data was provided; it is assumed actual cost of $85,000 is within the planned expenditure for the current phase, but this has not been formally validated against a time-phased budget baseline.",
+      "[ASSUMPTION] The 'openRisks: 0' field in the project context conflicts with the PM identifying an active risk (legacy ERP integration); it is assumed the risk register has not yet been formally updated to reflect this item.",
+      "[ASSUMPTION] The project methodology is milestone-based; it is assumed the 20% completion figure is derived from milestone achievement rather than a continuous earned value calculation.",
+      "[ASSUMPTION] The functional specification sign-off is on the critical path; it is assumed that CRM configuration cannot formally commence until this approval is obtained."
+    ],
+    "conflicts": [
+      "The project context field 'openRisks' is set to 0, but the PM has identified an active risk regarding integration with the legacy ERP system. This inconsistency suggests the risk register may not be current and should be reconciled immediately.",
+      "The project context 'healthStatus' is listed as 'amber', which is consistent with the PM's self-reported RAG status; however, no formal issue log reference or risk ID was provided for the functional specification sign-off issue, making it unclear whether this is tracked as a formal issue or an informal observation."
+    ]
+  },
+  "latency_ms": 18950,
+  "error": null
+}

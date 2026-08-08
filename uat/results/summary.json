@@ -1,0 +1,53 @@
+{
+  "tool_version": "1.0",
+  "generated_at": "2026-08-08T10:36:03Z",
+  "evidence_files": 5,
+  "runs_analysed": 5,
+  "findings_total": 3,
+  "critical": 0,
+  "major": 3,
+  "minor": 0,
+  "by_check": {
+    "HEDGED_LANGUAGE": 2,
+    "ENUM_VIOLATION": 1
+  },
+  "material_findings_by_model": {
+    "claude-sonnet-4-6": 3
+  },
+  "stability": [
+    {
+      "input_id": "79542e2e9fecb168",
+      "model": "claude-sonnet-4-6",
+      "runs": 3,
+      "compared_fields": 3,
+      "stable_fields": "",
+      "unstable_fields": "",
+      "stability_rate": "",
+      "verdict": "INSUFFICIENT RUNS",
+      "detail": "Need at least 5 runs to assess determinism."
+    },
+    {
+      "input_id": "94a1d63d574d9a4d",
+      "model": "claude-sonnet-4-6",
+      "runs": 1,
+      "compared_fields": 3,
+      "stable_fields": "",
+      "unstable_fields": "",
+      "stability_rate": "",
+      "verdict": "INSUFFICIENT RUNS",
+      "detail": "Need at least 5 runs to assess determinism."
+    },
+    {
+      "input_id": "eb320b3fc518b91b",
+      "model": "claude-sonnet-4-6",
+      "runs": 1,
+      "compared_fields": 3,
+      "stable_fields": "",
+      "unstable_fields": "",
+      "stability_rate": "",
+      "verdict": "INSUFFICIENT RUNS",
+      "detail": "Need at least 5 runs to assess determinism."
+    }
+  ],
+  "gate": "PASS WITH CONDITIONS"
+}

@@ -1,0 +1,4 @@
+﻿input_id,model,runs,compared_fields,stable_fields,unstable_fields,stability_rate,verdict,detail
+79542e2e9fecb168,claude-sonnet-4-6,3,3,,,,INSUFFICIENT RUNS,Need at least 5 runs to assess determinism.
+94a1d63d574d9a4d,claude-sonnet-4-6,1,3,,,,INSUFFICIENT RUNS,Need at least 5 runs to assess determinism.
+eb320b3fc518b91b,claude-sonnet-4-6,1,3,,,,INSUFFICIENT RUNS,Need at least 5 runs to assess determinism.
