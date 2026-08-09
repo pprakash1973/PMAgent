@@ -411,7 +411,7 @@ Return JSON with:
 - projectTitle (string)
 - projectCode (string): short alphanumeric code
 - version (string): "1.0"
-- preparedBy (string): PM name
+- preparedBy (string): always exactly "PM Agent on behalf of the Project Manager": always exactly "PM Agent on behalf of the Project Manager"
 - approvedBy (string): sponsor name
 - date (string): ISO date
 - projectDescription (string): clear, concise purpose statement
@@ -435,7 +435,7 @@ Return JSON with:
     business_case: `Generate a Business Case.
 Return JSON with:
 - title (string)
-- preparedBy (string)
+- preparedBy (string): always exactly "PM Agent on behalf of the Project Manager"
 - date (string)
 - executiveSummary (string)
 - problemStatement (string): the business problem or opportunity
@@ -970,7 +970,7 @@ Apply EVM principles where data is available.
 Return JSON with:
 - reportingPeriod (string): e.g. "Week of 07 Jul 2026"
 - reportDate (string)
-- preparedBy (string)
+- preparedBy (string): always exactly "PM Agent on behalf of the Project Manager"
 - overallStatus (string): green | amber | red
 - ragScorecard (object): {
     schedule (object): {status (string): green|amber|red, reason (string)}
@@ -995,7 +995,7 @@ Include EVM metrics and benefits tracking.
 Return JSON with:
 - reportingPeriod (string): e.g. "July 2026"
 - reportDate (string)
-- preparedBy (string)
+- preparedBy (string): always exactly "PM Agent on behalf of the Project Manager"
 - overallStatus (string): green | amber | red
 - ragScorecard (object): {
     schedule (object): {status, reason}
