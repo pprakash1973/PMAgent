@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 type Mode = "upload" | "nl";
 
 interface UploadedDoc {
+  docId: string;
   file: File;
   status: "parsing" | "done" | "error";
   summary: string[];
@@ -203,8 +204,8 @@ export default function NewProjectPage() {
     if (docs.some((d) => d.file.name === file.name && d.file.size === file.size)) {
       toast({ title: "Already added", description: file.name }); return;
     }
-    const idx = docs.length;
-    setDocs((prev) => [...prev, { file, status: "parsing", summary: [] }]);
+    const docId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setDocs((prev) => [...prev, { docId, file, status: "parsing", summary: [] }]);
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -239,8 +240,8 @@ export default function NewProjectPage() {
       if (req.timeline) bullets.push(`Timeline: ${req.timeline}`);
       if (bullets.length === 1) bullets.push("Requirements extracted successfully");
       setDocs((prev) =>
-        prev.map((d, i) =>
-          i === idx ? { ...d, status: "done", summary: bullets, parsed: {
+        prev.map((d) =>
+          d.docId === docId ? { ...d, status: "done", summary: bullets, parsed: {
             requirementsText: data.extractedText, requirementsFileName: data.fileName,
             requirementsFileFormat: data.fileFormat, requirementsExtracted: req,
             sowAssumptions, sowDependencies,
@@ -249,7 +250,7 @@ export default function NewProjectPage() {
       );
     } catch (err: any) {
       toast({ title: "Parse failed", description: err.message, variant: "destructive" });
-      setDocs((prev) => prev.map((d, i) => (i === idx ? { ...d, status: "error", errorMsg: err.message } : d)));
+      setDocs((prev) => prev.map((d) => (d.docId === docId ? { ...d, status: "error", errorMsg: err.message } : d)));
     }
   }
 
@@ -258,7 +259,7 @@ export default function NewProjectPage() {
     Array.from(e.dataTransfer.files).forEach((f) => handleFilePick(f));
   }
 
-  function removeDoc(idx: number) { setDocs((prev) => prev.filter((_, i) => i !== idx)); }
+  function removeDoc(docId: string) { setDocs((prev) => prev.filter((d) => d.docId !== docId)); }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -604,15 +605,15 @@ export default function NewProjectPage() {
                 </div>
                 {docs.length > 0 && (
                   <div className="space-y-2">
-                    {docs.map((doc, i) => (
-                      <div key={i} className="rounded-lg border border-slate-200 overflow-hidden">
+                    {docs.map((doc) => (
+                      <div key={doc.docId} className="rounded-lg border border-slate-200 overflow-hidden">
                         <div className="flex items-center gap-3 px-3 py-2.5 bg-slate-50">
                           {fileIcon(doc.file.name)}
                           <span className="text-sm font-medium text-slate-800 flex-1 truncate">{doc.file.name}</span>
                           {doc.status === "parsing" && <Loader2 className="w-4 h-4 animate-spin text-[#4f5bd5] shrink-0" />}
                           {doc.status === "done" && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
                           {doc.status === "error" && <span className="text-xs text-red-500 shrink-0">Failed</span>}
-                          <button type="button" onClick={() => removeDoc(i)} className="text-slate-400 hover:text-slate-700 shrink-0"><X className="w-4 h-4" /></button>
+                          <button type="button" onClick={() => removeDoc(doc.docId)} className="text-slate-400 hover:text-slate-700 shrink-0"><X className="w-4 h-4" /></button>
                         </div>
                         {doc.status === "parsing" && (
                           <div className="px-3 py-2 flex items-center gap-2 text-xs text-[#4f5bd5] animate-pulse bg-white">
