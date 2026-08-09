@@ -313,8 +313,8 @@ function InfoField({ label, value }: { label: string; value?: string | null }) {
 function ProjectInfoTab({ project }: { project: any }) {
   // Project.clusterId may be null on older projects — fall back through account.cluster
   const cluster = project.cluster ?? project.account?.cluster ?? null;
-  const dhName = cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
-  const dmName = project.account?.dmAssignments?.[0]?.user?.fullName ?? null;
+  const dhName = project._resolvedDhName ?? cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
+  const dmName = project._resolvedDmName ?? project.account?.dmAssignments?.[0]?.user?.fullName ?? null;
 
   return (
     <div style={{ maxWidth: 860 }}>

@@ -48,7 +48,7 @@ function kpiVal(v: string): string {
   return v.replace(/\s*[\(\[].*$/, "").trim().slice(0, 22) || v.slice(0, 22);
 }
 
-const FOOTER_TEXT = "Confidential and Proprietary. © 2026 UST Global Inc";
+const FOOTER_TEXT = "AI-Generated Draft — PM Review Required  |  Confidential and Proprietary. © 2026 UST Global Inc";
 
 // ── Shared slide helpers ───────────────────────────────────────────────────────
 

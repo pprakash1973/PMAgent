@@ -201,7 +201,7 @@ export const GUARDRAIL_SYSTEM_ADDENDUM = `
 
 GR-3 NO FABRICATED DATA: Never invent client names, dates, costs, metrics, or completion percentages not present in the provided context. Where data is missing, mark explicitly as [ASSUMPTION: <description>] or <TBD – confirm with sponsor>. Fabricated data is a defect, not a draft.
 
-GR-7 STANDARDS COMPLIANCE: Map every artifact to its governing PMBOK process (e.g., "per PMBOK 6th Ed 4.1"). CXO decks follow McKinsey-style: one message per slide, action titles, data-backed.
+GR-7 STANDARDS COMPLIANCE: Every artifact must follow professional project management standards. CXO decks follow McKinsey-style: one message per slide, action titles, data-backed.
 
 GR-8 ESTIMATE INTEGRITY: Every cost/duration/effort estimate must state its basis: analogous | parametric | three-point | bottom-up. Single-point estimates require a confidence range. Contingency and management reserves are visible line items — never buried.
 

@@ -18,6 +18,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         select: {
           name: true,
           code: true,
+          primaryDhId: true,
           clusterAssignments: {
             where: { isPrimary: true },
             select: { user: { select: { fullName: true } } },
@@ -30,6 +31,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           id: true,
           name: true,
           code: true,
+          primaryDmId: true,
           dmAssignments: {
             where: { isPrimary: true },
             select: { user: { select: { fullName: true } } },
@@ -39,6 +41,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             select: {
               name: true,
               code: true,
+              primaryDhId: true,
               clusterAssignments: {
                 where: { isPrimary: true },
                 select: { user: { select: { fullName: true } } },
@@ -65,9 +68,27 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   if (!project) notFound();
 
+  // Resolve DM and DH names — prefer assignment row, fall back to denormalized FK
+  const cluster = project.cluster ?? (project.account as any)?.cluster ?? null;
+  const dmAssignedName = (project.account as any)?.dmAssignments?.[0]?.user?.fullName ?? null;
+  const dhAssignedName = cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
+
+  const [resolvedDm, resolvedDh] = await Promise.all([
+    dmAssignedName ? null : ((project.account as any)?.primaryDmId
+      ? prisma.user.findUnique({ where: { id: (project.account as any).primaryDmId }, select: { fullName: true } })
+      : null),
+    dhAssignedName ? null : (cluster?.primaryDhId
+      ? prisma.user.findUnique({ where: { id: cluster.primaryDhId }, select: { fullName: true } })
+      : null),
+  ]);
+
+  const serialized = JSON.parse(JSON.stringify(project));
+  serialized._resolvedDmName = dmAssignedName ?? resolvedDm?.fullName ?? null;
+  serialized._resolvedDhName = dhAssignedName ?? resolvedDh?.fullName ?? null;
+
   return (
     <WorkspaceClient
-      project={JSON.parse(JSON.stringify(project))}
+      project={serialized}
       catalog={ARTIFACT_CATALOG}
     />
   );
