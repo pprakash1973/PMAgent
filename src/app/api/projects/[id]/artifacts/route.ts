@@ -174,6 +174,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ? JSON.stringify(project.requirementsDocs[0].extractedContent)
     : undefined;
 
+  // Fetch active scope baseline (if any)
+  const latestScopeBaseline = await (prisma as any).scopeBaseline.findFirst({
+    where: { projectId: id },
+    orderBy: { version: "desc" },
+  });
+  const scopeBaselineId: string | null = latestScopeBaseline?.id ?? null;
+  if (latestScopeBaseline) {
+    const blReqs: any[] = (latestScopeBaseline.snapshot as any[]) ?? [];
+    if (blReqs.length > 0) {
+      (projectContext as any).scopeRequirements = blReqs.map((r: any) => `${r.requirementKey}: ${r.statement}`);
+      (projectContext as any).scopeBaselineLabel = latestScopeBaseline.label;
+    }
+  }
+
   const templateOverride = await resolveTemplate(
     (user as any).orgId,
     (project as any).accountId,
@@ -216,7 +230,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ({ artifact, versionId } = await prisma.$transaction(async (tx) => {
       const a = await tx.artifact.update({
         where: { id: existing.id },
-        data: { content, currentVersion: newVersion, status: "draft" },
+        data: { content, currentVersion: newVersion, status: "draft", ...(scopeBaselineId ? { scopeBaselineId } : {}) },
       });
       const v = await tx.artifactVersion.create({
         data: {
@@ -243,6 +257,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           content,
           currentVersion: 1,
           status: "draft",
+          ...(scopeBaselineId ? { scopeBaselineId } : {}),
         },
       });
       const v = await tx.artifactVersion.create({

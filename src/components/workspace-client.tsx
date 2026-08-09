@@ -371,15 +371,63 @@ function ProjectInfoTab({ project }: { project: any }) {
 
 // ── Artifacts tab ──────────────────────────────────────────────────────────────
 
+const WBS_SCHEDULE_TYPES = new Set(["wbs", "milestone_plan"]);
+
 function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
   const latestStatus = project.statusReports?.[0];
   const healthScore = latestStatus?.healthScore?.compositeScore;
   const healthStatus = project.healthStatus || "green";
 
+  const [latestBaseline, setLatestBaseline] = React.useState<any | null>(null);
+
+  React.useEffect(() => {
+    fetch(`/api/projects/${project.id}/scope-baselines`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: any[]) => { if (Array.isArray(data) && data.length > 0) setLatestBaseline(data[0]); })
+      .catch(() => {});
+  }, [project.id]);
+
+  const staleArtifacts = latestBaseline
+    ? (project.artifacts || []).filter((a: any) => a.scopeBaselineId && a.scopeBaselineId !== latestBaseline.id)
+    : [];
+  const ungeneratedBL = latestBaseline
+    ? (project.artifacts || []).filter((a: any) => !a.scopeBaselineId)
+    : [];
+  const hasScope = !!latestBaseline;
+
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
       {/* Artifact panel */}
       <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Scope baseline status strip */}
+        {hasScope && (staleArtifacts.length > 0 || ungeneratedBL.length > 0) && (
+          <div style={{ border: `1px solid #fcd34d`, borderRadius: 10, padding: "10px 14px", marginBottom: 14, background: "#fffbeb", display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 14, flexShrink: 0 }}>⚠</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#92400e", marginBottom: 4 }}>
+                Active baseline: {latestBaseline.label} · some artifacts are stale or not yet generated against this scope
+              </div>
+              {staleArtifacts.length > 0 && (
+                <div style={{ fontSize: 12, color: "#b45309" }}>
+                  {staleArtifacts.filter((a: any) => WBS_SCHEDULE_TYPES.has(a.artifactType)).length > 0 && (
+                    <span><strong>WBS / Milestone Plan</strong> — use "Scope Control → Review Delta" to apply changes without regenerating. </span>
+                  )}
+                  {staleArtifacts.filter((a: any) => !WBS_SCHEDULE_TYPES.has(a.artifactType)).length > 0 && (
+                    <span>Other stale artifacts can be regenerated to reflect {latestBaseline.label}.</span>
+                  )}
+                </div>
+              )}
+              {ungeneratedBL.length > 0 && staleArtifacts.length === 0 && (
+                <div style={{ fontSize: 12, color: "#b45309" }}>Regenerate these artifacts to include the scoped requirements from {latestBaseline.label}.</div>
+              )}
+            </div>
+          </div>
+        )}
+        {hasScope && staleArtifacts.length === 0 && (project.artifacts || []).length > 0 && (
+          <div style={{ fontSize: 11, color: "#166534", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "5px 12px", marginBottom: 10, display: "inline-block" }}>
+            ✓ All artifacts aligned with {latestBaseline.label}
+          </div>
+        )}
         <ArtifactPanel
           projectId={project.id}
           artifacts={project.artifacts}
@@ -2320,6 +2368,632 @@ const REQ_STATUS_CFG: Record<string, { color: string; bg: string; label: string 
   rejected:  { color: "#cf3f3a", bg: "#fbe4e2", label: "Rejected" },
 };
 
+// ── Scope Control Tab ──────────────────────────────────────────────────────────
+
+function ScopeControlTab({ project }: { project: any }) {
+  const router = useRouter();
+
+  // Doc upload state (preserved from RequirementsTab)
+  const [docs, setDocs] = React.useState<any[]>(project.requirementsDocs || []);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const [docClass, setDocClass] = React.useState("sow");
+  const [showUploadForm, setShowUploadForm] = React.useState(false);
+
+  // Requirements & baselines state
+  const [reqs, setReqs] = React.useState<any[]>([]);
+  const [baselines, setBaselines] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  // Requirement editing
+  const [editingReqId, setEditingReqId] = React.useState<string | null>(null);
+  const [editText, setEditText] = React.useState("");
+  const [addingReq, setAddingReq] = React.useState(false);
+  const [newReqText, setNewReqText] = React.useState("");
+  const [reqSaving, setReqSaving] = React.useState(false);
+
+  // Extraction
+  const [extracting, setExtracting] = React.useState(false);
+  const [extractError, setExtractError] = React.useState<string | null>(null);
+
+  // Bottom panel
+  const [bottomTab, setBottomTab] = React.useState<"history" | "changelog">("history");
+
+  // Baseline creation flow
+  const [creatingBaseline, setCreatingBaseline] = React.useState(false);
+  const [deltaReview, setDeltaReview] = React.useState<any | null>(null); // returned baseline with impactSummary
+  const [acceptedMilestones, setAcceptedMilestones] = React.useState<Set<string>>(new Set());
+  const [applyingDelta, setApplyingDelta] = React.useState(false);
+
+  async function loadData() {
+    setLoading(true);
+    const [rRes, bRes] = await Promise.all([
+      fetch(`/api/projects/${project.id}/requirements/list`),
+      fetch(`/api/projects/${project.id}/scope-baselines`),
+    ]);
+    const rData = await rRes.json().catch(() => []);
+    const bData = await bRes.json().catch(() => []);
+    if (Array.isArray(rData)) setReqs(rData);
+    if (Array.isArray(bData)) setBaselines(bData);
+    setLoading(false);
+  }
+
+  React.useEffect(() => { loadData(); }, [project.id]);
+
+  const latestBaseline = baselines[0] ?? null; // ordered desc by version
+  const blSnapshot: string[] = latestBaseline
+    ? ((latestBaseline.snapshot as any[]) ?? []).map((r: any) => r.requirementKey)
+    : [];
+  const blRemovedSnapshot: any[] = latestBaseline
+    ? ((latestBaseline.removedSnapshot as any[]) ?? [])
+    : [];
+
+  const activeReqs = reqs.filter(r => r.isActive && r.status !== "rejected");
+  const basedReqs = latestBaseline
+    ? activeReqs.filter(r => blSnapshot.includes(r.requirementKey))
+    : [];
+  const pendingReqs = latestBaseline
+    ? activeReqs.filter(r => !blSnapshot.includes(r.requirementKey))
+    : activeReqs;
+
+  async function handleExtract() {
+    setExtracting(true);
+    setExtractError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Extraction failed");
+      if ((data.extracted ?? 0) === 0)
+        throw new Error("No requirements found in the uploaded documents.");
+      await loadData();
+    } catch (err: any) {
+      setExtractError(err.message);
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("docClass", docClass);
+      const res = await fetch(`/api/projects/${project.id}/requirements`, { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({ error: "Upload failed" }));
+      if (!res.ok) throw new Error(data?.error || "Upload failed");
+      setDocs(prev => [data.doc, ...prev]);
+      setShowUploadForm(false);
+      router.refresh();
+    } catch (err: any) {
+      setUploadError(err.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleReqAction(reqId: string, action: "remove" | "restore") {
+    const res = await fetch(`/api/projects/${project.id}/requirements/${reqId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setReqs(prev => prev.map(r => r.id === reqId ? { ...r, ...updated } : r));
+    }
+  }
+
+  async function handleEditSave(reqId: string) {
+    if (!editText.trim()) return;
+    setReqSaving(true);
+    const res = await fetch(`/api/projects/${project.id}/requirements/${reqId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "edit", statement: editText }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setReqs(prev => prev.map(r => r.id === reqId ? { ...r, ...updated } : r));
+      setEditingReqId(null);
+      setEditText("");
+    }
+    setReqSaving(false);
+  }
+
+  async function handleAddReq() {
+    if (!newReqText.trim()) return;
+    setReqSaving(true);
+    const res = await fetch(`/api/projects/${project.id}/requirements/manual`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statement: newReqText }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      setReqs(prev => [...prev, created]);
+      setNewReqText("");
+      setAddingReq(false);
+    }
+    setReqSaving(false);
+  }
+
+  async function handleCreateBaseline() {
+    setCreatingBaseline(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/scope-baselines`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create baseline");
+      setBaselines(prev => [data, ...prev]);
+      const hasDelta = (data.impactSummary?.wbsDelta?.length || 0) > 0 ||
+                       (data.impactSummary?.scheduleDelta?.length || 0) > 0;
+      if (hasDelta) {
+        setDeltaReview(data);
+      } else {
+        // No delta — mark reviewed immediately
+        await fetch(`/api/projects/${project.id}/scope-baselines/${data.id}/apply-delta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reviewed: true }),
+        });
+        setBaselines(prev => prev.map(b => b.id === data.id ? { ...b, deltaReviewed: true } : b));
+      }
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || "Baseline creation failed");
+    } finally {
+      setCreatingBaseline(false);
+    }
+  }
+
+  async function handleApplyDelta() {
+    if (!deltaReview) return;
+    setApplyingDelta(true);
+    const accepted = Array.from(acceptedMilestones).map(name => {
+      const item = deltaReview.impactSummary?.scheduleDelta?.find(
+        (d: any) => d.milestoneName === name
+      );
+      return { milestoneName: name, estimatedDaysFromEnd: item?.estimatedDaysFromEnd ?? 14 };
+    });
+    await fetch(`/api/projects/${project.id}/scope-baselines/${deltaReview.id}/apply-delta`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acceptedMilestones: accepted, reviewed: true }),
+    });
+    setBaselines(prev => prev.map(b => b.id === deltaReview.id ? { ...b, deltaReviewed: true } : b));
+    setDeltaReview(null);
+    setAcceptedMilestones(new Set());
+    setApplyingDelta(false);
+    router.refresh();
+  }
+
+  const pendingCount = pendingReqs.length;
+  const blLabel = latestBaseline?.label ?? null;
+
+  return (
+    <div>
+      {/* ── Top bar ──────────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" as const, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
+          {blLabel ? (
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.green, background: C.greenLight, borderRadius: 6, padding: "3px 10px" }}>
+              ✓ {blLabel} — active
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: C.text3 }}>No baseline yet</span>
+          )}
+          {blLabel && (
+            <span style={{ fontSize: 12, color: C.text2 }}>
+              {basedReqs.length} active · {blRemovedSnapshot.length} removed
+            </span>
+          )}
+          {pendingCount > 0 && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.amber, background: C.amberLight, borderRadius: 6, padding: "3px 10px" }}>
+              ⚠ {pendingCount} pending
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={handleExtract}
+            disabled={extracting || docs.length === 0}
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, background: extracting ? C.surface2 : "#0f766e", color: extracting ? C.text3 : "#fff", border: "none", borderRadius: 7, padding: "6px 13px", cursor: extracting || docs.length === 0 ? "not-allowed" : "pointer", opacity: docs.length === 0 ? 0.5 : 1 }}
+          >
+            {extracting ? "Extracting…" : "Extract Requirements"}
+          </button>
+          <button
+            onClick={handleCreateBaseline}
+            disabled={creatingBaseline || activeReqs.length === 0}
+            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, background: creatingBaseline ? C.surface2 : C.primary, color: creatingBaseline ? C.text3 : "#fff", border: "none", borderRadius: 7, padding: "6px 13px", cursor: creatingBaseline || activeReqs.length === 0 ? "not-allowed" : "pointer", opacity: activeReqs.length === 0 ? 0.5 : 1 }}
+          >
+            {creatingBaseline ? "Creating…" : latestBaseline ? "New Baseline" : "Create Baseline"}
+          </button>
+        </div>
+      </div>
+
+      {extractError && <div style={{ color: C.red, fontSize: 12, marginBottom: 10 }}>{extractError}</div>}
+
+      {/* ── Delta review panel ──────────────────────────────────────────────── */}
+      {deltaReview && (
+        <div style={{ border: `1.5px solid ${C.primary}`, borderRadius: 12, overflow: "hidden", marginBottom: 18, boxShadow: "0 4px 20px rgba(79,70,229,.10)" }}>
+          <div style={{ background: "linear-gradient(90deg,#4f46e5,#7c3aed)", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>
+              WBS &amp; Schedule Impact — {deltaReview.label}
+            </div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)" }}>
+              Review and accept proposed changes before completing
+            </div>
+          </div>
+          <div style={{ padding: "14px 16px", background: "#fafafa" }}>
+            {/* Summary */}
+            {deltaReview.impactSummary?.summary && (
+              <div style={{ fontSize: 12, color: C.text2, marginBottom: 12, fontStyle: "italic" }}>
+                {deltaReview.impactSummary.summary}
+              </div>
+            )}
+
+            {/* WBS Delta */}
+            {(deltaReview.impactSummary?.wbsDelta?.length ?? 0) > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  🏗 WBS Changes
+                  <span style={{ fontSize: 11, color: C.green, background: C.greenLight, borderRadius: 5, padding: "1px 6px" }}>
+                    {deltaReview.impactSummary.wbsDelta.filter((d: any) => d.action === "add").length} add
+                  </span>
+                  <span style={{ fontSize: 11, color: C.amber, background: C.amberLight, borderRadius: 5, padding: "1px 6px" }}>
+                    {deltaReview.impactSummary.wbsDelta.filter((d: any) => d.action === "flag").length} flag
+                  </span>
+                </div>
+                {deltaReview.impactSummary.wbsDelta.map((item: any, i: number) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.borderLight}` }}>
+                    <div style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, background: item.action === "add" ? C.greenLight : C.amberLight, color: item.action === "add" ? C.green : C.amber }}>
+                      {item.action === "add" ? "+" : "!"}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
+                        {item.action === "add" ? "Add: " : "Flag: "}{item.workPackageName}
+                      </div>
+                      <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>
+                        {item.linkedReqKey && <span style={{ fontFamily: "monospace" }}>{item.linkedReqKey}</span>}
+                        {item.estimatedDays && <span> · est. {item.estimatedDays} days</span>}
+                        {item.progressPct != null && <span style={{ color: C.amber }}> · {item.progressPct}% complete</span>}
+                        {item.note && <span> · {item.note}</span>}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic", flexShrink: 0 }}>Apply manually in WBS</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Schedule Delta */}
+            {(deltaReview.impactSummary?.scheduleDelta?.length ?? 0) > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                  📅 Schedule Changes
+                </div>
+                {deltaReview.impactSummary.scheduleDelta.map((item: any, i: number) => {
+                  const isAccepted = acceptedMilestones.has(item.milestoneName ?? "");
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.borderLight}` }}>
+                      <div style={{ width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, background: item.action === "add_milestone" ? C.greenLight : C.amberLight, color: item.action === "add_milestone" ? C.green : C.amber }}>
+                        {item.action === "add_milestone" ? "+" : "~"}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
+                          {item.action === "add_milestone" ? `New milestone: ${item.milestoneName}` : `Advisory: ${item.affectedMilestone}`}
+                        </div>
+                        <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>
+                          {item.estimatedDaysFromEnd && <span>+{item.estimatedDaysFromEnd} days from current end</span>}
+                          {item.estimatedDaysDelta && <span>~{item.estimatedDaysDelta} days shift</span>}
+                          {item.note && <span> · {item.note}</span>}
+                        </div>
+                      </div>
+                      {item.action === "add_milestone" ? (
+                        <button
+                          onClick={() => setAcceptedMilestones(prev => {
+                            const next = new Set(prev);
+                            if (next.has(item.milestoneName)) next.delete(item.milestoneName);
+                            else next.add(item.milestoneName);
+                            return next;
+                          })}
+                          style={{ fontSize: 11, fontWeight: 600, background: isAccepted ? C.greenLight : C.surface2, color: isAccepted ? C.green : C.text2, border: `1px solid ${isAccepted ? C.green : C.border}`, borderRadius: 6, padding: "3px 10px", cursor: "pointer", flexShrink: 0 }}
+                        >
+                          {isAccepted ? "✓ Will add" : "Add milestone"}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic", flexShrink: 0 }}>PM adjusts manually</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 8 }}>
+              <button
+                onClick={() => { setDeltaReview(null); setAcceptedMilestones(new Set()); }}
+                style={{ fontSize: 12, background: C.surface2, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 14px", cursor: "pointer" }}
+              >
+                Skip
+              </button>
+              <button
+                onClick={handleApplyDelta}
+                disabled={applyingDelta}
+                style={{ fontSize: 12, fontWeight: 600, background: C.primary, color: "#fff", border: "none", borderRadius: 7, padding: "6px 16px", cursor: applyingDelta ? "not-allowed" : "pointer", opacity: applyingDelta ? 0.7 : 1 }}
+              >
+                {applyingDelta ? "Applying…" : `Accept${acceptedMilestones.size > 0 ? ` (${acceptedMilestones.size} milestones)` : ""} & Complete`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main two-column layout ──────────────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+
+        {/* Left: source docs */}
+        <div style={{ borderRight: `1px solid ${C.border}`, padding: "10px 11px" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3, marginBottom: 8 }}>Source Documents</div>
+          {docs.map((doc: any) => {
+            const ext = (doc.fileName?.split(".").pop()?.toUpperCase() || "DOC") as string;
+            return (
+              <div key={doc.id} style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "5px 6px", borderRadius: 7, marginBottom: 3 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 5, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.fileName}</div>
+                  <div style={{ fontSize: 10, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Upload row */}
+          <div style={{ marginTop: 6 }}>
+            {showUploadForm ? (
+              <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 9px", background: C.surface2 }}>
+                <select value={docClass} onChange={e => setDocClass(e.target.value)} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 6px", fontSize: 11, background: C.surface, marginBottom: 6 }}>
+                  {DOC_CLASS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, background: uploading ? C.surface2 : C.primary, color: uploading ? C.text3 : "#fff", borderRadius: 5, padding: "5px 9px", cursor: uploading ? "not-allowed" : "pointer" }}>
+                  {uploading ? "Uploading…" : "Choose file"}
+                  <input type="file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv" style={{ display: "none" }} disabled={uploading} onChange={handleFileChange} />
+                </label>
+                {uploadError && <div style={{ fontSize: 10, color: C.red, marginTop: 4 }}>{uploadError}</div>}
+                <button onClick={() => setShowUploadForm(false)} style={{ fontSize: 10, color: C.text3, background: "transparent", border: "none", cursor: "pointer", marginTop: 4 }}>Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowUploadForm(true)} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", border: `1px dashed ${C.border}`, borderRadius: 6, padding: "5px 7px", fontSize: 11, color: C.text3, background: "transparent", cursor: "pointer" }}>
+                + Upload doc
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Right: requirements table */}
+        <div style={{ display: "flex", flexDirection: "column" as const }}>
+          {/* Requirements header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 11px", borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3 }}>
+              {latestBaseline ? `Baselined requirements (${latestBaseline.label})` : "Requirements"}
+            </span>
+            <button onClick={() => setAddingReq(v => !v)} style={{ fontSize: 11, fontWeight: 600, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 5, padding: "3px 8px", cursor: "pointer" }}>+ Add</button>
+          </div>
+
+          {/* Add requirement form */}
+          {addingReq && (
+            <div style={{ padding: "8px 11px", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
+              <textarea
+                value={newReqText}
+                onChange={e => setNewReqText(e.target.value)}
+                placeholder="Enter requirement statement…"
+                rows={2}
+                style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 9px", fontSize: 12, resize: "vertical" as const, background: C.surface, boxSizing: "border-box" as const }}
+              />
+              <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                <button onClick={handleAddReq} disabled={reqSaving || !newReqText.trim()} style={{ fontSize: 11, fontWeight: 600, background: C.green, color: "#fff", border: "none", borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>Save</button>
+                <button onClick={() => { setAddingReq(false); setNewReqText(""); }} style={{ fontSize: 11, background: C.surface2, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {loading ? (
+            <div style={{ padding: "20px 11px", fontSize: 12, color: C.text3 }}>Loading…</div>
+          ) : (
+            <>
+              {/* Active baselined requirements */}
+              {basedReqs.map((req: any) => (
+                <div key={req.id} style={{ display: "flex", alignItems: "flex-start", padding: "7px 11px", gap: 8, borderBottom: `1px solid ${C.borderLight}` }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 500, color: C.primary, width: 52, flexShrink: 0, paddingTop: 1 }}>{req.requirementKey}</span>
+                  {editingReqId === req.id ? (
+                    <div style={{ flex: 1 }}>
+                      <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", fontSize: 12, resize: "vertical" as const, background: C.surface, boxSizing: "border-box" as const }} />
+                      <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+                        <button onClick={() => handleEditSave(req.id)} disabled={reqSaving} style={{ fontSize: 11, fontWeight: 600, background: C.green, color: "#fff", border: "none", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Save</button>
+                        <button onClick={() => { setEditingReqId(null); setEditText(""); }} style={{ fontSize: 11, background: C.surface2, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <span style={{ flex: 1, fontSize: 12, color: C.text, lineHeight: 1.45 }}>{req.statement}</span>
+                  )}
+                  {editingReqId !== req.id && (
+                    <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+                      <button onClick={() => { setEditingReqId(req.id); setEditText(req.statement); }} style={{ padding: "2px 5px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 11, color: C.text2, background: C.surface, cursor: "pointer" }}>✎</button>
+                      <button onClick={() => handleReqAction(req.id, "remove")} style={{ padding: "2px 5px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 11, color: C.red, background: C.surface, cursor: "pointer" }}>✕</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Struck-through removed requirements from last baseline */}
+              {blRemovedSnapshot.map((r: any, i: number) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", padding: "7px 11px", gap: 8, borderBottom: `1px solid ${C.borderLight}`, background: "#fff8f8" }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 500, color: C.red, width: 52, flexShrink: 0, paddingTop: 1 }}>{r.requirementKey}</span>
+                  <div style={{ flex: 1, display: "flex", flexWrap: "wrap" as const, alignItems: "flex-start", gap: 6 }}>
+                    <span style={{ fontSize: 12, textDecoration: "line-through", color: C.text3, lineHeight: 1.45 }}>{r.statement}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: C.red, background: "#fde8e8", borderRadius: 5, padding: "1px 6px", flexShrink: 0 }}>Removed · {latestBaseline?.label}</span>
+                  </div>
+                  {/* Restore: find if this req still exists in reqs list */}
+                  {reqs.find((req: any) => req.requirementKey === r.requirementKey && !req.isActive) && (
+                    <button
+                      onClick={() => {
+                        const found = reqs.find((req: any) => req.requirementKey === r.requirementKey);
+                        if (found) handleReqAction(found.id, "restore");
+                      }}
+                      style={{ fontSize: 10, fontWeight: 600, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 5, padding: "2px 8px", cursor: "pointer", flexShrink: 0 }}
+                    >
+                      restore
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {/* Pending divider */}
+              {pendingReqs.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 11px", background: C.primaryLight, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 11, fontWeight: 500, color: C.primary }}>Pending — not yet baselined ({pendingReqs.length})</span>
+                  <span style={{ fontSize: 11, color: C.text3, marginLeft: "auto" }}>will appear in next baseline</span>
+                </div>
+              )}
+
+              {/* Pending requirements */}
+              {pendingReqs.map((req: any) => (
+                <div key={req.id} style={{ display: "flex", alignItems: "flex-start", padding: "7px 11px", gap: 8, borderBottom: `1px solid ${C.borderLight}`, background: "#f5f7ff" }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 500, color: C.primary, width: 52, flexShrink: 0, paddingTop: 1 }}>{req.requirementKey}</span>
+                  {editingReqId === req.id ? (
+                    <div style={{ flex: 1 }}>
+                      <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", fontSize: 12, resize: "vertical" as const, background: C.surface, boxSizing: "border-box" as const }} />
+                      <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+                        <button onClick={() => handleEditSave(req.id)} disabled={reqSaving} style={{ fontSize: 11, fontWeight: 600, background: C.green, color: "#fff", border: "none", borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Save</button>
+                        <button onClick={() => { setEditingReqId(null); setEditText(""); }} style={{ fontSize: 11, background: C.surface2, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 5, padding: "3px 9px", cursor: "pointer" }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ flex: 1, display: "flex", flexWrap: "wrap" as const, alignItems: "flex-start", gap: 6 }}>
+                      <span style={{ fontSize: 12, color: C.text, lineHeight: 1.45 }}>{req.statement}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: C.primary, background: C.primaryLight, borderRadius: 5, padding: "1px 6px", flexShrink: 0 }}>New · pending</span>
+                    </div>
+                  )}
+                  {editingReqId !== req.id && (
+                    <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+                      <button onClick={() => { setEditingReqId(req.id); setEditText(req.statement); }} style={{ padding: "2px 5px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 11, color: C.text2, background: C.surface, cursor: "pointer" }}>✎</button>
+                      <button onClick={() => handleReqAction(req.id, "remove")} style={{ padding: "2px 5px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 11, color: C.red, background: C.surface, cursor: "pointer" }}>✕</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {activeReqs.length === 0 && blRemovedSnapshot.length === 0 && (
+                <div style={{ padding: "24px 16px", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>
+                  No requirements yet. Upload a document and extract requirements, or add one manually.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Bottom: Baseline history + Changelog ────────────────────────────── */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
+          {(["history", "changelog"] as const).map(t => (
+            <button key={t} onClick={() => setBottomTab(t)} style={{ padding: "6px 13px", fontSize: 12, fontWeight: 500, color: bottomTab === t ? C.primary : C.text3, background: "transparent", border: "none", borderBottom: `2px solid ${bottomTab === t ? C.primary : "transparent"}`, cursor: "pointer" }}>
+              {t === "history" ? "Baseline history" : "Changelog"}
+            </button>
+          ))}
+        </div>
+
+        {bottomTab === "history" && (
+          baselines.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.text3, padding: "8px 0" }}>No baselines created yet.</div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 0, position: "relative", padding: "6px 0" }}>
+              <div style={{ position: "absolute", top: 16, left: 16, right: 16, height: 1, background: C.border, zIndex: 0 }} />
+              {[...baselines].reverse().map((bl: any) => {
+                const isDraft = !bl.deltaReviewed;
+                const isActive = bl.id === latestBaseline?.id && bl.deltaReviewed;
+                const prev = [...baselines].reverse().find(b => b.version === bl.version - 1);
+                const prevSnap: any[] = prev ? (prev.snapshot as any[]) ?? [] : [];
+                const currSnap: any[] = (bl.snapshot as any[]) ?? [];
+                const added = currSnap.filter((r: any) => !prevSnap.find((p: any) => p.requirementKey === r.requirementKey)).length;
+                const removed = (bl.removedSnapshot as any[])?.length ?? 0;
+                return (
+                  <div key={bl.id} style={{ display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 5, position: "relative", zIndex: 1, flex: 1, maxWidth: 140 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, border: `2px solid ${C.surface}`, background: isActive ? C.primary : isDraft ? C.amber : C.border }} />
+                    <div style={{ background: C.surface, border: `1px solid ${isActive ? C.primary : isDraft ? C.amber : C.border}`, borderStyle: isDraft ? "dashed" : "solid", borderRadius: 8, padding: "7px 9px", textAlign: "center" as const, width: "100%", maxWidth: 130 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: isActive ? C.primary : isDraft ? C.amber : C.text }}>
+                        {isActive ? `★ ${bl.label}` : bl.label}
+                      </div>
+                      <div style={{ fontSize: 10, color: C.text3, marginTop: 1 }}>{formatDate(bl.createdAt)}</div>
+                      <div style={{ fontSize: 11, color: C.text2, marginTop: 2 }}>{bl.requirementCount} reqs</div>
+                      <div style={{ display: "flex", gap: 3, justifyContent: "center", marginTop: 3 }}>
+                        {added > 0 && <span style={{ fontSize: 10, color: C.green, background: C.greenLight, borderRadius: 4, padding: "1px 5px" }}>+{added}</span>}
+                        {removed > 0 && <span style={{ fontSize: 10, color: C.red, background: C.redLight, borderRadius: 4, padding: "1px 5px" }}>−{removed}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {bottomTab === "changelog" && (
+          baselines.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.text3, padding: "8px 0" }}>No changes recorded yet.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 0 }}>
+              {baselines.map((bl: any) => {
+                const removed: any[] = (bl.removedSnapshot as any[]) ?? [];
+                const allSnap: any[] = (bl.snapshot as any[]) ?? [];
+                const prevBl = baselines.find((b: any) => b.version === bl.version - 1);
+                const prevSnap: any[] = prevBl ? (prevBl.snapshot as any[]) ?? [] : [];
+                const added = allSnap.filter(r => !prevSnap.find((p: any) => p.requirementKey === r.requirementKey));
+                return (
+                  <div key={bl.id} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: C.text2, marginBottom: 6, display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: C.primary, background: C.primaryLight, borderRadius: 4, padding: "1px 6px" }}>{bl.label}</span>
+                      {formatDate(bl.createdAt)}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column" as const, gap: 3, paddingLeft: 14 }}>
+                      {added.map((r: any, i: number) => (
+                        <div key={i} style={{ fontSize: 12, color: C.text2, display: "flex", alignItems: "flex-start", gap: 7 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.green, flexShrink: 0, marginTop: 4 }} />
+                          <span><span style={{ fontFamily: "monospace", fontSize: 11, color: C.text3 }}>{r.requirementKey}</span> {r.statement.slice(0, 80)}{r.statement.length > 80 ? "…" : ""}</span>
+                        </div>
+                      ))}
+                      {removed.map((r: any, i: number) => (
+                        <div key={i} style={{ fontSize: 12, color: C.text2, display: "flex", alignItems: "flex-start", gap: 7 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, flexShrink: 0, marginTop: 4 }} />
+                          <span><span style={{ fontFamily: "monospace", fontSize: 11, color: C.text3 }}>{r.requirementKey}</span> <span style={{ textDecoration: "line-through" }}>{r.statement.slice(0, 80)}</span>{r.statement.length > 80 ? "…" : ""} — removed</span>
+                        </div>
+                      ))}
+                      {added.length === 0 && removed.length === 0 && (
+                        <div style={{ fontSize: 12, color: C.text3, fontStyle: "italic" }}>Initial baseline</div>
+                      )}
+                    </div>
+                    <div style={{ borderTop: `1px solid ${C.borderLight}`, marginTop: 8 }} />
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Legacy RequirementsTab (keep for impact analysis functionality) ─────────────
+
 function RequirementsTab({ project }: { project: any }) {
   const router = useRouter();
   const [docs, setDocs] = React.useState<any[]>(project.requirementsDocs || []);
@@ -3723,7 +4397,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       {tab === "Schedule" && <ScheduleTab project={project} />}
       {tab === "Cost" && <CostTab project={project} />}
       {tab === "Commercial" && isAgile && <AgileCommercialTab project={project} />}
-      {tab === "Scope Control" && <RequirementsTab project={project} />}
+      {tab === "Scope Control" && <ScopeControlTab project={project} />}
       {tab === "Status Reporting" && isAgile && <AgileStatusTab project={project} />}
       {tab === "Status Reporting" && !isAgile && <StatusTab project={project} />}
       {tab === "Baseline" && <BaselineTab project={project} />}

@@ -325,6 +325,7 @@ model Project {
   impactReports      ImpactReport[]
   goldEntries        ComparisonGoldEntry[]
   accuracyReports    AccuracyReport[]
+  scopeBaselines     ScopeBaseline[]
 
   // Agile relations (Phase A/B)
   contracts          Contract[]
@@ -405,10 +406,12 @@ model Requirement {
   status            String    @default("proposed")
   confidence        Float?
   sourceChunkId     String?
+  sourceDocId       String?
   sourceQuote       String?
   confirmedById     String?
   confirmedAt       DateTime?
   amendedStatement  String?
+  isActive          Boolean   @default(true)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -418,6 +421,7 @@ model Requirement {
   @@unique([projectId, requirementKey])
   @@index([projectId])
   @@index([status])
+  @@index([projectId, isActive])
 }
 
 model Gap {
@@ -459,25 +463,27 @@ model ArtifactSelection {
 }
 
 model Artifact {
-  id             String   @id @default(cuid())
-  projectId      String
-  artifactType   String
-  phase          String
-  status         String   @default("draft")
-  currentVersion Int      @default(1)
-  sourceReqId    String?
-  content        Json?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String   @id @default(cuid())
+  projectId         String
+  artifactType      String
+  phase             String
+  status            String   @default("draft")
+  currentVersion    Int      @default(1)
+  sourceReqId       String?
+  scopeBaselineId   String?
+  content           Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   // Grounding Phase 2
-  gapCount       Int      @default(0)
-  groundingScore Float?
+  gapCount          Int      @default(0)
+  groundingScore    Float?
 
-  project   Project               @relation(fields: [projectId], references: [id])
-  sourceReq RequirementsDocument? @relation(fields: [sourceReqId], references: [id])
-  versions  ArtifactVersion[]
-  gaps      Gap[]
+  project        Project               @relation(fields: [projectId], references: [id])
+  sourceReq      RequirementsDocument? @relation(fields: [sourceReqId], references: [id])
+  scopeBaseline  ScopeBaseline?        @relation(fields: [scopeBaselineId], references: [id])
+  versions       ArtifactVersion[]
+  gaps           Gap[]
 }
 
 model ArtifactVersion {
@@ -1464,4 +1470,27 @@ model DmReviewNote {
 
   @@index([projectId])
   @@map("dm_review_notes")
+}
+
+// ── Scope Control ──────────────────────────────────────────────────────────────
+
+model ScopeBaseline {
+  id               String   @id @default(cuid())
+  projectId        String
+  version          Int
+  label            String
+  snapshot         Json     @default("[]")
+  removedSnapshot  Json     @default("[]")
+  impactSummary    Json?
+  requirementCount Int      @default(0)
+  deltaReviewed    Boolean  @default(false)
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  artifacts Artifact[]
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@map("scope_baselines")
 }

@@ -15,7 +15,12 @@ export async function GET(
   const requirements = await prisma.requirement.findMany({
     where: { projectId: id },
     include: {
-      sourceChunk: { select: { text: true, sectionTitle: true, pageNumber: true } },
+      sourceChunk: {
+        select: {
+          text: true, sectionTitle: true, pageNumber: true,
+          document: { select: { id: true, fileName: true } },
+        },
+      },
     },
     orderBy: { requirementKey: "asc" },
   });
