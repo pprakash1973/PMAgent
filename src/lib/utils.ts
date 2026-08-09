@@ -29,7 +29,7 @@ export function ragBg(status: string) {
 export function methodologyLabel(m: string) {
   return ({
     waterfall:       "Waterfall",
-    milestone_based: "Waterfall (Milestone Based)",
+    milestone_based: "Waterfall",
     agile:           "Agile Scrum",
     agile_scrum:     "Agile (Scrum)",
     kanban:          "Kanban",
