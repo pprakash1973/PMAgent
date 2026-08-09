@@ -35,6 +35,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             select: { user: { select: { fullName: true } } },
             take: 1,
           },
+          cluster: {
+            select: {
+              name: true,
+              code: true,
+              clusterAssignments: {
+                where: { isPrimary: true },
+                select: { user: { select: { fullName: true } } },
+                take: 1,
+              },
+            },
+          },
         },
       },
       program: { select: { id: true, name: true, code: true } },

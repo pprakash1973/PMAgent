@@ -27,13 +27,15 @@ export function ragBg(status: string) {
 }
 
 export function methodologyLabel(m: string) {
-  return {
-    waterfall: "Waterfall",
-    agile: "Agile Scrum",
-    kanban: "Kanban",
-    safe: "SAFe",
-    hybrid: "Hybrid",
-  }[m] ?? m;
+  return ({
+    waterfall:       "Waterfall",
+    milestone_based: "Waterfall (Milestone Based)",
+    agile:           "Agile Scrum",
+    agile_scrum:     "Agile (Scrum)",
+    kanban:          "Kanban",
+    safe:            "SAFe",
+    hybrid:          "Hybrid",
+  } as Record<string, string>)[m] ?? m;
 }
 
 export const ARTIFACT_CATALOG = [

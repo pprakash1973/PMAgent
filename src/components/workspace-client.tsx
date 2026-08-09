@@ -292,9 +292,11 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
 // ── Project Info tab ────────────────────────────────────────────────────────────
 
 const PROJECT_TYPE_LABELS: Record<string, string> = {
-  fixed_price: "Fixed Price",
+  fixed_bid:          "Fixed Bid",
+  time_and_material:  "Time and Material",
+  fixed_price:        "Fixed Price",
   time_and_materials: "Time & Materials",
-  capped_tm: "Capped T&M",
+  capped_tm:          "Capped T&M",
 };
 
 function InfoField({ label, value }: { label: string; value?: string | null }) {
@@ -309,7 +311,9 @@ function InfoField({ label, value }: { label: string; value?: string | null }) {
 }
 
 function ProjectInfoTab({ project }: { project: any }) {
-  const dhName = project.cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
+  // Project.clusterId may be null on older projects — fall back through account.cluster
+  const cluster = project.cluster ?? project.account?.cluster ?? null;
+  const dhName = cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
   const dmName = project.account?.dmAssignments?.[0]?.user?.fullName ?? null;
 
   return (
@@ -321,7 +325,7 @@ function ProjectInfoTab({ project }: { project: any }) {
 
         {/* Row 1 — Hierarchy */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
-          <InfoField label="Cluster" value={project.cluster?.name} />
+          <InfoField label="Cluster" value={cluster?.name} />
           <InfoField label="Account" value={project.account?.name} />
           <InfoField label="Program" value={project.program?.name} />
         </div>
