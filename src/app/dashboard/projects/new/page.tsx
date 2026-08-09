@@ -18,6 +18,7 @@ interface UploadedDoc {
   file: File;
   status: "parsing" | "done" | "error";
   summary: string[];
+  errorMsg?: string;
   parsed?: {
     requirementsText: string;
     requirementsFileName: string;
@@ -247,7 +248,7 @@ export default function NewProjectPage() {
       );
     } catch (err: any) {
       toast({ title: "Parse failed", description: err.message, variant: "destructive" });
-      setDocs((prev) => prev.map((d, i) => (i === idx ? { ...d, status: "error" } : d)));
+      setDocs((prev) => prev.map((d, i) => (i === idx ? { ...d, status: "error", errorMsg: err.message } : d)));
     }
   }
 
@@ -577,10 +578,17 @@ export default function NewProjectPage() {
           {/* Upload mode */}
           {mode === "upload" && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Upload Requirements Documents</CardTitle>
-                <CardDescription>Add one or more files — AI will extract project fields and requirements from each. Supports PDF, Word, Excel, PowerPoint, and text files.</CardDescription>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Requirements / SOW Documents</CardTitle>
+                <CardDescription>Add one or more files — AI will extract project fields and requirements from each. Supports PDF, Word, and text files.</CardDescription>
               </CardHeader>
+              <div className="mx-6 mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 flex gap-3 items-start">
+                <span className="text-amber-500 text-base mt-0.5">💡</span>
+                <div className="text-xs text-amber-800 leading-relaxed">
+                  <span className="font-semibold">Why this matters — </span>
+                  The project lifecycle is grounded in this source of truth. Every artifact the agent generates — charter, risk register, WBS, schedule — draws context from the documents you upload here. The more complete your SOW or requirements document, the more accurate and ready-to-use your artifacts will be.
+                </div>
+              </div>
               <CardContent className="space-y-4">
                 <div
                   onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
@@ -620,7 +628,9 @@ export default function NewProjectPage() {
                           </div>
                         )}
                         {doc.status === "error" && (
-                          <div className="px-3 py-2 bg-red-50 text-xs text-red-600">Could not extract content from this file.</div>
+                          <div className="px-3 py-2 bg-red-50 text-xs text-red-600">
+                            {doc.errorMsg || "Could not extract content from this file."}
+                          </div>
                         )}
                       </div>
                     ))}
