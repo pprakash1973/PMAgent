@@ -10,6 +10,12 @@ import { z } from "zod";
 const StatusInputSchema = z.object({
   preview: z.boolean().optional(),
   ragStatus: z.string().max(10).optional(),
+  // Structured Q&A payload sent by the questionnaire UI (array of objects)
+  questionnaire: z.array(z.object({
+    category: z.string().max(100),
+    question: z.string().max(500),
+    answer: z.string().max(2000),
+  })).max(30).optional(),
 }).catchall(
   z.union([
     z.string().max(2000),
