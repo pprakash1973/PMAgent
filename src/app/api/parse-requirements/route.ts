@@ -36,12 +36,20 @@ export async function POST(req: NextRequest) {
     let text = "";
 
     if (ext === "pdf") {
-      // pdf-parse v1 (pinned) — pure-JS, serverless-safe. Require the lib path
-      // directly to skip the debug test-file read that runs on the package root.
+      // Use pdfjs-dist 3.x legacy build directly — the old pdf-parse bundled pdfjs
+      // v2 which hard-fails with "Command token too long: 128" on many real-world PDFs.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require("pdf-parse/lib/pdf-parse");
-      const result = await pdfParse(buffer);
-      text = result.text;
+      const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
+      pdfjs.GlobalWorkerOptions.workerSrc = "";
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer) });
+      const pdfDoc = await loadingTask.promise;
+      const pages: string[] = [];
+      for (let p = 1; p <= pdfDoc.numPages; p++) {
+        const page = await pdfDoc.getPage(p);
+        const content = await page.getTextContent();
+        pages.push(content.items.map((item: any) => item.str).join(" "));
+      }
+      text = pages.join("\n");
     } else if (ext === "docx") {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mammoth = require("mammoth");
