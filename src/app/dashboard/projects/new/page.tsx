@@ -23,6 +23,8 @@ interface UploadedDoc {
     requirementsFileName: string;
     requirementsFileFormat: string;
     requirementsExtracted: Record<string, unknown>;
+    sowAssumptions: string[];
+    sowDependencies: { description: string; type: string; owner?: string }[];
   };
 }
 
@@ -222,11 +224,16 @@ export default function NewProjectPage() {
         description: f.description || (pf.description as string) || "",
       }));
       const req = data.requirements as Record<string, unknown>;
+      const sowAssumptions: string[] = Array.isArray(req.assumptions) ? (req.assumptions as string[]) : [];
+      const sowDependencies: { description: string; type: string; owner?: string }[] =
+        Array.isArray(req.dependencies) ? (req.dependencies as any[]) : [];
       const bullets: string[] = [`From: ${file.name}`];
       if (Array.isArray(req.goals) && req.goals.length) bullets.push(`${req.goals.length} goal(s) identified`);
       if (Array.isArray(req.stakeholders) && req.stakeholders.length) bullets.push(`${req.stakeholders.length} stakeholder(s) found`);
       if (Array.isArray(req.constraints) && req.constraints.length) bullets.push(`${req.constraints.length} constraint(s) detected`);
       if (Array.isArray(req.scopeItems) && req.scopeItems.length) bullets.push(`${req.scopeItems.length} scope item(s) extracted`);
+      if (sowAssumptions.length) bullets.push(`${sowAssumptions.length} assumption(s) extracted`);
+      if (sowDependencies.length) bullets.push(`${sowDependencies.length} dependenc${sowDependencies.length === 1 ? "y" : "ies"} extracted`);
       if (req.timeline) bullets.push(`Timeline: ${req.timeline}`);
       if (bullets.length === 1) bullets.push("Requirements extracted successfully");
       setDocs((prev) =>
@@ -234,6 +241,7 @@ export default function NewProjectPage() {
           i === idx ? { ...d, status: "done", summary: bullets, parsed: {
             requirementsText: data.extractedText, requirementsFileName: data.fileName,
             requirementsFileFormat: data.fileFormat, requirementsExtracted: req,
+            sowAssumptions, sowDependencies,
           } } : d
         )
       );
@@ -285,6 +293,11 @@ export default function NewProjectPage() {
         payload.requirementsFileName = doneDocs.map((d) => d.parsed!.requirementsFileName).join(", ");
         payload.requirementsFileFormat = doneDocs[0].parsed!.requirementsFileFormat;
         payload.requirementsExtracted = doneDocs.reduce((acc, d) => ({ ...acc, ...d.parsed!.requirementsExtracted }), {});
+        // Merge assumptions and dependencies from all uploaded docs
+        const allAssumptions = doneDocs.flatMap((d) => d.parsed!.sowAssumptions ?? []);
+        const allDependencies = doneDocs.flatMap((d) => d.parsed!.sowDependencies ?? []);
+        if (allAssumptions.length > 0) payload.sowAssumptions = allAssumptions;
+        if (allDependencies.length > 0) payload.sowDependencies = allDependencies;
       }
     }
     try {

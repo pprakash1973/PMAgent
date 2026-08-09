@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   FileText, ShieldAlert, AlertCircle, Users, CalendarDays,
   CircleDollarSign, Layers, BarChart2, GitCompare, Zap, Briefcase, Info,
+  BookOpen, TrendingUp, Plus, Trash2, CheckCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
@@ -311,13 +312,45 @@ function InfoField({ label, value }: { label: string; value?: string | null }) {
 }
 
 function ProjectInfoTab({ project }: { project: any }) {
-  // Project.clusterId may be null on older projects — fall back through account.cluster
   const cluster = project.cluster ?? project.account?.cluster ?? null;
   const dhName = project._resolvedDhName ?? cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
   const dmName = project._resolvedDmName ?? project.account?.dmAssignments?.[0]?.user?.fullName ?? null;
 
+  const [localRevisions, setLocalRevisions] = React.useState<any[]>([]);
+  const [localBudget, setLocalBudget] = React.useState<number | null>(project.budget ? Number(project.budget) : null);
+  const originalBudget = localRevisions.length > 0 ? Number(localRevisions[0].previousBudget) : null;
+  const [showRevForm, setShowRevForm] = React.useState(false);
+  const [revDelta, setRevDelta] = React.useState("");
+  const [revReason, setRevReason] = React.useState("");
+  const [revCr, setRevCr] = React.useState("");
+  const [revLoading, setRevLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    fetch(`/api/projects/${project.id}/budget-revisions`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: any[]) => setLocalRevisions(data))
+      .catch(() => {});
+  }, [project.id]);
+
+  async function submitRevision() {
+    const delta = parseFloat(revDelta);
+    if (!delta || !revReason.trim()) return;
+    setRevLoading(true);
+    const res = await fetch(`/api/projects/${project.id}/budget-revisions`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delta, reason: revReason.trim(), crReference: revCr.trim() || undefined }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setLocalRevisions(prev => [...prev, data.revision]);
+      setLocalBudget(data.newBudget);
+      setRevDelta(""); setRevReason(""); setRevCr(""); setShowRevForm(false);
+    }
+    setRevLoading(false);
+  }
+
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div style={{ maxWidth: 860, display: "flex", flexDirection: "column" as const, gap: 16 }}>
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "24px 28px" }}>
         <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 20 }}>
           Project Information
@@ -350,7 +383,7 @@ function ProjectInfoTab({ project }: { project: any }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
           <InfoField label="Methodology" value={methodologyLabel(project.methodology)} />
-          <InfoField label="Budget" value={project.budget ? formatCurrency(project.budget, project.currency) : null} />
+          <InfoField label="Budget" value={localBudget ? formatCurrency(localBudget, project.currency) : null} />
           <InfoField label="Currency" value={project.currency} />
         </div>
 
@@ -363,6 +396,101 @@ function ProjectInfoTab({ project }: { project: any }) {
               <p style={{ fontSize: 13.5, color: C.text, lineHeight: 1.65, margin: 0 }}>{project.description}</p>
             </div>
           </>
+        )}
+      </div>
+
+      {/* Budget Control card */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px 28px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <TrendingUp size={15} color={C.primary} />
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: C.text3, textTransform: "uppercase" as const }}>Budget Control</span>
+          </div>
+          {!showRevForm && (
+            <button onClick={() => setShowRevForm(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.primary}`, background: "#eef0fc", color: C.primary, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              <Plus size={12} /> Record Approved CR
+            </button>
+          )}
+        </div>
+
+        {/* Summary row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px 24px", marginBottom: 16 }}>
+          <div style={{ background: C.surface2, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: 10, color: C.text3, marginBottom: 4 }}>ORIGINAL CONTRACT</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>{originalBudget !== null ? formatCurrency(originalBudget, project.currency) : localBudget ? formatCurrency(localBudget, project.currency) : "—"}</div>
+          </div>
+          <div style={{ background: C.surface2, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ fontSize: 10, color: C.text3, marginBottom: 4 }}>CR APPROVED ADDITIONS</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: localRevisions.reduce((s, r) => s + Number(r.delta), 0) > 0 ? C.green : C.text }}>
+              {formatCurrency(localRevisions.reduce((s, r) => s + Number(r.delta), 0), project.currency)}
+            </div>
+          </div>
+          <div style={{ background: "#eef0fc", borderRadius: 10, padding: "12px 14px", border: `1px solid ${C.primaryBorder}` }}>
+            <div style={{ fontSize: 10, color: C.primary, marginBottom: 4 }}>CURRENT BAC (EVM)</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.primary }}>{localBudget ? formatCurrency(localBudget, project.currency) : "—"}</div>
+          </div>
+        </div>
+
+        {/* Add revision form */}
+        {showRevForm && (
+          <div style={{ background: "#f8f9ff", border: `1px solid ${C.primaryBorder}`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: C.primary, marginBottom: 12 }}>Record Approved Change Request</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>Budget Delta *</div>
+                <input type="number" value={revDelta} onChange={e => setRevDelta(e.target.value)}
+                  placeholder="e.g. 50000 or -20000"
+                  style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", boxSizing: "border-box" as const }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>CR Reference (optional)</div>
+                <input value={revCr} onChange={e => setRevCr(e.target.value)} placeholder="e.g. CR-001"
+                  style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", boxSizing: "border-box" as const }} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>Reason / Description *</div>
+              <input value={revReason} onChange={e => setRevReason(e.target.value)} placeholder="Brief description of what the CR adds..."
+                style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", boxSizing: "border-box" as const }} />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={submitRevision} disabled={revLoading || !revDelta || !revReason.trim()} style={{ padding: "6px 16px", borderRadius: 7, background: C.primary, color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: revLoading ? 0.7 : 1 }}>
+                {revLoading ? "Saving…" : "Apply CR Budget Change"}
+              </button>
+              <button onClick={() => setShowRevForm(false)} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {/* Revision history */}
+        {localRevisions.length > 0 ? (
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 8 }}>Revision History</div>
+            <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                  {["Date", "CR Ref", "Reason", "Delta", "New BAC"].map(h => (
+                    <th key={h} style={{ padding: "5px 10px", textAlign: "left" as const, fontSize: 10.5, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {localRevisions.map((r: any) => (
+                  <tr key={r.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                    <td style={{ padding: "8px 10px", color: C.text2 }}>{new Date(r.createdAt).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                    <td style={{ padding: "8px 10px", color: C.text3 }}>{r.changeRequestId ? "CR" : "—"}</td>
+                    <td style={{ padding: "8px 10px" }}>{r.reason}</td>
+                    <td style={{ padding: "8px 10px", fontWeight: 600, color: Number(r.delta) >= 0 ? C.green : "#dc2626" }}>
+                      {Number(r.delta) >= 0 ? "+" : ""}{formatCurrency(Number(r.delta), project.currency)}
+                    </td>
+                    <td style={{ padding: "8px 10px", fontWeight: 600 }}>{formatCurrency(Number(r.newBudget), project.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: C.text3, padding: "8px 0" }}>No budget revisions recorded. Use "Record Approved CR" when a change request increases or decreases the contract value.</div>
         )}
       </div>
     </div>
@@ -2368,6 +2496,272 @@ const REQ_STATUS_CFG: Record<string, { color: string; bg: string; label: string 
   rejected:  { color: "#cf3f3a", bg: "#fbe4e2", label: "Rejected" },
 };
 
+// ── Registers Tab (Assumptions + Dependencies) ─────────────────────────────────
+
+function RegistersTab({ project }: { project: any }) {
+  const [assumptions, setAssumptions] = React.useState<any[]>([]);
+  const [dependencies, setDependencies] = React.useState<any[]>([]);
+  const [loadingRegs, setLoadingRegs] = React.useState(true);
+
+  React.useEffect(() => {
+    Promise.all([
+      fetch(`/api/projects/${project.id}/assumptions`).then(r => r.ok ? r.json() : []),
+      fetch(`/api/projects/${project.id}/dependencies`).then(r => r.ok ? r.json() : []),
+    ]).then(([a, d]) => { setAssumptions(a); setDependencies(d); setLoadingRegs(false); })
+      .catch(() => setLoadingRegs(false));
+  }, [project.id]);
+  const [section, setSection] = React.useState<"assumptions" | "dependencies">("assumptions");
+
+  // Assumption form
+  const [aStmt, setAStmt] = React.useState("");
+  const [aCat, setACat] = React.useState("general");
+  const [aAdding, setAAdding] = React.useState(false);
+  const [aLoading, setALoading] = React.useState(false);
+
+  // Dependency form
+  const [dDesc, setDDesc] = React.useState("");
+  const [dType, setDType] = React.useState("external");
+  const [dOwner, setDOwner] = React.useState("");
+  const [dDue, setDDue] = React.useState("");
+  const [dAdding, setDAdding] = React.useState(false);
+  const [dLoading, setDLoading] = React.useState(false);
+
+  async function addAssumption() {
+    if (!aStmt.trim()) return;
+    setALoading(true);
+    const res = await fetch(`/api/projects/${project.id}/assumptions`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statement: aStmt.trim(), category: aCat }),
+    });
+    if (res.ok) {
+      const item = await res.json();
+      setAssumptions(prev => [...prev, item]);
+      setAStmt(""); setAAdding(false);
+    }
+    setALoading(false);
+  }
+
+  async function updateAssumptionStatus(id: string, status: string) {
+    const res = await fetch(`/api/projects/${project.id}/assumptions`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assumptionId: id, status }),
+    });
+    if (res.ok) setAssumptions(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+  }
+
+  async function deleteAssumption(id: string) {
+    const res = await fetch(`/api/projects/${project.id}/assumptions?assumptionId=${id}`, { method: "DELETE" });
+    if (res.ok) setAssumptions(prev => prev.filter(a => a.id !== id));
+  }
+
+  async function addDependency() {
+    if (!dDesc.trim()) return;
+    setDLoading(true);
+    const res = await fetch(`/api/projects/${project.id}/dependencies`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: dDesc.trim(), type: dType, owner: dOwner || undefined, dueDate: dDue || undefined }),
+    });
+    if (res.ok) {
+      const item = await res.json();
+      setDependencies(prev => [...prev, item]);
+      setDDesc(""); setDOwner(""); setDDue(""); setDAdding(false);
+    }
+    setDLoading(false);
+  }
+
+  async function updateDependencyStatus(id: string, status: string) {
+    const res = await fetch(`/api/projects/${project.id}/dependencies`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dependencyId: id, status }),
+    });
+    if (res.ok) setDependencies(prev => prev.map(d => d.id === id ? { ...d, status } : d));
+  }
+
+  async function deleteDependency(id: string) {
+    const res = await fetch(`/api/projects/${project.id}/dependencies?dependencyId=${id}`, { method: "DELETE" });
+    if (res.ok) setDependencies(prev => prev.filter(d => d.id !== id));
+  }
+
+  const ASSUMPTION_CATS = ["general", "technical", "commercial", "resource", "regulatory"];
+  const DEP_TYPES = ["external", "internal", "client"];
+  const statusColors: Record<string, string> = {
+    open: C.amber, confirmed: C.green, violated: "#dc2626", resolved: C.green, blocked: "#dc2626",
+  };
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      {/* Section toggle */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {(["assumptions", "dependencies"] as const).map(s => (
+          <button key={s} onClick={() => setSection(s)} style={{
+            padding: "6px 16px", borderRadius: 8, border: `1px solid ${section === s ? C.primary : C.border}`,
+            background: section === s ? "#eef0fc" : C.surface, color: section === s ? C.primary : C.text,
+            fontWeight: section === s ? 600 : 400, fontSize: 13, cursor: "pointer",
+          }}>
+            {s === "assumptions" ? `Assumptions (${assumptions.length})` : `Dependencies (${dependencies.length})`}
+          </button>
+        ))}
+      </div>
+
+      {section === "assumptions" && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Assumptions Register</div>
+            {!aAdding && (
+              <button onClick={() => setAAdding(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.primary}`, background: "#eef0fc", color: C.primary, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                <Plus size={12} /> Add
+              </button>
+            )}
+          </div>
+
+          {aAdding && (
+            <div style={{ background: "#f8f9ff", border: `1px solid ${C.primaryBorder}`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+              <textarea
+                value={aStmt} onChange={e => setAStmt(e.target.value)} rows={2}
+                placeholder="Describe the assumption..."
+                style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", resize: "vertical", marginBottom: 10, boxSizing: "border-box" as const }}
+              />
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <select value={aCat} onChange={e => setACat(e.target.value)} style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6, padding: "5px 8px", background: C.surface }}>
+                  {ASSUMPTION_CATS.map(c => <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
+                </select>
+                <button onClick={addAssumption} disabled={aLoading || !aStmt.trim()} style={{ padding: "5px 14px", borderRadius: 7, background: C.primary, color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: aLoading ? 0.7 : 1 }}>
+                  {aLoading ? "Adding…" : "Save"}
+                </button>
+                <button onClick={() => setAAdding(false)} style={{ padding: "5px 10px", borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {assumptions.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.text3, textAlign: "center" as const, padding: "32px 0" }}>
+              No assumptions yet. Add one manually or upload an SOW to extract them automatically.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${C.borderLight}` }}>
+                  {["#", "Statement", "Category", "Source", "Status", ""].map(h => (
+                    <th key={h} style={{ padding: "6px 10px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: C.text3, textTransform: "uppercase" as const }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {assumptions.map((a, i) => (
+                  <tr key={a.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                    <td style={{ padding: "10px", color: C.text3, fontSize: 12, width: 32 }}>{i + 1}</td>
+                    <td style={{ padding: "10px", lineHeight: 1.5 }}>{a.statement}</td>
+                    <td style={{ padding: "10px" }}>
+                      <span style={{ fontSize: 11, background: "#f1f3f5", borderRadius: 5, padding: "2px 7px", color: C.text2 }}>{a.category}</span>
+                    </td>
+                    <td style={{ padding: "10px" }}>
+                      <span style={{ fontSize: 11, background: a.source === "sow_extract" ? "#eff6ff" : "#f1f3f5", borderRadius: 5, padding: "2px 7px", color: a.source === "sow_extract" ? "#1d4ed8" : C.text3 }}>
+                        {a.source === "sow_extract" ? "SOW" : "Manual"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px" }}>
+                      <select value={a.status} onChange={e => updateAssumptionStatus(a.id, e.target.value)}
+                        style={{ fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 6px", color: statusColors[a.status] ?? C.text, fontWeight: 600, background: C.surface, cursor: "pointer" }}>
+                        {["open", "confirmed", "violated"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: "10px", textAlign: "right" as const }}>
+                      <button onClick={() => deleteAssumption(a.id)} style={{ color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: 3 }}><Trash2 size={13} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {section === "dependencies" && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Dependencies Register</div>
+            {!dAdding && (
+              <button onClick={() => setDAdding(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.primary}`, background: "#eef0fc", color: C.primary, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                <Plus size={12} /> Add
+              </button>
+            )}
+          </div>
+
+          {dAdding && (
+            <div style={{ background: "#f8f9ff", border: `1px solid ${C.primaryBorder}`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+              <textarea
+                value={dDesc} onChange={e => setDDesc(e.target.value)} rows={2}
+                placeholder="Describe the dependency..."
+                style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", resize: "vertical", marginBottom: 10, boxSizing: "border-box" as const }}
+              />
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const, alignItems: "center", marginBottom: 10 }}>
+                <select value={dType} onChange={e => setDType(e.target.value)} style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6, padding: "5px 8px", background: C.surface }}>
+                  {DEP_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                </select>
+                <input value={dOwner} onChange={e => setDOwner(e.target.value)} placeholder="Owner (optional)" style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6, padding: "5px 8px", width: 160 }} />
+                <input type="date" value={dDue} onChange={e => setDDue(e.target.value)} style={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6, padding: "5px 8px" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={addDependency} disabled={dLoading || !dDesc.trim()} style={{ padding: "5px 14px", borderRadius: 7, background: C.primary, color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: dLoading ? 0.7 : 1 }}>
+                  {dLoading ? "Adding…" : "Save"}
+                </button>
+                <button onClick={() => setDAdding(false)} style={{ padding: "5px 10px", borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {dependencies.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.text3, textAlign: "center" as const, padding: "32px 0" }}>
+              No dependencies yet. Add one manually or upload an SOW to extract them automatically.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${C.borderLight}` }}>
+                  {["#", "Description", "Type", "Owner", "Due Date", "Source", "Status", ""].map(h => (
+                    <th key={h} style={{ padding: "6px 10px", textAlign: "left" as const, fontSize: 11, fontWeight: 700, letterSpacing: ".04em", color: C.text3, textTransform: "uppercase" as const }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dependencies.map((d, i) => (
+                  <tr key={d.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                    <td style={{ padding: "10px", color: C.text3, fontSize: 12, width: 32 }}>{i + 1}</td>
+                    <td style={{ padding: "10px", lineHeight: 1.5 }}>{d.description}</td>
+                    <td style={{ padding: "10px" }}>
+                      <span style={{ fontSize: 11, background: d.type === "client" ? "#fef9c3" : d.type === "internal" ? "#eff6ff" : "#f0fdf4", borderRadius: 5, padding: "2px 7px", color: d.type === "client" ? "#854d0e" : d.type === "internal" ? "#1d4ed8" : "#166534" }}>
+                        {d.type}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px", color: C.text2 }}>{d.owner ?? "—"}</td>
+                    <td style={{ padding: "10px", color: C.text2, fontSize: 12 }}>
+                      {d.dueDate ? new Date(d.dueDate).toLocaleDateString("en-AU", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                    </td>
+                    <td style={{ padding: "10px" }}>
+                      <span style={{ fontSize: 11, background: d.source === "sow_extract" ? "#eff6ff" : "#f1f3f5", borderRadius: 5, padding: "2px 7px", color: d.source === "sow_extract" ? "#1d4ed8" : C.text3 }}>
+                        {d.source === "sow_extract" ? "SOW" : "Manual"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px" }}>
+                      <select value={d.status} onChange={e => updateDependencyStatus(d.id, e.target.value)}
+                        style={{ fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 6, padding: "3px 6px", color: statusColors[d.status] ?? C.text, fontWeight: 600, background: C.surface, cursor: "pointer" }}>
+                        {["open", "resolved", "blocked"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ padding: "10px", textAlign: "right" as const }}>
+                      <button onClick={() => deleteDependency(d.id)} style={{ color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: 3 }}><Trash2 size={13} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Scope Control Tab ──────────────────────────────────────────────────────────
 
 function ScopeControlTab({ project }: { project: any }) {
@@ -4108,8 +4502,8 @@ function BaselineTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const PREDICTIVE_TABS = ["Project Info", "Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
-const AGILE_TABS = ["Project Info", "Artifacts", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
+const PREDICTIVE_TABS = ["Project Info", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
+const AGILE_TABS = ["Project Info", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
 
 const TAB_META: Record<string, { icon: React.ReactNode }> = {
   "Project Info":     { icon: <Info size={14} /> },
@@ -4121,6 +4515,7 @@ const TAB_META: Record<string, { icon: React.ReactNode }> = {
   "Schedule":         { icon: <CalendarDays size={14} /> },
   "Cost":             { icon: <CircleDollarSign size={14} /> },
   "Commercial":       { icon: <Briefcase size={14} /> },
+  "Registers":        { icon: <BookOpen size={14} /> },
   "Scope Control":    { icon: <Layers size={14} /> },
   "Status Reporting": { icon: <BarChart2 size={14} /> },
   "Baseline":         { icon: <GitCompare size={14} /> },
@@ -4397,6 +4792,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       {tab === "Schedule" && <ScheduleTab project={project} />}
       {tab === "Cost" && <CostTab project={project} />}
       {tab === "Commercial" && isAgile && <AgileCommercialTab project={project} />}
+      {tab === "Registers" && <RegistersTab project={project} />}
       {tab === "Scope Control" && <ScopeControlTab project={project} />}
       {tab === "Status Reporting" && isAgile && <AgileStatusTab project={project} />}
       {tab === "Status Reporting" && !isAgile && <StatusTab project={project} />}

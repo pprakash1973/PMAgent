@@ -311,7 +311,8 @@ Return JSON with:
 - outOfScope (array of strings): explicit exclusions if mentioned
 - stakeholders (array of {name, role, interest}): key stakeholders
 - constraints (array of strings): budget, schedule, regulatory, technical constraints
-- assumptions (array of strings): REQUIRED — stated or implied assumptions; empty array if none
+- assumptions (array of strings): REQUIRED — stated or implied assumptions about resources, environment, or conditions; empty array if none
+- dependencies (array of {description: string, type: "internal"|"external"|"client", owner?: string}): REQUIRED — project dependencies on other work, systems, or decisions; empty array if none
 - conflicts (array of strings): REQUIRED — any conflicting requirements or contradictory statements; empty array if none
 - timeline (string): timeline description
 - budgetSignals (string): any budget figures or signals
@@ -805,7 +806,8 @@ Return JSON with:
     evm_analysis: `Generate a full Earned Value Management (EVM) Analysis.
 
 INPUTS available in project context:
-- budget = BAC (Budget at Completion)
+- budget = BAC (Budget at Completion) — this is the CURRENT approved budget (may have been revised via CRs)
+- budgetRevisions = array of {previousBudget, newBudget, delta, reason, createdAt} — CR-approved budget changes, oldest first; if present, the original contract BAC is budgetRevisions[0].previousBudget
 - startDate / endDate = planned duration
 - costEntries = array of {date, amount, category} — these are the actual costs (AC) logged per date
 - milestones = planned milestone dates for schedule context
@@ -838,6 +840,8 @@ Return JSON:
     cumSv (number), cumCv (number),
     cumSpi (number), cumCpi (number)
   })
+- originalBac (number): budgetRevisions[0].previousBudget if revisions exist, else same as bac
+- budgetRevisionCount (number): number of approved CR budget revisions
 - forecast (object): {
     eac (number), etc (number), sac (number),
     vacCost (number), vacSchedule (number), tcpi (number),

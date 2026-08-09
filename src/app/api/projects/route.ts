@@ -36,6 +36,13 @@ const createSchema = z.object({
   requirementsFileName: z.string().optional(),
   requirementsFileFormat: z.string().optional(),
   requirementsExtracted: z.record(z.string(), z.unknown()).optional(),
+  // SOW-extracted registers (seeded at creation time)
+  sowAssumptions: z.array(z.string()).optional(),
+  sowDependencies: z.array(z.object({
+    description: z.string(),
+    type: z.string().default("external"),
+    owner: z.string().optional(),
+  })).optional(),
 });
 
 export async function GET() {
@@ -198,6 +205,30 @@ export async function POST(req: NextRequest) {
           uploadedById: user.id,
         },
       });
+    }
+
+    // Seed assumptions and dependencies extracted from SOW (raw SQL — avoids stale Prisma client)
+    if (data.sowAssumptions && data.sowAssumptions.length > 0) {
+      const now = new Date();
+      for (let i = 0; i < data.sowAssumptions.length; i++) {
+        const aId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${i}`;
+        const stmt = data.sowAssumptions[i];
+        await prisma.$executeRaw`
+          INSERT INTO assumptions (id, "projectId", statement, category, source, status, "sortOrder", "createdAt", "updatedAt")
+          VALUES (${aId}, ${project.id}, ${stmt}, 'general', 'sow_extract', 'open', ${i}, ${now}, ${now})
+        `;
+      }
+    }
+    if (data.sowDependencies && data.sowDependencies.length > 0) {
+      const now = new Date();
+      for (let i = 0; i < data.sowDependencies.length; i++) {
+        const dep = data.sowDependencies[i] as any;
+        const dId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${i}`;
+        await prisma.$executeRaw`
+          INSERT INTO dependencies (id, "projectId", description, type, owner, "dueDate", status, source, "sortOrder", "createdAt", "updatedAt")
+          VALUES (${dId}, ${project.id}, ${dep.description}, ${dep.type ?? "external"}, ${dep.owner ?? null}, ${null}, 'open', 'sow_extract', ${i}, ${now}, ${now})
+        `;
+      }
     }
 
     return NextResponse.json(

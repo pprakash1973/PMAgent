@@ -326,6 +326,9 @@ model Project {
   goldEntries        ComparisonGoldEntry[]
   accuracyReports    AccuracyReport[]
   scopeBaselines     ScopeBaseline[]
+  assumptions        Assumption[]
+  dependencies       Dependency[]
+  budgetRevisions    BudgetRevision[]
 
   // Agile relations (Phase A/B)
   contracts          Contract[]
@@ -719,18 +722,26 @@ model Issue {
 }
 
 model ChangeRequest {
-  id             String   @id @default(cuid())
-  projectId      String
-  crId           String?
-  description    String
-  impactAnalysis String?
-  approvalStatus String   @default("pending")
-  requestedBy    String?
-  approvedBy     String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  projectId          String
+  crId               String?
+  title              String?
+  description        String
+  impactAnalysis     String?
+  approvalStatus     String   @default("pending")
+  budgetImpact       Decimal? @default(0)
+  scheduleImpactDays Int?     @default(0)
+  requestedBy        String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id])
+  project         Project          @relation(fields: [projectId], references: [id])
+  budgetRevisions BudgetRevision[]
+
+  @@index([projectId])
+  @@map("change_requests")
 }
 
 model Milestone {
@@ -1493,4 +1504,58 @@ model ScopeBaseline {
   @@unique([projectId, version])
   @@index([projectId])
   @@map("scope_baselines")
+}
+
+model Assumption {
+  id         String   @id @default(cuid())
+  projectId  String
+  statement  String
+  category   String   @default("general")
+  source     String   @default("manual")
+  status     String   @default("open")
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("assumptions")
+}
+
+model Dependency {
+  id          String    @id @default(cuid())
+  projectId   String
+  description String
+  type        String    @default("external")
+  owner       String?
+  dueDate     DateTime?
+  status      String    @default("open")
+  source      String    @default("manual")
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("dependencies")
+}
+
+model BudgetRevision {
+  id               String    @id @default(cuid())
+  projectId        String
+  changeRequestId  String?
+  previousBudget   Decimal
+  newBudget        Decimal
+  delta            Decimal
+  reason           String
+  approvedById     String?
+  createdAt        DateTime  @default(now())
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changeRequest ChangeRequest? @relation(fields: [changeRequestId], references: [id])
+
+  @@index([projectId])
+  @@map("budget_revisions")
 }

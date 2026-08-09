@@ -134,14 +134,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     wbsContent = wbsArtifact?.content ?? null;
   }
 
-  // For EVM: fetch actual cost entries ordered by date
+  // For EVM: fetch cost entries and budget revision history
   let costEntries: { date: Date; amount: number; category: string }[] = [];
+  let budgetRevisions: any[] = [];
   if (artifactType === "evm_analysis") {
-    costEntries = await prisma.costEntry.findMany({
-      where: { projectId: id },
-      select: { date: true, amount: true, category: true },
-      orderBy: { date: "asc" },
-    });
+    [costEntries, budgetRevisions] = await Promise.all([
+      prisma.costEntry.findMany({
+        where: { projectId: id },
+        select: { date: true, amount: true, category: true },
+        orderBy: { date: "asc" },
+      }),
+      prisma.$queryRaw<any[]>`SELECT "previousBudget","newBudget",delta,reason,"createdAt" FROM budget_revisions WHERE "projectId" = ${id} ORDER BY "createdAt" ASC`,
+    ]);
   }
 
   const projectContext = {
@@ -167,6 +171,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         amount: e.amount,
         category: e.category,
       })),
+      ...(budgetRevisions.length > 0 && {
+        budgetRevisions: budgetRevisions.map((r: any) => ({
+          previousBudget: Number(r.previousBudget),
+          newBudget: Number(r.newBudget),
+          delta: Number(r.delta),
+          reason: r.reason,
+          createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString().slice(0, 10) : String(r.createdAt).slice(0, 10),
+        })),
+      }),
     }),
   };
 
