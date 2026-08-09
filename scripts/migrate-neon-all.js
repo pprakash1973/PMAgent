@@ -38,8 +38,6 @@ async function main() {
     await run(pool, `
       ALTER TABLE "Project"
         ADD COLUMN IF NOT EXISTS "currentPhase"              TEXT  NOT NULL DEFAULT 'initiation',
-        ADD COLUMN IF NOT EXISTS "clientId"                  TEXT  REFERENCES "Client"("id"),
-        ADD COLUMN IF NOT EXISTS "programId"                 TEXT  REFERENCES "Program"("id"),
         ADD COLUMN IF NOT EXISTS "evidenceReadinessScore"    FLOAT,
         ADD COLUMN IF NOT EXISTS "evidenceReadinessBand"     TEXT
     `, "Project columns");
@@ -180,6 +178,13 @@ async function main() {
       );
       CREATE UNIQUE INDEX IF NOT EXISTS "Program_orgId_name_key" ON "Program"("orgId","name")
     `, "Program table");
+
+    // Add FK-dependent Project columns now that Client and Program tables exist
+    await run(pool, `
+      ALTER TABLE "Project"
+        ADD COLUMN IF NOT EXISTS "clientId"  TEXT REFERENCES "Client"("id"),
+        ADD COLUMN IF NOT EXISTS "programId" TEXT REFERENCES "Program"("id")
+    `, "Project clientId/programId FK columns");
 
     await run(pool, `
       CREATE TABLE IF NOT EXISTS "ProgramAssignment" (
@@ -1014,6 +1019,65 @@ async function main() {
       ADD COLUMN IF NOT EXISTS "appliedTemplateId" TEXT`);
 
     console.log("✓ ArtifactTemplate table + ArtifactVersion.appliedTemplateId");
+
+    // ── ChangeRequest: extended fields for budget/schedule impact ────────────────
+    await run(pool, `
+      ALTER TABLE "ChangeRequest"
+        ADD COLUMN IF NOT EXISTS "title"               TEXT,
+        ADD COLUMN IF NOT EXISTS "budgetImpact"        DECIMAL(65,30) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "scheduleImpactDays"  INTEGER        NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "approvedAt"          TIMESTAMP(3)
+    `, "ChangeRequest budget/schedule columns");
+
+    // ── RAID registers: Assumptions + Dependencies ───────────────────────────────
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS assumptions (
+        "id"          TEXT         NOT NULL PRIMARY KEY,
+        "projectId"   TEXT         NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "statement"   TEXT         NOT NULL,
+        "category"    TEXT         NOT NULL DEFAULT 'general',
+        "source"      TEXT         NOT NULL DEFAULT 'manual',
+        "status"      TEXT         NOT NULL DEFAULT 'open',
+        "sortOrder"   INTEGER      NOT NULL DEFAULT 0,
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "assumptions_projectId_idx" ON assumptions("projectId")
+    `, "assumptions table");
+
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS dependencies (
+        "id"          TEXT         NOT NULL PRIMARY KEY,
+        "projectId"   TEXT         NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "description" TEXT         NOT NULL,
+        "type"        TEXT         NOT NULL DEFAULT 'external',
+        "owner"       TEXT,
+        "dueDate"     TIMESTAMP(3),
+        "status"      TEXT         NOT NULL DEFAULT 'open',
+        "source"      TEXT         NOT NULL DEFAULT 'manual',
+        "sortOrder"   INTEGER      NOT NULL DEFAULT 0,
+        "createdAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "dependencies_projectId_idx" ON dependencies("projectId")
+    `, "dependencies table");
+
+    // ── Budget revisions ─────────────────────────────────────────────────────────
+    await run(pool, `
+      CREATE TABLE IF NOT EXISTS budget_revisions (
+        "id"             TEXT            NOT NULL PRIMARY KEY,
+        "projectId"      TEXT            NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "changeRequestId" TEXT,
+        "previousBudget" DECIMAL(65,30)  NOT NULL,
+        "newBudget"      DECIMAL(65,30)  NOT NULL,
+        "delta"          DECIMAL(65,30)  NOT NULL,
+        "reason"         TEXT            NOT NULL,
+        "approvedById"   TEXT,
+        "createdAt"      TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "budget_revisions_projectId_idx" ON budget_revisions("projectId")
+    `, "budget_revisions table");
+
     console.log("✓ All migrations complete");
 
   } catch (err) {
