@@ -250,7 +250,16 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
       const res = await fetch(`/api/projects/${projectId}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionnaire: qaPayload, source: "questionnaire", preview: false }),
+        body: JSON.stringify({
+          questionnaire: qaPayload,
+          source: "questionnaire",
+          preview: false,
+          previewResult: wsr ? {
+            summary: wsr.summary, ragStatus: wsr.ragStatus,
+            recommendations: wsr.recommendations, accomplishments: wsr.accomplishments,
+            nextWeekPlan: wsr.nextWeekPlan, metricsNarrative: wsr.metricsNarrative,
+          } : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message ?? "Failed to save WSR");
@@ -272,7 +281,16 @@ export function StatusQuestionnaire({ projectId }: { projectId: string }) {
         const saveRes = await fetch(`/api/projects/${projectId}/status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questionnaire: qaPayload, source: "questionnaire", preview: false }),
+          body: JSON.stringify({
+            questionnaire: qaPayload,
+            source: "questionnaire",
+            preview: false,
+            previewResult: wsr ? {
+              summary: wsr.summary, ragStatus: wsr.ragStatus,
+              recommendations: wsr.recommendations, accomplishments: wsr.accomplishments,
+              nextWeekPlan: wsr.nextWeekPlan, metricsNarrative: wsr.metricsNarrative,
+            } : undefined,
+          }),
         });
         const saveData = await saveRes.json();
         if (!saveRes.ok) throw new Error(saveData.error?.message ?? "Failed to save before export");

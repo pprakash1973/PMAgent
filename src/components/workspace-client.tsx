@@ -3375,14 +3375,16 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   draft:     { label: "Draft",     color: "#5b616e", bg: "#f1f3f5", border: "#d3d7de" },
   active:    { label: "Active",    color: "#158a5a", bg: "#e3f3ea", border: "#a3d9bc" },
   closing:   { label: "Closing",   color: "#c17d12", bg: "#fbf0da", border: "#f0cc80" },
+  closed:    { label: "Closed",    color: "#4f5bd5", bg: "#eef0fc", border: "#cfd4f5" },
   completed: { label: "Completed", color: "#4f5bd5", bg: "#eef0fc", border: "#cfd4f5" },
   archived:  { label: "Archived",  color: "#8a909c", bg: "#f7f8fa", border: "#e2e5ea" },
 };
 
 const STATUS_NEXT: Record<string, string[]> = {
   draft:   ["active"],
-  active:  ["closing", "completed"],
-  closing: ["completed"],
+  active:  ["closing", "closed"],
+  closing: ["closed"],
+  closed:  ["archived"],
 };
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {

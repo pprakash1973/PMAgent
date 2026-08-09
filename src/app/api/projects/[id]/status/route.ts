@@ -7,6 +7,15 @@ import { z } from "zod";
 
 // Bounds user-supplied status input — arbitrary keys allowed for question answers,
 // but value types and sizes are constrained to prevent oversized payloads (BUG-5).
+const PreviewResultSchema = z.object({
+  summary:          z.string().max(5000),
+  ragStatus:        z.string().max(20),
+  recommendations:  z.array(z.string().max(1000)).max(10),
+  accomplishments:  z.array(z.string().max(1000)).max(10),
+  nextWeekPlan:     z.array(z.string().max(1000)).max(10),
+  metricsNarrative: z.string().max(5000),
+});
+
 const StatusInputSchema = z.object({
   preview: z.boolean().optional(),
   ragStatus: z.string().max(10).optional(),
@@ -16,6 +25,8 @@ const StatusInputSchema = z.object({
     question: z.string().max(500),
     answer: z.string().max(2000),
   })).max(30).optional(),
+  // Cached preview result — when present on a save call (preview:false), skip the AI call
+  previewResult: PreviewResultSchema.optional(),
 }).catchall(
   z.union([
     z.string().max(2000),
@@ -63,7 +74,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       { status: 400 }
     );
   }
-  const rawInput = parsed.data;
+  // Strip previewResult from the stored payload — it's a transport-only field
+  const { previewResult: cachedPreview, ...rawInput } = parsed.data;
 
   const [project, openRiskCount] = await Promise.all([
     prisma.project.findUnique({
@@ -145,19 +157,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     assumptions: string[];
     conflicts: string[];
   };
-  try {
-    aiResult = await generateStatusSummary(rawInput, projectContext, liveEVM);
-  } catch {
-    aiResult = {
-      summary: "Status report submitted. AI summary generation failed — please review manually.",
-      ragStatus: (rawInput.ragStatus as string) || "amber",
-      recommendations: [] as string[],
-      accomplishments: [] as string[],
-      nextWeekPlan: [] as string[],
-      metricsNarrative: "",
-      assumptions: [] as string[],
-      conflicts: [] as string[],
-    };
+  // On save calls (preview:false), reuse the cached preview result if the client
+  // sent it back — avoids a redundant AI round-trip that can cause save to hang.
+  if (!preview && cachedPreview) {
+    aiResult = { ...cachedPreview, assumptions: [], conflicts: [] };
+  } else {
+    try {
+      aiResult = await generateStatusSummary(rawInput, projectContext, liveEVM);
+    } catch {
+      aiResult = {
+        summary: "Status report submitted. AI summary generation failed — please review manually.",
+        ragStatus: (rawInput.ragStatus as string) || "amber",
+        recommendations: [] as string[],
+        accomplishments: [] as string[],
+        nextWeekPlan: [] as string[],
+        metricsNarrative: "",
+        assumptions: [] as string[],
+        conflicts: [] as string[],
+      };
+    }
   }
 
   // WP-3 (DEF-002): Enforce GR-11 thresholds in code — model RAG verdict is an input, not final word

@@ -133,8 +133,8 @@ export async function POST(
 
   // Auto-transition project status alongside phase advancement
   const statusTransition: Record<string, string> = {
-    planning: "active",    // initiation → planning: project goes live
-    closure:  "closing",   // execution → closure: project is wrapping up
+    planning: "active",   // initiation → planning: project goes live
+    closure:  "closed",   // execution → closure: project is formally closed
   };
 
   await prisma.project.update({
