@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import Link from "next/link";
 import {
   FileText, ShieldAlert, AlertCircle, Users, CalendarDays,
-  CircleDollarSign, Layers, BarChart2, GitCompare, Zap, Briefcase,
+  CircleDollarSign, Layers, BarChart2, GitCompare, Zap, Briefcase, Info,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
@@ -285,6 +285,82 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Project Info tab ────────────────────────────────────────────────────────────
+
+const PROJECT_TYPE_LABELS: Record<string, string> = {
+  fixed_price: "Fixed Price",
+  time_and_materials: "Time & Materials",
+  capped_tm: "Capped T&M",
+};
+
+function InfoField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const }}>{label}</span>
+      <span style={{ fontSize: 13.5, color: value ? C.text : C.text3, fontWeight: value ? 500 : 400 }}>
+        {value || "—"}
+      </span>
+    </div>
+  );
+}
+
+function ProjectInfoTab({ project }: { project: any }) {
+  const dhName = project.cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
+  const dmName = project.account?.dmAssignments?.[0]?.user?.fullName ?? null;
+
+  return (
+    <div style={{ maxWidth: 860 }}>
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "24px 28px" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 20 }}>
+          Project Information
+        </div>
+
+        {/* Row 1 — Hierarchy */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
+          <InfoField label="Cluster" value={project.cluster?.name} />
+          <InfoField label="Account" value={project.account?.name} />
+          <InfoField label="Program" value={project.program?.name} />
+        </div>
+
+        <div style={{ borderTop: `1px solid ${C.borderLight}`, marginBottom: 24 }} />
+
+        {/* Row 2 — People */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
+          <InfoField label="Delivery Head" value={dhName} />
+          <InfoField label="Delivery Manager" value={dmName} />
+          <InfoField label="Project Manager" value={project.pmOwner?.fullName} />
+        </div>
+
+        <div style={{ borderTop: `1px solid ${C.borderLight}`, marginBottom: 24 }} />
+
+        {/* Row 3 — Dates & commercial */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
+          <InfoField label="Start Date" value={project.startDate ? formatDate(project.startDate) : null} />
+          <InfoField label="End Date" value={project.endDate ? formatDate(project.endDate) : null} />
+          <InfoField label="Billing Type" value={PROJECT_TYPE_LABELS[project.projectType] ?? project.projectType} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
+          <InfoField label="Methodology" value={methodologyLabel(project.methodology)} />
+          <InfoField label="Budget" value={project.budget ? formatCurrency(project.budget, project.currency) : null} />
+          <InfoField label="Currency" value={project.currency} />
+        </div>
+
+        {/* Description */}
+        {project.description && (
+          <>
+            <div style={{ borderTop: `1px solid ${C.borderLight}`, marginBottom: 20 }} />
+            <div>
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const, display: "block", marginBottom: 8 }}>Description</span>
+              <p style={{ fontSize: 13.5, color: C.text, lineHeight: 1.65, margin: 0 }}>{project.description}</p>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -3354,10 +3430,11 @@ function BaselineTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const PREDICTIVE_TABS = ["Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
-const AGILE_TABS = ["Artifacts", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
+const PREDICTIVE_TABS = ["Project Info", "Artifacts", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
+const AGILE_TABS = ["Project Info", "Artifacts", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
 
 const TAB_META: Record<string, { icon: React.ReactNode }> = {
+  "Project Info":     { icon: <Info size={14} /> },
   "Artifacts":        { icon: <FileText size={14} /> },
   "Sprints":          { icon: <Zap size={14} /> },
   "Risk":             { icon: <ShieldAlert size={14} /> },
@@ -3391,7 +3468,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
   const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
   const TABS = isAgile ? AGILE_TABS : PREDICTIVE_TABS;
 
-  const [tab, setTab] = useState("Artifacts");
+  const [tab, setTab] = useState("Project Info");
   const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
   const [badges, setBadges] = useState<Record<string, number>>({});
   const [projectStatus, setProjectStatus] = useState<string>(project.status || "draft");
@@ -3632,6 +3709,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       </div>
 
       {/* Tab content */}
+      {tab === "Project Info" && <ProjectInfoTab project={project} />}
       {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} />}
       {tab === "Backlog" && <BacklogTab project={project} />}
       {tab === "Sprints" && <SprintsTab project={project} />}

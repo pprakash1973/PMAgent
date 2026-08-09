@@ -14,7 +14,30 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     where: { id },
     include: {
       pmOwner: { select: { fullName: true, email: true } },
-      account: { select: { id: true, name: true, code: true } },
+      cluster: {
+        select: {
+          name: true,
+          code: true,
+          clusterAssignments: {
+            where: { isPrimary: true },
+            select: { user: { select: { fullName: true } } },
+            take: 1,
+          },
+        },
+      },
+      account: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          dmAssignments: {
+            where: { isPrimary: true },
+            select: { user: { select: { fullName: true } } },
+            take: 1,
+          },
+        },
+      },
+      program: { select: { id: true, name: true, code: true } },
       milestones: { orderBy: { dueDate: "asc" } },
       risks: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
       issues: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
