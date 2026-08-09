@@ -24,6 +24,23 @@ export async function GET(
     prisma.costEntry.findMany({ where: { projectId: id } }),
   ]);
 
+  // Actual data counts per tab (separate from advisory counts)
+  const [reqCount, assumptionRows, dependencyRows, resourceRows] = await Promise.all([
+    prisma.requirement.count({ where: { projectId: id, isActive: true } }),
+    (prisma as any).$queryRaw`SELECT COUNT(*)::int AS n FROM assumptions WHERE "projectId" = ${id}`.catch(() => [{ n: 0 }]),
+    (prisma as any).$queryRaw`SELECT COUNT(*)::int AS n FROM dependencies WHERE "projectId" = ${id}`.catch(() => [{ n: 0 }]),
+    (prisma as any).resource?.count({ where: { projectId: id } }).catch(() => 0) ?? Promise.resolve(0),
+  ]);
+  const dataCounts: Record<string, number> = {
+    scope:     reqCount,
+    risk:      risks.length,
+    issues:    issues.length,
+    cost:      costEntries.length,
+    schedule:  tasks.length,
+    registers: ((assumptionRows as any[])[0]?.n ?? 0) + ((dependencyRows as any[])[0]?.n ?? 0),
+    resources: typeof resourceRows === "number" ? resourceRows : 0,
+  };
+
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   const state: ProjectState = {
@@ -117,5 +134,5 @@ export async function GET(
     badges[a.tab] = (badges[a.tab] ?? 0) + 1;
   }
 
-  return NextResponse.json({ advisories: hydrated, badges });
+  return NextResponse.json({ advisories: hydrated, badges, dataCounts });
 }

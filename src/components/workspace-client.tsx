@@ -4544,6 +4544,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
   const [tab, setTab] = useState("Project Info");
   const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
   const [badges, setBadges] = useState<Record<string, number>>({});
+  const [dataCounts, setDataCounts] = useState<Record<string, number>>({});
   const [projectStatus, setProjectStatus] = useState<string>(project.status || "draft");
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -4590,7 +4591,10 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
   const loadBadges = useCallback(() => {
     fetch(`/api/projects/${project.id}/advisories?tab=all`)
       .then(r => r.json())
-      .then(d => setBadges(d.badges ?? {}))
+      .then(d => {
+        setBadges(d.badges ?? {});
+        setDataCounts(d.dataCounts ?? {});
+      })
       .catch(() => {});
   }, [project.id]);
 
@@ -4747,7 +4751,8 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
       }}>
         {TABS.map(t => {
           const k = t.toLowerCase().replace(/ /g, "_") === "scope_control" ? "scope" : t.toLowerCase().replace(/ /g, "_");
-          const bc = badges[k] ?? 0;
+          const advisoryCount = badges[k] ?? 0;
+          const dataCount = dataCounts[k] ?? 0;
           const isActive = tab === t;
           return (
             <button
@@ -4770,11 +4775,17 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
                 {TAB_META[t]?.icon}
               </span>
               {t}
-              {bc > 0 && (
+              {dataCount > 0 && (
                 <span style={{
-                  fontSize: 11, fontWeight: 700, background: "#cf3f3a", color: "#fff",
+                  fontSize: 11, fontWeight: 700, background: C.primary, color: "#fff",
                   borderRadius: 99, padding: "1px 5px", lineHeight: "16px", minWidth: 16, textAlign: "center",
-                }}>{bc}</span>
+                }}>{dataCount}</span>
+              )}
+              {advisoryCount > 0 && (
+                <span title={`${advisoryCount} AI suggestion${advisoryCount !== 1 ? "s" : ""}`} style={{
+                  fontSize: 10, fontWeight: 700, background: "#f59e0b", color: "#fff",
+                  borderRadius: 99, padding: "1px 4px", lineHeight: "16px", minWidth: 14, textAlign: "center",
+                }}>⚡</span>
               )}
             </button>
           );
