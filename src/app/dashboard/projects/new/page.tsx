@@ -220,6 +220,7 @@ export default function NewProjectPage() {
         methodology: f.methodology || (pf.methodology as string) || "milestone_based",
         industry: f.industry || (pf.industry as string) || "",
         budget: f.budget || (pf.budget ? String(pf.budget) : ""),
+        currency: pf.currency ? (pf.currency as string) : f.currency,
         startDate: f.startDate || (pf.startDate ? String(pf.startDate).slice(0, 10) : ""),
         endDate: f.endDate || (pf.endDate ? String(pf.endDate).slice(0, 10) : ""),
         description: f.description || (pf.description as string) || "",

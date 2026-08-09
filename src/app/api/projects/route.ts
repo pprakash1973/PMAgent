@@ -231,6 +231,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Seed scope requirements extracted from SOW into the Requirement table
+    const scopeItems = (data.requirementsExtracted as any)?.scopeItems;
+    if (Array.isArray(scopeItems) && scopeItems.length > 0) {
+      await db.requirement.createMany({
+        data: scopeItems.map((item: string, i: number) => ({
+          projectId: project.id,
+          requirementKey: `REQ-${String(i + 1).padStart(3, "0")}`,
+          statement: String(item),
+          type: "functional",
+          source: "sow_extract",
+          status: "proposed",
+        })),
+        skipDuplicates: true,
+      });
+    }
+
     return NextResponse.json(
       { ...project, hasRequirements: !!data.requirementsText },
       { status: 201 }

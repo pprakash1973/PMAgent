@@ -4502,8 +4502,8 @@ function BaselineTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const PREDICTIVE_TABS = ["Project Info", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Scope Control", "Status Reporting", "Baseline"];
-const AGILE_TABS = ["Project Info", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
+const PREDICTIVE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting", "Baseline"];
+const AGILE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
 
 const TAB_META: Record<string, { icon: React.ReactNode }> = {
   "Project Info":     { icon: <Info size={14} /> },
