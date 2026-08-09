@@ -1020,14 +1020,31 @@ async function main() {
 
     console.log("✓ ArtifactTemplate table + ArtifactVersion.appliedTemplateId");
 
-    // ── ChangeRequest: extended fields for budget/schedule impact ────────────────
+    // ── ChangeRequest table (mapped to change_requests via @@map) ────────────────
     await run(pool, `
-      ALTER TABLE "ChangeRequest"
-        ADD COLUMN IF NOT EXISTS "title"               TEXT,
-        ADD COLUMN IF NOT EXISTS "budgetImpact"        DECIMAL(65,30) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS "scheduleImpactDays"  INTEGER        NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS "approvedAt"          TIMESTAMP(3)
-    `, "ChangeRequest budget/schedule columns");
+      CREATE TABLE IF NOT EXISTS change_requests (
+        "id"                 TEXT            NOT NULL PRIMARY KEY,
+        "projectId"          TEXT            NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "crId"               TEXT,
+        "title"              TEXT,
+        "description"        TEXT            NOT NULL DEFAULT '',
+        "impactAnalysis"     TEXT,
+        "approvalStatus"     TEXT            NOT NULL DEFAULT 'pending',
+        "budgetImpact"       DECIMAL(65,30)  NOT NULL DEFAULT 0,
+        "scheduleImpactDays" INTEGER         NOT NULL DEFAULT 0,
+        "requestedBy"        TEXT,
+        "approvedBy"         TEXT,
+        "approvedAt"         TIMESTAMP(3),
+        "createdAt"          TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt"          TIMESTAMP(3)    NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "change_requests_projectId_idx" ON change_requests("projectId")
+    `, "change_requests table");
+    // Extend if the table already existed without the newer columns
+    await pool.query(`ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS "title"               TEXT`).catch(()=>{});
+    await pool.query(`ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS "budgetImpact"        DECIMAL(65,30) NOT NULL DEFAULT 0`).catch(()=>{});
+    await pool.query(`ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS "scheduleImpactDays"  INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
+    await pool.query(`ALTER TABLE change_requests ADD COLUMN IF NOT EXISTS "approvedAt"          TIMESTAMP(3)`).catch(()=>{});
 
     // ── RAID registers: Assumptions + Dependencies ───────────────────────────────
     await run(pool, `
