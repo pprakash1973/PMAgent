@@ -2,16 +2,19 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
+import { syncProjectDeliveryOwners } from "@/lib/delivery-owners";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
 const createSchema = z.object({
+  uid: z.string().regex(/^[A-Za-z0-9]{1,10}$/, "UID must be alphanumeric, max 10 characters"),
   fullName: z.string().min(1),
   email: z.string().email(),
   role: z.enum(["pm", "pgm", "dm", "dh", "admin"]),
-  programIds: z.array(z.string()).optional(),
-  clientIds: z.array(z.string()).optional(),
+  programIds: z.array(z.string()).optional(),  // legacy pgm support
+  clientIds: z.array(z.string()).optional(),   // DH → cluster IDs
+  accountIds: z.array(z.string()).optional(),  // DM → account IDs (multi-cluster/multi-account)
 });
 
 export async function GET(req: NextRequest) {
@@ -30,7 +33,7 @@ export async function GET(req: NextRequest) {
   const users = await prisma.user.findMany({
     where,
     select: {
-      id: true, email: true, fullName: true, role: true, status: true, copilotEnabled: true,
+      id: true, uid: true, email: true, fullName: true, role: true, status: true, copilotEnabled: true,
       createdAt: true, updatedAt: true, deletedAt: true,
       programAssignments: {
         include: {
@@ -38,6 +41,9 @@ export async function GET(req: NextRequest) {
             include: { account: { include: { cluster: { select: { id: true, name: true } } } } },
           },
         },
+      },
+      accountAssignments: {
+        include: { account: { include: { cluster: { select: { id: true, name: true } } } } },
       },
       clusterAssignments: {
         include: { cluster: { select: { id: true, name: true } } },
@@ -58,6 +64,23 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const data = createSchema.parse(body);
+
+    // UID must be unique across the org
+    const uidClash = await prisma.user.findFirst({
+      where: { uid: data.uid },
+      select: { id: true, fullName: true, email: true, status: true },
+    });
+    if (uidClash) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "DUPLICATE_UID",
+            message: `UID "${data.uid}" is already assigned to ${uidClash.fullName} (${uidClash.email}).`,
+          },
+        },
+        { status: 409 }
+      );
+    }
 
     const existing = await prisma.user.findFirst({
       where: { email: data.email },
@@ -102,6 +125,7 @@ export async function POST(req: NextRequest) {
     const newUser = await prisma.user.create({
       data: {
         orgId: admin.orgId,
+        uid: data.uid,
         email: data.email,
         fullName: data.fullName,
         role: data.role,
@@ -121,14 +145,25 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // PM: single program assignment
-    if (data.role === "pm" && data.programIds?.length) {
-      await prisma.programAssignment.create({
-        data: { programId: data.programIds[0], userId: newUser.id, assignedBy: admin.id },
+    // PM: no hierarchy mapping — PMs are attached to projects directly.
+
+    // DM: account assignments across one or more clusters. First account is primary.
+    if (data.role === "dm" && data.accountIds?.length) {
+      await prisma.accountAssignment.createMany({
+        data: data.accountIds.map((aid, i) => ({
+          accountId: aid, userId: newUser.id, isPrimary: i === 0, assignedBy: admin.id,
+        })),
+        skipDuplicates: true,
       });
+      // First account gets the denormalised primary-DM FK
+      await prisma.orgAccount.updateMany({ where: { id: data.accountIds[0] }, data: { primaryDmId: newUser.id } });
+      // Re-sync project owner cache for every touched account (new DM gains project access)
+      for (const aid of data.accountIds) {
+        await syncProjectDeliveryOwners({ accountId: aid });
+      }
     }
 
-    // DM: multiple program assignments
+    // Legacy pgm: multiple program assignments (role hidden from UI, kept for back-compat)
     if (data.role === "pgm" && data.programIds?.length) {
       await prisma.programAssignment.createMany({
         data: data.programIds.map((pid) => ({ programId: pid, userId: newUser.id, assignedBy: admin.id })),
@@ -139,9 +174,15 @@ export async function POST(req: NextRequest) {
     // DH: cluster assignments (clientIds contains cluster IDs)
     if (data.role === "dh" && data.clientIds?.length) {
       await prisma.clusterAssignment.createMany({
-        data: data.clientIds.map((cid) => ({ clusterId: cid, userId: newUser.id, assignedBy: admin.id })),
+        data: data.clientIds.map((cid, i) => ({
+          clusterId: cid, userId: newUser.id, isPrimary: i === 0, assignedBy: admin.id,
+        })),
         skipDuplicates: true,
       });
+      await prisma.cluster.updateMany({ where: { id: data.clientIds[0] }, data: { primaryDhId: newUser.id } });
+      for (const cid of data.clientIds) {
+        await syncProjectDeliveryOwners({ clusterId: cid });
+      }
     }
 
     const inviteUrl = `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/accept-invite?token=${token}`;

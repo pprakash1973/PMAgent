@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
+import { syncProjectDeliveryOwners } from "@/lib/delivery-owners";
 import { z } from "zod";
 
 const assignSchema = z.object({
@@ -49,6 +50,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: { user: { select: { id: true, fullName: true, email: true } } },
   });
 
+  // Repoint every project on this account to the (possibly new) primary DM
+  await syncProjectDeliveryOwners({ accountId });
+
   return NextResponse.json(assignment, { status: 201 });
 }
 
@@ -68,6 +72,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (account?.primaryDmId === userId) {
     await prisma.orgAccount.update({ where: { id: accountId }, data: { primaryDmId: null } });
   }
+
+  // Repoint projects on this account (owner falls back to next DM, or null)
+  await syncProjectDeliveryOwners({ accountId });
 
   return NextResponse.json({ ok: true });
 }

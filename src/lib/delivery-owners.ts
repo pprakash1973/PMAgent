@@ -86,6 +86,78 @@ export async function resolveDeliveryManager(accountId: string | null | undefine
   return { name: null, userId: null, source: "none" };
 }
 
+/**
+ * Re-materialise the denormalised delivery-owner cache on projects.
+ *
+ * The source of truth is AccountAssignment (DM) and ClusterAssignment (DH).
+ * The Project.deliveryManager* / clusterHead* fields are a rebuildable cache so
+ * aggregation reads are fast AND reassignment auto-flows: when an account's
+ * primary DM changes, call this with { accountId } — every project on that
+ * account is repointed to the new DM (the old DM loses access via scope queries),
+ * without touching the projects individually.
+ *
+ * Pass accountId to resync all projects on that account's DM.
+ * Pass clusterId to resync all projects in that cluster's DH.
+ * Pass projectId to resync a single project (used at project creation).
+ */
+export async function syncProjectDeliveryOwners(opts: {
+  accountId?: string | null;
+  clusterId?: string | null;
+  projectId?: string | null;
+}): Promise<number> {
+  const db = prisma as any;
+
+  // Single project: resolve both owners from its own account/cluster.
+  if (opts.projectId) {
+    const project = await db.project.findUnique({
+      where: { id: opts.projectId },
+      select: { id: true, accountId: true, clusterId: true },
+    });
+    if (!project) return 0;
+    const dm = await resolveDeliveryManager(project.accountId);
+    const dh = await resolveDeliveryHead(project.clusterId);
+    const dmUid = dm.userId ? await uidFor(dm.userId) : null;
+    const dhUid = dh.userId ? await uidFor(dh.userId) : null;
+    await db.project.update({
+      where: { id: project.id },
+      data: {
+        deliveryManagerId: dm.userId, deliveryManagerUid: dmUid,
+        clusterHeadId: dh.userId, clusterHeadUid: dhUid,
+      },
+    });
+    return 1;
+  }
+
+  let count = 0;
+
+  if (opts.accountId) {
+    const dm = await resolveDeliveryManager(opts.accountId);
+    const dmUid = dm.userId ? await uidFor(dm.userId) : null;
+    const res = await db.project.updateMany({
+      where: { accountId: opts.accountId, deletedAt: null },
+      data: { deliveryManagerId: dm.userId, deliveryManagerUid: dmUid },
+    });
+    count += res.count ?? 0;
+  }
+
+  if (opts.clusterId) {
+    const dh = await resolveDeliveryHead(opts.clusterId);
+    const dhUid = dh.userId ? await uidFor(dh.userId) : null;
+    const res = await db.project.updateMany({
+      where: { clusterId: opts.clusterId, deletedAt: null },
+      data: { clusterHeadId: dh.userId, clusterHeadUid: dhUid },
+    });
+    count += res.count ?? 0;
+  }
+
+  return count;
+}
+
+async function uidFor(userId: string): Promise<string | null> {
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { uid: true } });
+  return u?.uid ?? null;
+}
+
 export async function resolveDeliveryHead(clusterId: string | null | undefined): Promise<ResolvedOwner> {
   if (!clusterId) return { name: null, userId: null, source: "none" };
 

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateProjectFromNL } from "@/lib/ai";
+import { syncProjectDeliveryOwners } from "@/lib/delivery-owners";
 import { DEFAULT_DETAILED_ARTIFACTS, DEFAULT_HIGH_LEVEL_ARTIFACTS } from "@/lib/utils";
 import { z } from "zod";
 
@@ -124,7 +125,7 @@ export async function POST(req: NextRequest) {
       pmOwnerId = data.pmOwnerId;
     }
 
-    // PM: auto-resolve programId from their single assignment
+    // PM: auto-resolve programId from their single assignment (legacy — PMs normally have no mapping now)
     let resolvedProgramId = data.programId;
     let resolvedClientId = data.accountId ?? data.clientId;
     if (user.role === "pm" && !resolvedProgramId) {
@@ -136,6 +137,18 @@ export async function POST(req: NextRequest) {
         resolvedProgramId = assignment.programId;
         resolvedClientId = resolvedClientId || assignment.program.accountId;
       }
+    }
+
+    // Derive clusterId from the chosen account (denormalised; required for DH aggregation).
+    // If a program was chosen without an explicit account, fall back to the program's account.
+    let resolvedClusterId: string | null = null;
+    if (!resolvedClientId && resolvedProgramId) {
+      const prog = await prisma.program.findUnique({ where: { id: resolvedProgramId }, select: { accountId: true } });
+      if (prog) resolvedClientId = prog.accountId;
+    }
+    if (resolvedClientId) {
+      const acct = await prisma.orgAccount.findUnique({ where: { id: resolvedClientId }, select: { clusterId: true } });
+      resolvedClusterId = acct?.clusterId ?? null;
     }
 
     // Derive deliveryMethod from methodology if not explicitly provided
@@ -157,6 +170,7 @@ export async function POST(req: NextRequest) {
         pmOwnerId,
         name: data.name,
         code,
+        clusterId: resolvedClusterId,
         accountId: resolvedClientId,
         programId: resolvedProgramId,
         customer: data.customer,
@@ -177,6 +191,13 @@ export async function POST(req: NextRequest) {
         description: data.description,
       },
     });
+
+    // Materialise the delivery-owner cache (DM from account, DH from cluster).
+    // Source of truth stays the assignment tables; this snapshot auto-refreshes
+    // whenever the account's primary DM or cluster's primary DH changes.
+    if (resolvedClientId || resolvedClusterId) {
+      await syncProjectDeliveryOwners({ projectId: project.id });
+    }
 
     // Create default artifact selections
     const defaults = data.engagementMode === "high_level"

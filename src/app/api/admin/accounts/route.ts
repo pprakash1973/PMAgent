@@ -18,9 +18,14 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const clusterId = searchParams.get("clusterId");
+  const clusterIds = searchParams.get("clusterIds"); // comma-separated (DM wizard: accounts across multiple clusters)
 
   const where: any = { orgId: (user as any).orgId, deletedAt: null };
-  if (clusterId) where.clusterId = clusterId;
+  if (clusterIds) {
+    where.clusterId = { in: clusterIds.split(",").filter(Boolean) };
+  } else if (clusterId) {
+    where.clusterId = clusterId;
+  }
 
   const accounts = await prisma.orgAccount.findMany({
     where,

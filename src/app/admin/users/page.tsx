@@ -4,16 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toaster";
-import { Plus, Copy, RefreshCw, UserX, Loader2, X, Check, ChevronRight, Lock, AlertTriangle } from "lucide-react";
+import { Plus, Copy, RefreshCw, UserX, Loader2, X, Check, ChevronRight, Lock, AlertTriangle, Pencil, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// 4-role model. `pgm` is legacy (hidden from the picker; existing rows still render a label).
 const ROLE_LABELS: Record<string, string> = {
-  pm: "Project Manager",
-  pgm: "Delivery Manager",
-  dm: "Sr. Delivery Manager",
   dh: "Delivery Head",
+  dm: "Delivery Manager",
+  pm: "Project Manager",
   admin: "Admin",
+  pgm: "Delivery Manager (legacy)",
 };
+const CREATE_ROLES = [
+  { v: "dh", label: "Delivery Head", desc: "Accountable for one or more clusters" },
+  { v: "dm", label: "Delivery Manager", desc: "Manages accounts across one or more clusters" },
+  { v: "pm", label: "Project Manager", desc: "Runs projects; assigned to projects directly" },
+  { v: "admin", label: "Admin", desc: "Full platform access, no hierarchy restriction" },
+];
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-100 text-green-700",
   invited: "bg-amber-100 text-amber-700",
@@ -21,13 +28,12 @@ const STATUS_COLORS: Record<string, string> = {
   expired: "bg-red-100 text-red-600",
 };
 
-interface HierarchyItem { id: string; name: string }
-interface ClusterItem extends HierarchyItem {}
-interface ClientItem extends HierarchyItem { cluster: { id: string; name: string } }
-interface ProgramItem extends HierarchyItem { client: { id: string; name: string; cluster: { id: string; name: string } } }
+interface ClusterItem { id: string; name: string }
+interface AccountItem { id: string; name: string; cluster: { id: string; name: string } }
 
 interface User {
   id: string;
+  uid: string | null;
   email: string;
   fullName: string;
   role: string;
@@ -36,10 +42,12 @@ interface User {
   createdAt: string;
   invitations: { expiresAt: string }[];
   programAssignments: { program: { id: string; name: string; account: { name: string; cluster: { name: string } } } }[];
+  accountAssignments: { account: { id: string; name: string; cluster: { id: string; name: string } } }[];
   clusterAssignments: { cluster: { id: string; name: string } }[];
 }
 
-const emptyForm = { fullName: "", email: "", role: "pm" };
+const emptyForm = { uid: "", fullName: "", email: "", role: "pm" };
+const UID_RE = /^[A-Za-z0-9]{1,10}$/;
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -54,12 +62,13 @@ export default function UsersPage() {
 
   // hierarchy state
   const [clusters, setClusters] = useState<ClusterItem[]>([]);
-  const [clients, setClients] = useState<ClientItem[]>([]);
-  const [programs, setPrograms] = useState<ProgramItem[]>([]);
-  const [selCluster, setSelCluster] = useState("");
-  const [selClient, setSelClient] = useState("");
-  const [selPrograms, setSelPrograms] = useState<string[]>([]);   // PM: max 1, DM: multi
-  const [selClients, setSelClients] = useState<string[]>([]);     // DH: multi
+  const [accounts, setAccounts] = useState<AccountItem[]>([]);
+  const [selClusters, setSelClusters] = useState<string[]>([]);   // DM + DH: multi cluster
+  const [selAccounts, setSelAccounts] = useState<string[]>([]);   // DM: multi account
+
+  // edit state
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [pwUser, setPwUser] = useState<User | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,61 +85,60 @@ export default function UsersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Load clusters once when wizard opens
+  // Load clusters whenever a create/edit panel is open
+  const panelOpen = showForm || !!editUser;
   useEffect(() => {
-    if (!showForm) return;
+    if (!panelOpen) return;
     fetch("/api/admin/clusters").then((r) => r.json()).then((d) => setClusters(Array.isArray(d) ? d : []));
-  }, [showForm]);
+  }, [panelOpen]);
 
-  // Load clients when cluster selected
+  // Load accounts across the selected clusters (DM flow)
   useEffect(() => {
-    if (!selCluster) { setClients([]); setSelClient(""); return; }
-    fetch(`/api/admin/clients?clusterId=${selCluster}`).then((r) => r.json()).then((d) => setClients(Array.isArray(d) ? d : []));
-    setSelClient("");
-    setSelPrograms([]);
-  }, [selCluster]);
-
-  // Load programs when client selected
-  useEffect(() => {
-    if (!selClient) { setPrograms([]); setSelPrograms([]); return; }
-    fetch(`/api/admin/programs?clientId=${selClient}`).then((r) => r.json()).then((d) => setPrograms(Array.isArray(d) ? d : []));
-    setSelPrograms([]);
-  }, [selClient]);
+    if (selClusters.length === 0) { setAccounts([]); return; }
+    fetch(`/api/admin/accounts?clusterIds=${selClusters.join(",")}`)
+      .then((r) => r.json())
+      .then((d) => setAccounts(Array.isArray(d) ? d : []));
+  }, [selClusters]);
 
   function resetWizard() {
     setForm(emptyForm);
     setStep(1);
     setInviteUrl(null);
     setDuplicateInfo(null);
-    setSelCluster("");
-    setSelClient("");
-    setSelPrograms([]);
-    setSelClients([]);
+    setSelClusters([]);
+    setSelAccounts([]);
   }
 
-  function openForm() { resetWizard(); setShowForm(true); }
+  function openForm() { resetWizard(); setEditUser(null); setShowForm(true); }
   function closeForm() { setShowForm(false); resetWizard(); }
 
-  function toggleProgram(id: string) {
-    if (form.role === "pm") {
-      setSelPrograms([id]);
-    } else {
-      setSelPrograms((prev) => prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]);
-    }
+  function toggleCluster(id: string) {
+    setSelClusters((prev) => {
+      const next = prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id];
+      // Drop accounts that belong to a now-deselected cluster
+      if (!next.includes(id)) {
+        setSelAccounts((accs) => accs.filter((aid) => {
+          const acc = accounts.find((a) => a.id === aid);
+          return acc ? next.includes(acc.cluster.id) : true;
+        }));
+      }
+      return next;
+    });
+  }
+  function toggleAccount(id: string) {
+    setSelAccounts((prev) => prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]);
   }
 
-  function toggleClientDH(id: string) {
-    setSelClients((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
-  }
+  const uidError = form.uid.length > 0 && !UID_RE.test(form.uid);
 
-  async function createUser(e: React.FormEvent) {
-    e.preventDefault();
+  async function createUser(e?: React.FormEvent) {
+    e?.preventDefault();
     setSubmitting(true);
     setDuplicateInfo(null);
     try {
-      const payload: any = { ...form };
-      if (form.role === "pm" || form.role === "pgm") payload.programIds = selPrograms;
-      if (form.role === "dh") payload.clientIds = selClients;
+      const payload: any = { uid: form.uid, fullName: form.fullName, email: form.email, role: form.role };
+      if (form.role === "dm") payload.accountIds = selAccounts;
+      if (form.role === "dh") payload.clientIds = selClusters;
 
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -152,6 +160,44 @@ export default function UsersPage() {
     }
   }
 
+  // ── Edit ─────────────────────────────────────────────────────────────
+  function openEdit(u: User) {
+    setShowForm(false);
+    setForm({ uid: u.uid ?? "", fullName: u.fullName, email: u.email, role: u.role });
+    setSelClusters(
+      u.role === "dh" ? u.clusterAssignments.map((a) => a.cluster.id)
+      : u.role === "dm" ? Array.from(new Set(u.accountAssignments.map((a) => a.account.cluster.id)))
+      : []
+    );
+    setSelAccounts(u.role === "dm" ? u.accountAssignments.map((a) => a.account.id) : []);
+    setEditUser(u);
+  }
+  function closeEdit() { setEditUser(null); resetWizard(); }
+
+  async function saveEdit() {
+    if (!editUser) return;
+    setSubmitting(true);
+    try {
+      const payload: any = { uid: form.uid, fullName: form.fullName, role: form.role };
+      if (form.role === "dm") payload.accountIds = selAccounts;
+      if (form.role === "dh") payload.clientIds = selClusters;
+      const res = await fetch(`/api/admin/users/${editUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || "Failed");
+      toast({ title: "User updated" });
+      closeEdit();
+      await load();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function deactivateAndRetry() {
     if (!duplicateInfo) return;
     setSubmitting(true);
@@ -161,32 +207,6 @@ export default function UsersPage() {
       setDuplicateInfo(null);
       await load();
       toast({ title: "User deactivated", description: "You can now re-invite them with a new mapping." });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function reinviteDeactivated() {
-    if (!duplicateInfo) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/admin/users/${duplicateInfo.id}/reinvite`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          role: form.role,
-          fullName: form.fullName,
-          programIds: selPrograms,
-          clientIds: selClients,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message || "Failed");
-      setDuplicateInfo(null);
-      setInviteUrl(data.inviteUrl);
-      await load();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
@@ -229,8 +249,95 @@ export default function UsersPage() {
   }
 
   const filtered = users.filter(
-    (u) => u.fullName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
+    (u) => u.fullName.toLowerCase().includes(search.toLowerCase())
+      || u.email.toLowerCase().includes(search.toLowerCase())
+      || (u.uid ?? "").toLowerCase().includes(search.toLowerCase())
   );
+
+  // Accounts grouped by cluster for the DM picker
+  const accountsByCluster = selClusters.map((cid) => ({
+    cluster: clusters.find((c) => c.id === cid),
+    accounts: accounts.filter((a) => a.cluster.id === cid),
+  }));
+
+  // ── Shared mapping editor (used by both create step 2 and edit) ──────
+  function MappingFields({ role }: { role: string }) {
+    if (role === "pm") {
+      return <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+        Project Managers are assigned to projects directly — no cluster or account mapping needed.
+      </p>;
+    }
+    if (role === "admin") {
+      return <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+        Admins have full platform access — no hierarchy mapping.
+      </p>;
+    }
+    if (role === "dh") {
+      return (
+        <div className="space-y-1.5">
+          <Label>Clusters (DH is accountable for all accounts within each selected cluster)</Label>
+          {clusters.length === 0 && <p className="text-xs text-slate-400">No clusters available. Create clusters first.</p>}
+          <div className="flex flex-wrap gap-2">
+            {clusters.map((c) => (
+              <button key={c.id} type="button" onClick={() => toggleCluster(c.id)}
+                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all",
+                  selClusters.includes(c.id) ? "bg-[#EEEDFE] border-[#AFA9EC] text-[#3C3489] font-medium" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300")}>
+                {selClusters.includes(c.id) && <Check className="w-3 h-3" />}{c.name}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            {selClusters.length === 0 ? "No clusters selected — DH will have no project access." : `${selClusters.length} cluster${selClusters.length > 1 ? "s" : ""} selected`}
+          </p>
+        </div>
+      );
+    }
+    // DM: multi-cluster → multi-account
+    return (
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Label>Clusters (select all that apply)</Label>
+          {clusters.length === 0 && <p className="text-xs text-slate-400">No clusters available. Create clusters first.</p>}
+          <div className="flex flex-wrap gap-2">
+            {clusters.map((c) => (
+              <button key={c.id} type="button" onClick={() => toggleCluster(c.id)}
+                className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all",
+                  selClusters.includes(c.id) ? "bg-[#E1F5EE] border-[#9FE1CB] text-[#0F6E56] font-medium" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300")}>
+                {selClusters.includes(c.id) && <Check className="w-3 h-3" />}{c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {selClusters.length > 0 && (
+          <div className="space-y-2">
+            <Label>Accounts (grouped by cluster — select all this DM manages)</Label>
+            {accountsByCluster.map(({ cluster, accounts: accs }) => (
+              <div key={cluster?.id} className="rounded-lg border border-slate-100 p-3">
+                <p className="text-xs font-medium text-slate-500 mb-2">{cluster?.name}</p>
+                {accs.length === 0 ? (
+                  <p className="text-xs text-slate-400">No accounts under this cluster yet.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {accs.map((a) => (
+                      <button key={a.id} type="button" onClick={() => toggleAccount(a.id)}
+                        className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all",
+                          selAccounts.includes(a.id) ? "bg-[#E1F5EE] border-[#9FE1CB] text-[#0F6E56] font-medium" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300")}>
+                        {selAccounts.includes(a.id) && <Check className="w-3 h-3" />}{a.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            <p className="text-xs text-slate-400">
+              {selAccounts.length === 0 ? "No accounts selected — DM will have no project access." : `${selAccounts.length} account${selAccounts.length > 1 ? "s" : ""} selected. The first selected account is set as primary.`}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">
@@ -245,6 +352,7 @@ export default function UsersPage() {
         </Button>
       </div>
 
+      {/* ── CREATE WIZARD ──────────────────────────────────────────── */}
       {showForm && (
         <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
           {inviteUrl ? (
@@ -262,7 +370,6 @@ export default function UsersPage() {
             </div>
           ) : (
             <form onSubmit={createUser}>
-              {/* Duplicate user conflict banner */}
               {duplicateInfo && (
                 <div className="mb-5 rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
                   <div className="flex items-start gap-2">
@@ -270,70 +377,33 @@ export default function UsersPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-amber-800">User already exists for this email</p>
                       <p className="text-sm text-amber-700 mt-0.5">
-                        <span className="font-medium">{duplicateInfo.fullName}</span>
-                        {" "}({ROLE_LABELS[duplicateInfo.role] || duplicateInfo.role})
-                        {" "}— status: <span className="font-medium capitalize">{duplicateInfo.status}</span>
+                        <span className="font-medium">{duplicateInfo.fullName}</span>{" "}({ROLE_LABELS[duplicateInfo.role] || duplicateInfo.role}){" "}
+                        — status: <span className="font-medium capitalize">{duplicateInfo.status}</span>
                       </p>
-                      {duplicateInfo.mapping && (
-                        <p className="text-xs text-amber-700 mt-1">
-                          Current mapping: <span className="font-medium">{duplicateInfo.mapping}</span>
-                        </p>
-                      )}
-                      <p className="text-xs text-amber-600 mt-2">
-                        Deactivate the existing account first, then re-invite with the new mapping.
-                      </p>
+                      {duplicateInfo.mapping && <p className="text-xs text-amber-700 mt-1">Current mapping: <span className="font-medium">{duplicateInfo.mapping}</span></p>}
                     </div>
                   </div>
                   <div className="flex gap-2">
-                      {duplicateInfo.status !== "deactivated" ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="border-amber-400 text-amber-800 hover:bg-amber-100 text-xs"
-                        disabled={submitting}
-                        onClick={deactivateAndRetry}
-                      >
-                        {submitting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <UserX className="w-3 h-3 mr-1" />}
-                        Deactivate existing account
+                    {duplicateInfo.status !== "deactivated" && (
+                      <Button type="button" size="sm" variant="outline" className="border-amber-400 text-amber-800 hover:bg-amber-100 text-xs" disabled={submitting} onClick={deactivateAndRetry}>
+                        {submitting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <UserX className="w-3 h-3 mr-1" />}Deactivate existing account
                       </Button>
-                      ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="border-teal-500 text-teal-700 hover:bg-teal-50 text-xs"
-                        disabled={submitting}
-                        onClick={reinviteDeactivated}
-                      >
-                        {submitting ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                        Re-invite with new mapping
-                      </Button>
-                      )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="text-xs text-slate-500"
-                        onClick={() => setDuplicateInfo(null)}
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
+                    )}
+                    <Button type="button" size="sm" variant="ghost" className="text-xs text-slate-500" onClick={() => setDuplicateInfo(null)}>Dismiss</Button>
+                  </div>
                 </div>
               )}
+
               {/* Step indicator */}
               <div className="flex items-center gap-2 mb-5">
                 {[1, 2].map((s) => (
                   <div key={s} className="flex items-center gap-2">
-                    <div className={cn(
-                      "w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
-                      step > s ? "bg-[#006E74] text-white" : step === s ? "bg-[#006E74] text-white" : "bg-slate-100 text-slate-400"
-                    )}>
+                    <div className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium",
+                      step >= s ? "bg-[#006E74] text-white" : "bg-slate-100 text-slate-400")}>
                       {step > s ? <Check className="w-3 h-3" /> : s}
                     </div>
                     <span className={cn("text-xs", step === s ? "text-slate-800 font-medium" : "text-slate-400")}>
-                      {s === 1 ? "Basic info & role" : "Hierarchy assignment"}
+                      {s === 1 ? "Identity & role" : "Hierarchy assignment"}
                     </span>
                     {s < 2 && <ChevronRight className="w-3 h-3 text-slate-300" />}
                   </div>
@@ -342,7 +412,15 @@ export default function UsersPage() {
 
               {step === 1 && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>UID</Label>
+                      <Input value={form.uid} onChange={(e) => setForm({ ...form, uid: e.target.value })} required placeholder="e.g. U12345" maxLength={10}
+                        className={cn(uidError && "border-red-400 focus-visible:ring-red-400")} />
+                      {uidError
+                        ? <p className="text-[11px] text-red-500">Alphanumeric, max 10 characters.</p>
+                        : <p className="text-[11px] text-slate-400">In production, UID auto-fills name &amp; email from AD.</p>}
+                    </div>
                     <div className="space-y-1.5">
                       <Label>Full name</Label>
                       <Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required placeholder="Jane Smith" />
@@ -355,25 +433,11 @@ export default function UsersPage() {
 
                   <div className="space-y-2">
                     <Label>Role</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { v: "pm", label: "Project Manager", desc: "Manages individual projects within a program" },
-                        { v: "pgm", label: "Delivery Manager", desc: "Oversees projects across assigned programs and accounts" },
-                        { v: "dm", label: "Sr. Delivery Manager", desc: "Account-level oversight; raises action items for PMs" },
-                        { v: "dh", label: "Delivery Head", desc: "Accountable for one or more clusters" },
-                        { v: "admin", label: "Admin", desc: "Full platform access, no hierarchy restriction" },
-                      ].map(({ v, label, desc }) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setForm({ ...form, role: v })}
-                          className={cn(
-                            "text-left p-3 rounded-lg border transition-all",
-                            form.role === v
-                              ? "border-[#006E74] bg-[#E1F5EE]"
-                              : "border-slate-200 hover:border-slate-300"
-                          )}
-                        >
+                    <div className="grid grid-cols-2 gap-2">
+                      {CREATE_ROLES.map(({ v, label, desc }) => (
+                        <button key={v} type="button" onClick={() => { setForm({ ...form, role: v }); setSelClusters([]); setSelAccounts([]); }}
+                          className={cn("text-left p-3 rounded-lg border transition-all",
+                            form.role === v ? "border-[#006E74] bg-[#E1F5EE]" : "border-slate-200 hover:border-slate-300")}>
                           <div className={cn("text-sm font-medium", form.role === v ? "text-[#0F6E56]" : "text-slate-800")}>{label}</div>
                           <div className="text-xs text-slate-500 mt-0.5">{desc}</div>
                         </button>
@@ -382,13 +446,12 @@ export default function UsersPage() {
                   </div>
 
                   <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      className="bg-[#006E74] hover:bg-[#004f54]"
-                      disabled={!form.fullName || !form.email}
-                      onClick={() => (form.role === "admin" || form.role === "dm") ? createUser({ preventDefault: () => {} } as any) : setStep(2)}
-                    >
-                      {(form.role === "admin" || form.role === "dm") ? (submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send invitation") : <>Next <ChevronRight className="w-4 h-4 ml-1" /></>}
+                    <Button type="button" className="bg-[#006E74] hover:bg-[#004f54]"
+                      disabled={!form.uid || uidError || !form.fullName || !form.email}
+                      onClick={() => (form.role === "admin" || form.role === "pm") ? createUser() : setStep(2)}>
+                      {(form.role === "admin" || form.role === "pm")
+                        ? (submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Send invitation")
+                        : <>Next <ChevronRight className="w-4 h-4 ml-1" /></>}
                     </Button>
                   </div>
                 </div>
@@ -397,125 +460,15 @@ export default function UsersPage() {
               {step === 2 && (
                 <div className="space-y-5">
                   <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2">
-                    <span className="font-medium">{form.fullName}</span>
-                    <span>·</span>
-                    <span>{form.email}</span>
-                    <span>·</span>
+                    <span className="font-mono text-xs bg-white border border-slate-200 rounded px-1.5 py-0.5">{form.uid}</span>
+                    <span className="font-medium">{form.fullName}</span><span>·</span><span>{form.email}</span><span>·</span>
                     <span className="font-medium text-[#006E74]">{ROLE_LABELS[form.role]}</span>
                   </div>
-
-                  {/* PM: no mapping required */}
-                  {form.role === "pm" && (
-                    <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-                      Project Managers are assigned to projects directly — no cluster or program mapping needed at registration.
-                    </p>
-                  )}
-
-                  {/* DM: accounts assigned separately on Accounts page */}
-                  {form.role === "dm" && (
-                    <p className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
-                      Delivery Managers are assigned to accounts on the <strong>Accounts</strong> admin page — send the invitation first, then map accounts there.
-                    </p>
-                  )}
-
-                  {/* PGM: cluster → account → program(s) */}
-                  {form.role === "pgm" && (
-                    <div className="space-y-4">
-                      <div className="space-y-1.5">
-                        <Label>Cluster</Label>
-                        <select
-                          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#006E74]"
-                          value={selCluster}
-                          onChange={(e) => setSelCluster(e.target.value)}
-                        >
-                          <option value="">Select cluster…</option>
-                          {clusters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
-
-                      {selCluster && (
-                        <div className="space-y-1.5">
-                          <Label>Account</Label>
-                          <select
-                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#006E74]"
-                            value={selClient}
-                            onChange={(e) => setSelClient(e.target.value)}
-                          >
-                            <option value="">Select account…</option>
-                            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                        </div>
-                      )}
-
-                      {selClient && programs.length > 0 && (
-                        <div className="space-y-1.5">
-                          <Label>Programs (select all that apply)</Label>
-                          <div className="flex flex-wrap gap-2">
-                            {programs.map((p) => (
-                              <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => toggleProgram(p.id)}
-                                className={cn(
-                                  "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all",
-                                  selPrograms.includes(p.id)
-                                    ? "bg-[#E1F5EE] border-[#9FE1CB] text-[#0F6E56] font-medium"
-                                    : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
-                                )}
-                              >
-                                {selPrograms.includes(p.id) && <Check className="w-3 h-3" />}
-                                {p.name}
-                              </button>
-                            ))}
-                          </div>
-                          {selClient && programs.length === 0 && (
-                            <p className="text-xs text-slate-400">No programs found for this account. Create programs first.</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* DH: pick clusters directly */}
-                  {form.role === "dh" && (
-                    <div className="space-y-4">
-                      <div className="space-y-1.5">
-                        <Label>Clusters (DH is accountable for all accounts within each selected cluster)</Label>
-                        {clusters.length === 0 && (
-                          <p className="text-xs text-slate-400">No clusters available. Create clusters first.</p>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          {clusters.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => toggleClientDH(c.id)}
-                              className={cn(
-                                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border transition-all",
-                                selClients.includes(c.id)
-                                  ? "bg-[#EEEDFE] border-[#AFA9EC] text-[#3C3489] font-medium"
-                                  : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
-                              )}
-                            >
-                              {selClients.includes(c.id) && <Check className="w-3 h-3" />}
-                              {c.name}
-                            </button>
-                          ))}
-                        </div>
-                        <p className="text-xs text-slate-400 mt-1">
-                          {selClients.length === 0
-                            ? "No clusters selected — DH will have no project access."
-                            : `${selClients.length} cluster${selClients.length > 1 ? "s" : ""} selected`}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
+                  <MappingFields role={form.role} />
                   <div className="flex justify-between">
                     <Button type="button" variant="outline" onClick={() => setStep(1)}>← Back</Button>
                     <Button type="submit" className="bg-[#006E74] hover:bg-[#004f54]" disabled={submitting}>
-                      {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                      Send invitation
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Send invitation
                     </Button>
                   </div>
                 </div>
@@ -525,8 +478,55 @@ export default function UsersPage() {
         </div>
       )}
 
+      {/* ── EDIT PANEL ─────────────────────────────────────────────── */}
+      {editUser && (
+        <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-slate-900">Edit user</h2>
+            <Button variant="ghost" size="icon" onClick={closeEdit}><X className="w-4 h-4" /></Button>
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label>UID</Label>
+                <Input value={form.uid} onChange={(e) => setForm({ ...form, uid: e.target.value })} maxLength={10}
+                  className={cn(uidError && "border-red-400 focus-visible:ring-red-400")} />
+                {uidError && <p className="text-[11px] text-red-500">Alphanumeric, max 10 characters.</p>}
+              </div>
+              <div className="space-y-1.5">
+                <Label>Full name</Label>
+                <Input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input value={form.email} readOnly disabled className="bg-slate-50 text-slate-400" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Role</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {CREATE_ROLES.map(({ v, label }) => (
+                  <button key={v} type="button" onClick={() => { setForm({ ...form, role: v }); setSelClusters([]); setSelAccounts([]); }}
+                    className={cn("text-left px-3 py-2 rounded-lg border text-sm transition-all",
+                      form.role === v ? "border-[#006E74] bg-[#E1F5EE] text-[#0F6E56] font-medium" : "border-slate-200 text-slate-700 hover:border-slate-300")}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <MappingFields role={form.role} />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={closeEdit}>Cancel</Button>
+              <Button className="bg-[#006E74] hover:bg-[#004f54]" disabled={submitting || uidError || !form.uid || !form.fullName} onClick={saveEdit}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Save changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-4">
-        <Input placeholder="Search by name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+        <Input placeholder="Search by UID, name or email…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -538,27 +538,37 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left px-4 py-3 font-medium text-slate-600">UID</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Role</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Assignments</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">AI Assistant</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Joined</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((u) => (
                 <tr key={u.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{u.uid ?? "—"}</td>
                   <td className="px-4 py-3 font-medium text-slate-900">{u.fullName}</td>
                   <td className="px-4 py-3 text-slate-600">{u.email}</td>
                   <td className="px-4 py-3 text-slate-600">{ROLE_LABELS[u.role] || u.role}</td>
                   <td className="px-4 py-3">
-                    {(u.role === "pm" || u.role === "pgm" || u.role === "dm") && u.programAssignments?.length > 0 && (
+                    {u.role === "dm" && u.accountAssignments?.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {u.accountAssignments.map((a) => (
+                          <span key={a.account.id} className="text-xs bg-[#E1F5EE] text-[#0F6E56] px-2 py-0.5 rounded-full">
+                            {a.account.cluster?.name} › {a.account.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {u.role === "pgm" && u.programAssignments?.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {u.programAssignments.map((a) => (
-                          <span key={a.program.id} className="text-xs bg-[#E1F5EE] text-[#0F6E56] px-2 py-0.5 rounded-full">
+                          <span key={a.program.id} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
                             {a.program.account?.cluster?.name} › {a.program.account?.name} › {a.program.name}
                           </span>
                         ))}
@@ -567,39 +577,34 @@ export default function UsersPage() {
                     {u.role === "dh" && u.clusterAssignments?.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {u.clusterAssignments.map((a) => (
-                          <span key={a.cluster.id} className="text-xs bg-[#EEEDFE] text-[#3C3489] px-2 py-0.5 rounded-full">
-                            {a.cluster.name}
-                          </span>
+                          <span key={a.cluster.id} className="text-xs bg-[#EEEDFE] text-[#3C3489] px-2 py-0.5 rounded-full">{a.cluster.name}</span>
                         ))}
                       </div>
                     )}
-                    {u.role === "admin" && (
-                      <span className="text-xs text-slate-400 flex items-center gap-1"><Lock className="w-3 h-3" /> Full access</span>
-                    )}
+                    {u.role === "admin" && <span className="text-xs text-slate-400 flex items-center gap-1"><Lock className="w-3 h-3" /> Full access</span>}
+                    {u.role === "pm" && <span className="text-xs text-slate-400">Project-level</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", STATUS_COLORS[u.status] || "bg-slate-100 text-slate-600")}>
-                      {u.status}
-                    </span>
+                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", STATUS_COLORS[u.status] || "bg-slate-100 text-slate-600")}>{u.status}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggleCopilot(u.id, u.copilotEnabled ?? true)}
-                      title={u.copilotEnabled ? "Disable AI Assistant" : "Enable AI Assistant"}
-                      className={cn(
-                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
-                        u.copilotEnabled !== false ? "bg-[#006E74]" : "bg-slate-200"
-                      )}
-                    >
-                      <span className={cn(
-                        "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200",
-                        u.copilotEnabled !== false ? "translate-x-4" : "translate-x-0"
-                      )} />
+                    <button onClick={() => toggleCopilot(u.id, u.copilotEnabled ?? true)} title={u.copilotEnabled ? "Disable AI Assistant" : "Enable AI Assistant"}
+                      className={cn("relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+                        u.copilotEnabled !== false ? "bg-[#006E74]" : "bg-slate-200")}>
+                      <span className={cn("pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200",
+                        u.copilotEnabled !== false ? "translate-x-4" : "translate-x-0")} />
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1 justify-end">
+                      {u.role !== "admin" && (
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => openEdit(u)}>
+                          <Pencil className="w-3 h-3 mr-1" />Edit
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setPwUser(u)}>
+                        <KeyRound className="w-3 h-3 mr-1" />Password
+                      </Button>
                       {u.status === "invited" && (
                         <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => resendInvite(u.id)}>
                           <RefreshCw className="w-3 h-3 mr-1" />Resend
@@ -617,6 +622,70 @@ export default function UsersPage() {
             </tbody>
           </table>
         )}
+      </div>
+
+      {pwUser && <ResetPasswordModal user={pwUser} onClose={() => setPwUser(null)} />}
+    </div>
+  );
+}
+
+// ── Reset password modal ────────────────────────────────────────────────
+function ResetPasswordModal({ user, onClose }: { user: { id: string; fullName: string }; onClose: () => void }) {
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const tooShort = pw.length > 0 && pw.length < 8;
+  const mismatch = confirm.length > 0 && pw !== confirm;
+  const valid = pw.length >= 8 && pw === confirm;
+
+  async function submit() {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error?.message || "Failed");
+      toast({ title: "Password reset", description: `New password set for ${user.fullName}.` });
+      onClose();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-1">
+          <KeyRound className="w-4 h-4 text-[#006E74]" />
+          <h3 className="text-sm font-semibold text-slate-900">Reset password</h3>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">Set a new password for <span className="font-medium">{user.fullName}</span>. Share it securely — self-service reset is coming later.</p>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>New password</Label>
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Min 8 characters"
+              className={cn(tooShort && "border-red-400 focus-visible:ring-red-400")} />
+            {tooShort && <p className="text-[11px] text-red-500">At least 8 characters.</p>}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Confirm password</Label>
+            <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+              className={cn(mismatch && "border-red-400 focus-visible:ring-red-400")} />
+            {mismatch && <p className="text-[11px] text-red-500">Passwords do not match.</p>}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button className="bg-[#006E74] hover:bg-[#004f54]" disabled={!valid || saving} onClick={submit}>
+            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Reset password
+          </Button>
+        </div>
       </div>
     </div>
   );

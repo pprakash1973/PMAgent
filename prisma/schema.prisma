@@ -41,6 +41,7 @@ model Role {
 model User {
   id            String    @id @default(cuid())
   orgId         String
+  uid           String?   @unique  // AD/org key — alphanumeric ≤10; nullable for backfill; app-validated /^[A-Za-z0-9]{1,10}$/
   email         String    @unique
   fullName      String
   passwordHash  String?
@@ -260,6 +261,13 @@ model Project {
   accountId             String?   // FK to OrgAccount; mandatory at creation (PC-4)
   programId             String?   // optional (C5) — null means direct-to-account project
   pmOwnerId             String
+
+  // Denormalised delivery-owner cache — SOURCE OF TRUTH is AccountAssignment (DM) / ClusterAssignment (DH).
+  // Re-materialised by syncProjectDeliveryOwners() whenever the account's primary DM or cluster's primary DH changes.
+  deliveryManagerId     String?   // → User.id (current primary DM of the account)
+  deliveryManagerUid    String?   // User.uid mirror for display / AD
+  clusterHeadId         String?   // → User.id (current primary DH of the cluster)
+  clusterHeadUid        String?   // User.uid mirror for display / AD
   name                  String
   code                  String
   customer              String?
@@ -344,6 +352,8 @@ model Project {
   commercialSnapshots  CommercialSnapshot[]
 
   @@unique([orgId, code])
+  @@index([deliveryManagerId])
+  @@index([clusterHeadId])
 }
 
 model RequirementsDocument {
