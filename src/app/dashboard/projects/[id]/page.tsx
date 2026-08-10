@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_CATALOG } from "@/lib/utils";
 import { WorkspaceClient } from "@/components/workspace-client";
+import { resolveDeliveryManager, resolveDeliveryHead } from "@/lib/delivery-owners";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await auth();
@@ -68,23 +69,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   if (!project) notFound();
 
-  // Resolve DM and DH names — prefer assignment row, fall back to denormalized FK
-  const cluster = project.cluster ?? (project.account as any)?.cluster ?? null;
-  const dmAssignedName = (project.account as any)?.dmAssignments?.[0]?.user?.fullName ?? null;
-  const dhAssignedName = cluster?.clusterAssignments?.[0]?.user?.fullName ?? null;
-
+  // Resolve DM and DH via the single canonical resolver (full fallback chain).
+  // Cluster is denormalised onto the project at creation; fall back to the account's.
+  const clusterId = project.clusterId ?? (project.account as any)?.clusterId ?? null;
   const [resolvedDm, resolvedDh] = await Promise.all([
-    dmAssignedName ? null : ((project.account as any)?.primaryDmId
-      ? prisma.user.findUnique({ where: { id: (project.account as any).primaryDmId }, select: { fullName: true } })
-      : null),
-    dhAssignedName ? null : (cluster?.primaryDhId
-      ? prisma.user.findUnique({ where: { id: cluster.primaryDhId }, select: { fullName: true } })
-      : null),
+    resolveDeliveryManager(project.accountId),
+    resolveDeliveryHead(clusterId),
   ]);
 
   const serialized = JSON.parse(JSON.stringify(project));
-  serialized._resolvedDmName = dmAssignedName ?? resolvedDm?.fullName ?? null;
-  serialized._resolvedDhName = dhAssignedName ?? resolvedDh?.fullName ?? null;
+  serialized._resolvedDmName = resolvedDm.name;
+  serialized._resolvedDhName = resolvedDh.name;
 
   return (
     <WorkspaceClient

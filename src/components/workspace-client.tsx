@@ -300,12 +300,12 @@ const PROJECT_TYPE_LABELS: Record<string, string> = {
   capped_tm:          "Capped T&M",
 };
 
-function InfoField({ label, value }: { label: string; value?: string | null }) {
+function InfoField({ label, value, emptyHint }: { label: string; value?: string | null; emptyHint?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const }}>{label}</span>
-      <span style={{ fontSize: 13.5, color: value ? C.text : C.text3, fontWeight: value ? 500 : 400 }}>
-        {value || "—"}
+      <span style={{ fontSize: 13.5, color: value ? C.text : (emptyHint ? C.amber : C.text3), fontWeight: value ? 500 : 400, fontStyle: value ? "normal" : (emptyHint ? "italic" : "normal") }}>
+        {value || emptyHint || "—"}
       </span>
     </div>
   );
@@ -367,8 +367,8 @@ function ProjectInfoTab({ project }: { project: any }) {
 
         {/* Row 2 — People */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
-          <InfoField label="Delivery Head" value={dhName} />
-          <InfoField label="Delivery Manager" value={dmName} />
+          <InfoField label="Delivery Head" value={dhName} emptyHint="Not assigned — set on cluster" />
+          <InfoField label="Delivery Manager" value={dmName} emptyHint="Not assigned — set on account" />
           <InfoField label="Project Manager" value={project.pmOwner?.fullName} />
         </div>
 
