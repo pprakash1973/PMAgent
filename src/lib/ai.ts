@@ -307,7 +307,7 @@ export async function extractRequirements(text: string): Promise<Record<string, 
   const system = `You are a PMO AI. Extract structured project requirements from documents.
 Return JSON with:
 - goals (array of strings): business/project goals
-- scopeItems (array of strings): in-scope deliverables
+- scopeItems (array of strings): IMPORTANT — if the document contains explicitly numbered or labelled requirements (patterns like REQ-001, FR-001, BR-001, UC-001, NFR-001, or any "Req ID" column in a table), extract EVERY individual requirement as its own separate entry, verbatim or closely paraphrased — do NOT group or summarise them. If the document has no explicit numbering, extract high-level in-scope deliverables instead.
 - outOfScope (array of strings): explicit exclusions if mentioned
 - stakeholders (array of {name, role, interest}): key stakeholders
 - constraints (array of strings): budget, schedule, regulatory, technical constraints

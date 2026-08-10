@@ -70,8 +70,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Truncate to 12000 chars for AI processing
-    const truncated = text.slice(0, 12000);
+    // Allow up to 100k chars — extractRequirements has its own cap at REQUIREMENTS_MAX_CHARS.
+    // 12k was too small: a 50-req BRD's requirement section starts ~page 5 (~30k chars in).
+    const truncated = text.slice(0, 100_000);
 
     // Run both extractions in parallel
     const [requirements, projectFields] = await Promise.all([
