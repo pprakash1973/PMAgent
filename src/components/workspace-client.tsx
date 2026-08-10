@@ -501,7 +501,7 @@ function ProjectInfoTab({ project }: { project: any }) {
 
 const WBS_SCHEDULE_TYPES = new Set(["wbs", "milestone_plan"]);
 
-function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
+function ArtifactsTab({ project, catalog, onNavigate }: { project: any; catalog: any[]; onNavigate?: (tab: string) => void }) {
   const latestStatus = project.statusReports?.[0];
   const healthScore = latestStatus?.healthScore?.compositeScore;
   const healthStatus = project.healthStatus || "green";
@@ -538,10 +538,20 @@ function ArtifactsTab({ project, catalog }: { project: any; catalog: any[] }) {
               {staleArtifacts.length > 0 && (
                 <div style={{ fontSize: 12, color: "#b45309" }}>
                   {staleArtifacts.filter((a: any) => WBS_SCHEDULE_TYPES.has(a.artifactType)).length > 0 && (
-                    <span><strong>WBS / Milestone Plan</strong> — use "Scope Control → Review Delta" to apply changes without regenerating. </span>
+                    <span>
+                      <strong>WBS / Milestone Plan</strong> — apply scope changes without full regeneration.{" "}
+                      {onNavigate && (
+                        <button
+                          onClick={() => onNavigate("Scope Control")}
+                          style={{ fontSize: 12, fontWeight: 600, color: "#92400e", background: "#fde68a", border: "1px solid #f59e0b", borderRadius: 5, padding: "1px 8px", cursor: "pointer" }}
+                        >
+                          Review Delta →
+                        </button>
+                      )}
+                    </span>
                   )}
                   {staleArtifacts.filter((a: any) => !WBS_SCHEDULE_TYPES.has(a.artifactType)).length > 0 && (
-                    <span>Other stale artifacts can be regenerated to reflect {latestBaseline.label}.</span>
+                    <span style={{ display: "block", marginTop: 3 }}>Other stale artifacts can be regenerated to reflect {latestBaseline.label}.</span>
                   )}
                 </div>
               )}
@@ -1506,11 +1516,34 @@ function ScheduleTab({ project }: { project: any }) {
     return () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
   }, [tasks, project.id]);
 
-  async function generate() {
+  async function generate(forceConfirm = false) {
     setGenerating(true);
     setError(null);
-    const res = await fetch(`/api/projects/${project.id}/schedule/generate`, { method: "POST" });
+    const url = forceConfirm
+      ? `/api/projects/${project.id}/schedule/generate?confirm=true`
+      : `/api/projects/${project.id}/schedule/generate`;
+    const res = await fetch(url, { method: "POST" });
     const data = await res.json();
+
+    if (res.status === 409 && data.requiresConfirmation) {
+      setGenerating(false);
+      const taskLines = (data.tasksWithProgress as any[])
+        .slice(0, 8)
+        .map((t: any) => `  • [${t.wbsCode}] ${t.name ?? ""} — ${t.percentComplete}% complete`)
+        .join("\n");
+      const extra = data.tasksWithProgress.length > 8 ? `\n  … and ${data.tasksWithProgress.length - 8} more` : "";
+      const confirmed = window.confirm(
+        `⚠ Schedule has tasks with recorded progress:\n\n${taskLines}${extra}\n\n` +
+        `Regenerating will:\n` +
+        `  • Preserve progress on existing tasks\n` +
+        `  • Add new tasks from the revised WBS\n` +
+        `  • Flag de-scoped tasks (not delete)\n\n` +
+        `Proceed?`
+      );
+      if (confirmed) generate(true);
+      return;
+    }
+
     if (!res.ok) { setError(data.error ?? "Failed to generate schedule"); setGenerating(false); return; }
     await loadSchedule();
     setGenerating(false);
@@ -1719,7 +1752,7 @@ function ScheduleTab({ project }: { project: any }) {
             ↓ Export
           </a>
         )}
-        <button onClick={generate} disabled={generating}
+        <button onClick={() => generate()} disabled={generating}
           style={{ height: 30, padding: "0 12px", background: generating ? C.surface2 : C.primary, color: generating ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, cursor: generating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
           {generating
             ? <><span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
@@ -2818,11 +2851,10 @@ function ScopeControlTab({ project }: { project: any }) {
   const blSnapshot: string[] = latestBaseline
     ? ((latestBaseline.snapshot as any[]) ?? []).map((r: any) => r.requirementKey)
     : [];
-  const blRemovedSnapshot: any[] = latestBaseline
-    ? ((latestBaseline.removedSnapshot as any[]) ?? [])
-    : [];
 
   const activeReqs = reqs.filter(r => r.isActive && r.status !== "rejected");
+  // Live removed reqs (isActive:false) — drives the strikethrough row in the table
+  const removedReqs = reqs.filter(r => !r.isActive && r.status !== "rejected");
   const basedReqs = latestBaseline
     ? activeReqs.filter(r => blSnapshot.includes(r.requirementKey))
     : [];
@@ -2957,10 +2989,11 @@ function ScopeControlTab({ project }: { project: any }) {
       );
       return { milestoneName: name, estimatedDaysFromEnd: item?.estimatedDaysFromEnd ?? 14 };
     });
+    const hasWbsDelta = (deltaReview.impactSummary?.wbsDelta?.length ?? 0) > 0;
     await fetch(`/api/projects/${project.id}/scope-baselines/${deltaReview.id}/apply-delta`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ acceptedMilestones: accepted, reviewed: true }),
+      body: JSON.stringify({ acceptedMilestones: accepted, reviewed: true, applyWbsDelta: hasWbsDelta }),
     });
     setBaselines(prev => prev.map(b => b.id === deltaReview.id ? { ...b, deltaReviewed: true } : b));
     setDeltaReview(null);
@@ -2986,7 +3019,7 @@ function ScopeControlTab({ project }: { project: any }) {
           )}
           {blLabel && (
             <span style={{ fontSize: 12, color: C.text2 }}>
-              {basedReqs.length} active · {blRemovedSnapshot.length} removed
+              Total {activeReqs.length + removedReqs.length} · {activeReqs.length} active · {removedReqs.length} removed
             </span>
           )}
           {pendingCount > 0 && (
@@ -3014,6 +3047,26 @@ function ScopeControlTab({ project }: { project: any }) {
       </div>
 
       {extractError && <div style={{ color: C.red, fontSize: 12, marginBottom: 10 }}>{extractError}</div>}
+
+      {/* ── Persistent Review Delta banner (baseline exists but delta not yet reviewed) ─ */}
+      {latestBaseline && !latestBaseline.deltaReviewed && !deltaReview && (
+        <div style={{ border: `1.5px solid ${C.amber}`, borderRadius: 10, padding: "10px 16px", marginBottom: 14, background: C.amberLight, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.amber, marginBottom: 2 }}>
+              ⏳ {latestBaseline.label} — WBS & Schedule impact not yet reviewed
+            </div>
+            <div style={{ fontSize: 11, color: C.text2 }}>
+              This baseline has scope changes. Review the proposed WBS and Schedule impact before generating artifacts.
+            </div>
+          </div>
+          <button
+            onClick={() => setDeltaReview(latestBaseline)}
+            style={{ fontSize: 12, fontWeight: 600, background: C.amber, color: "#fff", border: "none", borderRadius: 7, padding: "7px 16px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" as const }}
+          >
+            Review Delta →
+          </button>
+        </div>
+      )}
 
       {/* ── Delta review panel ──────────────────────────────────────────────── */}
       {deltaReview && (
@@ -3227,26 +3280,20 @@ function ScopeControlTab({ project }: { project: any }) {
                 </div>
               ))}
 
-              {/* Struck-through removed requirements from last baseline */}
-              {blRemovedSnapshot.map((r: any, i: number) => (
-                <div key={i} style={{ display: "flex", alignItems: "flex-start", padding: "7px 11px", gap: 8, borderBottom: `1px solid ${C.borderLight}`, background: "#fff8f8" }}>
+              {/* Struck-through removed requirements — live from isActive:false rows */}
+              {removedReqs.map((r: any) => (
+                <div key={r.id} style={{ display: "flex", alignItems: "flex-start", padding: "7px 11px", gap: 8, borderBottom: `1px solid ${C.borderLight}`, background: "#fff8f8" }}>
                   <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 500, color: C.red, width: 52, flexShrink: 0, paddingTop: 1 }}>{r.requirementKey}</span>
                   <div style={{ flex: 1, display: "flex", flexWrap: "wrap" as const, alignItems: "flex-start", gap: 6 }}>
                     <span style={{ fontSize: 12, textDecoration: "line-through", color: C.text3, lineHeight: 1.45 }}>{r.statement}</span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: C.red, background: "#fde8e8", borderRadius: 5, padding: "1px 6px", flexShrink: 0 }}>Removed · {latestBaseline?.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: C.red, background: "#fde8e8", borderRadius: 5, padding: "1px 6px", flexShrink: 0 }}>Removed</span>
                   </div>
-                  {/* Restore: find if this req still exists in reqs list */}
-                  {reqs.find((req: any) => req.requirementKey === r.requirementKey && !req.isActive) && (
-                    <button
-                      onClick={() => {
-                        const found = reqs.find((req: any) => req.requirementKey === r.requirementKey);
-                        if (found) handleReqAction(found.id, "restore");
-                      }}
-                      style={{ fontSize: 10, fontWeight: 600, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 5, padding: "2px 8px", cursor: "pointer", flexShrink: 0 }}
-                    >
-                      restore
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleReqAction(r.id, "restore")}
+                    style={{ fontSize: 10, fontWeight: 600, color: C.primary, background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 5, padding: "2px 8px", cursor: "pointer", flexShrink: 0 }}
+                  >
+                    restore
+                  </button>
                 </div>
               ))}
 
@@ -3285,7 +3332,7 @@ function ScopeControlTab({ project }: { project: any }) {
                 </div>
               ))}
 
-              {activeReqs.length === 0 && blRemovedSnapshot.length === 0 && (
+              {activeReqs.length === 0 && removedReqs.length === 0 && (
                 <div style={{ padding: "24px 16px", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>
                   No requirements yet. Upload a document and extract requirements, or add one manually.
                 </div>
@@ -4502,8 +4549,8 @@ function BaselineTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const PREDICTIVE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting", "Baseline"];
-const AGILE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting", "Baseline"];
+const PREDICTIVE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
+const AGILE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting"];
 
 const TAB_META: Record<string, { icon: React.ReactNode }> = {
   "Project Info":     { icon: <Info size={14} /> },
@@ -4794,7 +4841,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
 
       {/* Tab content */}
       {tab === "Project Info" && <ProjectInfoTab project={project} />}
-      {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} />}
+      {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} onNavigate={setTab} />}
       {tab === "Backlog" && <BacklogTab project={project} />}
       {tab === "Sprints" && <SprintsTab project={project} />}
       {tab === "Risk" && <RiskTab project={project} />}
