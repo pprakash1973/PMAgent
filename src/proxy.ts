@@ -10,6 +10,7 @@ export function proxy(req: NextRequest) {
     isStaticAsset ||
     pathname === "/login" ||
     pathname === "/register" ||
+    pathname === "/accept-invite" ||   // invited users aren't logged in yet — must reach the activation page
     pathname.startsWith("/api/auth");
 
   // Check for Auth.js v5 session cookie (JWT strategy)
