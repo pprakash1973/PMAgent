@@ -3002,6 +3002,46 @@ function ScopeControlTab({ project }: { project: any }) {
     router.refresh();
   }
 
+  const [rollingBack, setRollingBack] = React.useState<string | null>(null);
+
+  async function handleRollback(bl: any, forceConfirm = false) {
+    setRollingBack(bl.id);
+    const qs = forceConfirm ? "?confirm=true" : "";
+    const res = await fetch(`/api/projects/${project.id}/scope-baselines/${bl.id}/rollback${qs}`, {
+      method: "POST",
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.status === 409 && data.requiresConfirmation) {
+      setRollingBack(null);
+      const del = data.willDelete;
+      const lines: string[] = [];
+      lines.push(`⚠ Roll back to ${data.target.label}?\n`);
+      lines.push(`This will PERMANENTLY DELETE ${del.baselines.length} newer baseline(s): ${del.baselines.map((b: any) => b.label).join(", ")}`);
+      if (del.scheduleTasksWithProgress > 0) {
+        lines.push(`\n⛔ ${del.scheduleTasksWithProgress} schedule task(s) with recorded progress will be DELETED and their progress discarded:`);
+        lines.push(del.scheduleTasks.filter((t: any) => (t.percentComplete ?? 0) > 0).slice(0, 6).map((t: any) => `  • [${t.wbsCode}] ${t.name} — ${t.percentComplete}%`).join("\n"));
+      } else if (del.scheduleTasks.length > 0) {
+        lines.push(`\n${del.scheduleTasks.length} CR-added schedule task(s) will be removed.`);
+      }
+      if (del.milestones.length > 0) lines.push(`\n${del.milestones.length} milestone(s) will be removed.`);
+      if (data.willRestore.descopedTasks.length > 0) lines.push(`\n${data.willRestore.descopedTasks.length} descoped task(s) will be restored.`);
+      if (data.willFlagStale.length > 0) lines.push(`\n${data.willFlagStale.length} artifact(s) will be flagged for regeneration: ${data.willFlagStale.join(", ")}`);
+      lines.push(`\nThis cannot be undone. Proceed?`);
+      if (window.confirm(lines.join("\n"))) handleRollback(bl, true);
+      return;
+    }
+
+    if (!res.ok) {
+      alert(data.error || "Rollback failed");
+      setRollingBack(null);
+      return;
+    }
+    setRollingBack(null);
+    await loadData();
+    router.refresh();
+  }
+
   const pendingCount = pendingReqs.length;
   const blLabel = latestBaseline?.label ?? null;
 
@@ -3379,6 +3419,17 @@ function ScopeControlTab({ project }: { project: any }) {
                         {added > 0 && <span style={{ fontSize: 10, color: C.green, background: C.greenLight, borderRadius: 4, padding: "1px 5px" }}>+{added}</span>}
                         {removed > 0 && <span style={{ fontSize: 10, color: C.red, background: C.redLight, borderRadius: 4, padding: "1px 5px" }}>−{removed}</span>}
                       </div>
+                      {/* Roll back to this baseline (only for non-latest versions) */}
+                      {latestBaseline && bl.version < latestBaseline.version && (
+                        <button
+                          onClick={() => handleRollback(bl)}
+                          disabled={rollingBack === bl.id}
+                          title={`Delete all newer baselines and revert to ${bl.label}`}
+                          style={{ marginTop: 6, fontSize: 10, fontWeight: 600, color: C.red, background: "transparent", border: `1px solid ${C.redLight}`, borderRadius: 5, padding: "2px 7px", cursor: rollingBack === bl.id ? "wait" : "pointer", width: "100%" }}
+                        >
+                          {rollingBack === bl.id ? "Rolling back…" : "↩ Roll back to here"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
