@@ -2823,6 +2823,12 @@ function ScopeControlTab({ project }: { project: any }) {
   const [extracting, setExtracting] = React.useState(false);
   const [extractError, setExtractError] = React.useState<string | null>(null);
 
+  // Impact analysis
+  const [selectedDocIds, setSelectedDocIds] = React.useState<Set<string>>(new Set());
+  const [impactStatus, setImpactStatus] = React.useState<"idle" | "running" | "done" | "error">("idle");
+  const [impactText, setImpactText] = React.useState("");
+  const impactPanelRef = React.useRef<HTMLDivElement>(null);
+
   // Bottom panel
   const [bottomTab, setBottomTab] = React.useState<"history" | "changelog">("history");
 
@@ -3057,6 +3063,60 @@ function ScopeControlTab({ project }: { project: any }) {
     router.refresh();
   }
 
+  async function handleDeleteDoc(docId: string, fileName: string) {
+    if (!window.confirm(`Delete "${fileName}"?\n\nThis will also remove any requirements extracted from it. This cannot be undone.`)) return;
+    const res = await fetch(`/api/projects/${project.id}/requirements?docId=${encodeURIComponent(docId)}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || "Delete failed");
+      return;
+    }
+    setDocs(prev => prev.filter(d => d.id !== docId));
+    setSelectedDocIds(prev => { const next = new Set(prev); next.delete(docId); return next; });
+    await loadData();
+  }
+
+  async function runImpactAnalysis() {
+    if (selectedDocIds.size < 2) return;
+    setImpactStatus("running");
+    setImpactText("");
+    setTimeout(() => impactPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/requirements/impact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentIds: [...selectedDocIds] }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Analysis failed");
+      }
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const json = JSON.parse(line.slice(6));
+            if (json.chunk) setImpactText(t => t + json.chunk);
+            if (json.done) setImpactStatus("done");
+            if (json.error) throw new Error(json.error);
+          } catch { /* skip malformed lines */ }
+        }
+      }
+      setImpactStatus("done");
+    } catch (err: any) {
+      setImpactText(err.message || "Analysis failed");
+      setImpactStatus("error");
+    }
+  }
+
   const pendingCount = pendingReqs.length;
   const blLabel = latestBaseline?.label ?? null;
 
@@ -3247,13 +3307,33 @@ function ScopeControlTab({ project }: { project: any }) {
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3, marginBottom: 8 }}>Source Documents</div>
           {docs.map((doc: any) => {
             const ext = (doc.fileName?.split(".").pop()?.toUpperCase() || "DOC") as string;
+            const isChecked = selectedDocIds.has(doc.id);
             return (
-              <div key={doc.id} style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "5px 6px", borderRadius: 7, marginBottom: 3 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 5, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
+              <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderRadius: 7, marginBottom: 3, background: isChecked ? C.primaryLight : "transparent" }}>
+                {docs.length >= 2 && (
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => setSelectedDocIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id);
+                      return next;
+                    })}
+                    style={{ cursor: "pointer", flexShrink: 0 }}
+                  />
+                )}
+                <div style={{ width: 26, height: 26, borderRadius: 5, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 11, fontWeight: 500, color: C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.fileName}</div>
                   <div style={{ fontSize: 10, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
                 </div>
+                {!latestBaseline && (
+                  <button
+                    onClick={() => handleDeleteDoc(doc.id, doc.fileName)}
+                    title="Delete document (only allowed before baselining)"
+                    style={{ padding: "1px 4px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 10, color: C.red, background: "transparent", cursor: "pointer", flexShrink: 0, lineHeight: 1.4 }}
+                  >✕</button>
+                )}
               </div>
             );
           })}
@@ -3278,6 +3358,25 @@ function ScopeControlTab({ project }: { project: any }) {
               </button>
             )}
           </div>
+
+          {/* Impact Analysis controls — shown when 2+ docs available */}
+          {docs.length >= 2 && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.borderLight}` }}>
+              {selectedDocIds.size >= 2 ? (
+                <button
+                  onClick={runImpactAnalysis}
+                  disabled={impactStatus === "running"}
+                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 11, fontWeight: 600, background: impactStatus === "running" ? C.surface2 : "#4f46e5", color: impactStatus === "running" ? C.text3 : "#fff", border: "none", borderRadius: 6, padding: "6px 8px", cursor: impactStatus === "running" ? "not-allowed" : "pointer", opacity: impactStatus === "running" ? 0.7 : 1 }}
+                >
+                  {impactStatus === "running" ? "Analysing…" : `Run Impact Analysis (${selectedDocIds.size})`}
+                </button>
+              ) : (
+                <div style={{ fontSize: 10, color: C.text3, textAlign: "center" as const, fontStyle: "italic", padding: "2px 0" }}>
+                  {selectedDocIds.size === 0 ? "☑ Select 2+ docs to compare" : "Select 1 more to compare"}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right: requirements table */}
@@ -3396,6 +3495,41 @@ function ScopeControlTab({ project }: { project: any }) {
           )}
         </div>
       </div>
+
+      {/* ── Impact Analysis Results ─────────────────────────────────────────── */}
+      {(impactStatus === "running" || impactStatus === "done" || impactStatus === "error") && (
+        <div ref={impactPanelRef} style={{ marginTop: 16, border: `1.5px solid #4f46e5`, borderRadius: 12, overflow: "hidden", boxShadow: "0 4px 20px rgba(79,70,229,.10)" }}>
+          <div style={{ background: "linear-gradient(90deg, #4f46e5, #7c3aed)", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Impact Analysis</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,.7)" }}>
+                {selectedDocIds.size} documents compared · {impactStatus === "running" ? "Analysing…" : impactStatus === "error" ? "Error" : "Complete"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {impactStatus === "running" && (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,.5)" strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>
+              )}
+              {impactStatus !== "running" && (
+                <button
+                  onClick={() => { setImpactStatus("idle"); setImpactText(""); setSelectedDocIds(new Set()); }}
+                  style={{ background: "rgba(255,255,255,.15)", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, padding: "4px 10px", cursor: "pointer", fontWeight: 500 }}
+                >Close</button>
+              )}
+            </div>
+          </div>
+          <div style={{ padding: "16px 18px", background: "#fafafa", maxHeight: 480, overflowY: "auto" as const }}>
+            {impactStatus === "error" ? (
+              <div style={{ color: "#cf3f3a", fontSize: 13 }}>{impactText || "Analysis failed. Please try again."}</div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#1a2332", lineHeight: 1.75, whiteSpace: "pre-wrap" as const }}>
+                {impactText || <span style={{ color: "#9ca3af" }}>Starting analysis…</span>}
+                {impactStatus === "running" && <span style={{ display: "inline-block", width: 8, height: 14, background: "#4f46e5", borderRadius: 2, marginLeft: 2, verticalAlign: "text-bottom", animation: "blink-cursor 1s step-end infinite" }} />}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Bottom: Baseline history + Changelog ────────────────────────────── */}
       <div style={{ marginTop: 16 }}>

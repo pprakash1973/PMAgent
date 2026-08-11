@@ -149,7 +149,18 @@ export async function POST(
   const effectiveDate = effectiveDateRaw ? new Date(effectiveDateRaw) : null;
   const confidentialityTier = (formData.get("confidentialityTier") as string | null) ?? "standard";
 
-  // Mark as ingesting
+  // Prevent duplicate uploads — reject if this filename is already stored for this project
+  const existing = await prisma.requirementsDocument.findFirst({
+    where: { projectId: id, fileName: file.name, deletedAt: null },
+    select: { id: true },
+  });
+  if (existing) {
+    return NextResponse.json(
+      { error: `"${file.name}" is already uploaded for this project. Delete the existing document first if you want to replace it.` },
+      { status: 409 }
+    );
+  }
+
   let rawText: string;
   try {
     rawText = await extractFileText(file);
@@ -254,4 +265,48 @@ export async function GET(
     orderBy: { createdAt: "desc" },
   });
   return NextResponse.json(docs);
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const { id } = await params;
+
+  const { searchParams } = new URL(req.url);
+  const docId = searchParams.get("docId");
+  if (!docId) return NextResponse.json({ error: "docId required" }, { status: 400 });
+
+  // Deletion is only allowed before any scope baseline exists
+  const baselineCount = await (prisma as any).scopeBaseline.count({ where: { projectId: id } }).catch(() => 0);
+  if (baselineCount > 0) {
+    return NextResponse.json(
+      { error: "Documents cannot be deleted after a scope baseline has been created. Use baseline rollback to revert scope changes." },
+      { status: 403 }
+    );
+  }
+
+  const doc = await prisma.requirementsDocument.findFirst({
+    where: { id: docId, projectId: id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!doc) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
+  // Remove requirements that trace back to this document (sourceDocId column added by migrate-scope-control)
+  try {
+    await prisma.requirement.deleteMany({ where: { projectId: id, sourceDocId: docId } });
+  } catch {
+    // Column doesn't exist yet — skip; requirements without a source trace are left intact
+  }
+
+  // Soft-delete the document
+  await prisma.requirementsDocument.update({
+    where: { id: docId },
+    data: { deletedAt: new Date() },
+  });
+
+  const readiness = await computeAndSaveReadiness(id).catch(() => ({ score: 0, band: "insufficient" }));
+  return NextResponse.json({ ok: true, readiness });
 }
