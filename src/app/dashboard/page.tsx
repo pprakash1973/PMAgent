@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ActionItemsClient } from "./action-items-client";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -35,19 +36,6 @@ function spiColor(v: number | null) { return v === null ? C.faint : v < 0.85 ? C
 function scoreColor(s: number) { return s >= 60 ? C.red : s >= 30 ? C.amber : C.green; }
 function fmt(v: number | null) { return v === null ? "—" : v.toFixed(2); }
 function fmtDate(d: Date) { return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" }); }
-
-const PRIORITY_COLOR: Record<string, { c: string; bg: string }> = {
-  p1: { c: C.red,   bg: "rgba(197,57,43,.1)" },
-  p2: { c: C.amber, bg: "rgba(193,125,18,.1)" },
-  p3: { c: "#4f5bd5", bg: "rgba(79,91,213,.1)" },
-};
-const STATUS_COLOR: Record<string, { c: string; bg: string }> = {
-  open:         { c: C.amber,    bg: "rgba(193,125,18,.1)" },
-  acknowledged: { c: C.teal,     bg: "rgba(0,110,116,.1)" },
-  in_progress:  { c: "#4f5bd5",  bg: "rgba(79,91,213,.1)" },
-  blocked:      { c: C.red,      bg: "rgba(197,57,43,.1)" },
-  submitted:    { c: "#6b7280",  bg: "rgba(107,114,128,.1)" },
-};
 
 // ── page ─────────────────────────────────────────────────────────────────────
 
@@ -336,63 +324,24 @@ export default async function DashboardPage() {
               </span>
             )}
             <div style={{ flex: 1 }} />
-            <Link href="/dashboard/dm/action-items" style={{ textDecoration: "none", fontSize: 12, color: C.teal, fontWeight: 600 }}>
+            <Link href="/dashboard/action-items" style={{ textDecoration: "none", fontSize: 12, color: C.teal, fontWeight: 600 }}>
               View all →
             </Link>
           </div>
 
-          {myActionItems.length === 0 ? (
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "28px 20px", textAlign: "center" }}>
-              <p style={{ fontSize: 14, color: C.green, margin: 0, fontWeight: 500 }}>✓ No open action items — all clear</p>
-            </div>
-          ) : (
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-              {/* Table header */}
-              <div style={{ display: "flex", alignItems: "center", padding: "8px 15px", background: "#f7f8fa", borderBottom: "1px solid #eceef2", fontSize: 10, fontWeight: 700, color: C.faint, letterSpacing: ".06em", textTransform: "uppercase" as const }}>
-                <div style={{ width: 90, flexShrink: 0 }}>Reference</div>
-                <div style={{ flex: 1 }}>Title</div>
-                <div style={{ width: 145, flexShrink: 0 }}>Project</div>
-                <div style={{ width: 54, flexShrink: 0 }}>Priority</div>
-                <div style={{ width: 95, flexShrink: 0 }}>Status</div>
-                <div style={{ width: 70, flexShrink: 0, textAlign: "right" as const }}>Due</div>
-              </div>
-
-              {myActionItems.map((ai: any, i: number) => {
-                const isOverdue = ai.dueDate && ai.dueDate < now;
-                const pc = PRIORITY_COLOR[ai.priority] ?? { c: "#6b7280", bg: "rgba(107,114,128,.1)" };
-                const sc = STATUS_COLOR[ai.status] ?? { c: "#6b7280", bg: "rgba(107,114,128,.1)" };
-                return (
-                  <div key={ai.id} style={{
-                    display: "flex", alignItems: "center", padding: "10px 15px",
-                    borderTop: i === 0 ? "none" : "1px solid #f8f9fb",
-                    background: isOverdue ? "#fff9f9" : "transparent",
-                  }}>
-                    <div style={{ width: 90, flexShrink: 0, fontFamily: C.FM, fontSize: 11, color: C.faint }}>{ai.reference}</div>
-                    <div style={{ flex: 1, fontSize: 12.5, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 10 }}>
-                      {ai.title}
-                    </div>
-                    <div style={{ width: 145, flexShrink: 0, fontSize: 11.5, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }}>
-                      {ai.project.name}
-                    </div>
-                    <div style={{ width: 54, flexShrink: 0 }}>
-                      <span style={{ display: "inline-flex", padding: "2px 7px", borderRadius: 5, fontSize: 10.5, fontWeight: 700, background: pc.bg, color: pc.c }}>
-                        {ai.priority.toUpperCase()}
-                      </span>
-                    </div>
-                    <div style={{ width: 95, flexShrink: 0 }}>
-                      <span style={{ display: "inline-flex", padding: "2px 7px", borderRadius: 5, fontSize: 10.5, fontWeight: 700, background: sc.bg, color: sc.c }}>
-                        {ai.status.replace(/_/g, " ")}
-                      </span>
-                    </div>
-                    <div style={{ width: 70, flexShrink: 0, textAlign: "right" as const, fontFamily: C.FM, fontSize: 11.5, color: isOverdue ? C.red : C.muted }}>
-                      {ai.dueDate ? new Date(ai.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "—"}
-                      {isOverdue && " ⚠"}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          <ActionItemsClient
+            items={myActionItems.map((ai: any) => ({
+              id: ai.id,
+              reference: ai.reference,
+              title: ai.title,
+              priority: ai.priority,
+              status: ai.status,
+              dueDate: ai.dueDate?.toISOString() ?? null,
+              project: { id: ai.project.id, name: ai.project.name },
+              raisedBy: { fullName: ai.raisedBy.fullName },
+            }))}
+            overdueCount={overdueCount}
+          />
         </>
       )}
     </div>
