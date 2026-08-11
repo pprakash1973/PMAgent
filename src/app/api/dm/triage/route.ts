@@ -4,8 +4,7 @@ import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-// Compute a deterministic attention score from available project data.
-// Subset of PRD §6.4 using data we have: health, SPI, CPI, open action items, risks, issues.
+// ── Attention score ─────────────────────────────────────────────────────────────
 function computeAttentionScore(p: {
   healthStatus: string;
   spi: number | null;
@@ -20,37 +19,67 @@ function computeAttentionScore(p: {
   let totalWeight = 0;
   let weightedSum = 0;
 
-  // Health deficit (weight 30)
   const healthDeficit = (100 - composite) / 100;
   weightedSum += healthDeficit * 30;
   totalWeight += 30;
 
-  // Schedule deficit (weight 15) — only if SPI available
   if (p.spi !== null) {
     const schedDef = Math.min(1, Math.max(0, (1 - p.spi) / 0.4));
     weightedSum += schedDef * 15;
     totalWeight += 15;
   }
-
-  // Cost deficit (weight 15) — only if CPI available
   if (p.cpi !== null) {
     const costDef = Math.min(1, Math.max(0, (1 - p.cpi) / 0.4));
     weightedSum += costDef * 15;
     totalWeight += 15;
   }
 
-  // Unaddressed action items (weight 10)
   const unaddressed = Math.min(1, p.openActionItems / 4);
   weightedSum += unaddressed * 10;
   totalWeight += 10;
 
-  // Risk/issue proxy (weight 30)
   const riskProxy = Math.min(1, (p.highRisks + p.criticalIssues) / 5);
   weightedSum += riskProxy * 30;
   totalWeight += 30;
 
-  // Renormalise if any terms were excluded (e.g. SPI/CPI missing)
   return Math.round((weightedSum / totalWeight) * 100);
+}
+
+// ── Why diagnosis — rule-based, priority ladder ─────────────────────────────────
+function whyDiagnosis(p: {
+  band: string;
+  spi: number | null;
+  cpi: number | null;
+  burnPct: number | null;
+  daysSinceReport: number | null;
+  highRisks: number;
+  criticalIssues: number;
+  openActionItems: number;
+  nextMilestoneDays: number | null;
+}): string {
+  if (p.band === "no_data") {
+    const days = p.daysSinceReport ?? "?";
+    return `No status report in ${days} days — health cannot be assessed. Data gap may need a nudge to the PM.`;
+  }
+  const flags: string[] = [];
+  if (p.spi !== null && p.spi < 0.75) flags.push(`schedule slipping (SPI ${p.spi.toFixed(2)})`);
+  if (p.cpi !== null && p.cpi < 0.85) flags.push(`cost running adverse (CPI ${p.cpi.toFixed(2)})`);
+  if (p.burnPct !== null && p.burnPct > 80 && (p.spi === null || p.spi < 0.90))
+    flags.push(`burn at ${Math.round(p.burnPct)}% with schedule risk`);
+  if (p.criticalIssues > 0) flags.push(`${p.criticalIssues} critical issue${p.criticalIssues > 1 ? "s" : ""} open`);
+  if (p.highRisks >= 3) flags.push(`${p.highRisks} high risks unmitigated`);
+  if (p.spi !== null && p.spi >= 0.75 && p.spi < 0.90) flags.push(`schedule under pressure (SPI ${p.spi.toFixed(2)})`);
+  if (p.cpi !== null && p.cpi >= 0.85 && p.cpi < 0.92) flags.push(`margin tightening (CPI ${p.cpi.toFixed(2)})`);
+  if (p.openActionItems > 3) flags.push(`${p.openActionItems} PM actions unresolved`);
+  if (p.nextMilestoneDays !== null && p.nextMilestoneDays <= 14)
+    flags.push(`milestone due in ${p.nextMilestoneDays}d`);
+
+  if (flags.length === 0) {
+    return p.band === "green"
+      ? "Delivery and cost on track — no exceptions this cycle."
+      : "Watch: marginal signals. No single critical driver — review for trend.";
+  }
+  return flags.slice(0, 3).join("; ") + ".";
 }
 
 function toBand(healthStatus: string, hasRecentReport: boolean): "red" | "amber" | "no_data" | "green" {
@@ -73,7 +102,6 @@ export async function GET(req: NextRequest) {
   const accountFilter = url.searchParams.get("account_id");
   const programFilter = url.searchParams.get("program_id");
 
-  // Resolve scope — hierarchy: dm→Account, pgm→Program
   let accountIds: string[] = [];
   let programIds: string[] = [];
   if (user.role === "admin") {
@@ -89,10 +117,13 @@ export async function GET(req: NextRequest) {
 
   const hasScope = accountIds.length > 0 || programIds.length > 0;
   if (!hasScope) {
-    return NextResponse.json({ bands: { red: [], amber: [], no_data: [], green: [] }, counts: { red: 0, amber: 0, no_data: 0, green: 0, total: 0 } });
+    return NextResponse.json({
+      bands: { red: [], amber: [], no_data: [], green: [] },
+      counts: { red: 0, amber: 0, no_data: 0, green: 0, total: 0 },
+      overdueActionItems: 0,
+    });
   }
 
-  // Build project filter
   const scopeOr = [
     ...(accountIds.length > 0 ? [{ accountId: accountFilter ?? { in: accountIds } }] : []),
     ...(programIds.length > 0 ? [{ programId: programFilter ?? { in: programIds } }] : []),
@@ -112,47 +143,28 @@ export async function GET(req: NextRequest) {
       pmOwner: { select: { id: true, fullName: true, email: true } },
       account: { select: { id: true, name: true } },
       program: { select: { id: true, name: true } },
+      // 4 most-recent reports for trend sparklines
       statusReports: {
         orderBy: { reportDate: "desc" },
-        take: 1,
+        take: 4,
         include: { healthScore: true },
       },
       _count: {
         select: {
-          risks: { where: { status: "open", probability: { in: ["high", "very_high"] } } },
-          issues: { where: { status: "open", severity: { in: ["critical", "high"] } } },
+          risks:       { where: { status: "open", probability: { in: ["high", "very_high"] } } },
+          issues:      { where: { status: "open", severity: { in: ["critical", "high"] } } },
           actionItems: { where: { status: { in: ["open", "acknowledged", "in_progress", "blocked"] } } },
         },
       },
       milestones: { where: { status: "pending" }, orderBy: { dueDate: "asc" }, take: 1 },
+      costEntries: { select: { amount: true } },
     },
     orderBy: { updatedAt: "desc" },
   });
 
-  type TriageRow = {
-    id: string;
-    name: string;
-    accountId: string | null;
-    accountName: string | null;
-    programId: string | null;
-    programName: string | null;
-    pmId: string;
-    pmName: string;
-    healthStatus: string;
-    band: "red" | "amber" | "no_data" | "green";
-    attentionScore: number;
-    spi: number | null;
-    cpi: number | null;
-    compositeScore: number | null;
-    openActionItems: number;
-    highRisks: number;
-    criticalIssues: number;
-    nextMilestone: { name: string; dueDate: Date } | null;
-    phase: string;
-    lastReportDate: Date | null;
-  };
+  const now = Date.now();
 
-  const rows: TriageRow[] = projects.map((p) => {
+  const rows = projects.map((p) => {
     const latestReport = p.statusReports[0] ?? null;
     const hs = latestReport?.healthScore ?? null;
     const hasRecentReport = latestReport !== null && latestReport.reportDate >= fourteenDaysAgo;
@@ -166,13 +178,35 @@ export async function GET(req: NextRequest) {
 
     const band = toBand(p.healthStatus, hasRecentReport);
     const attentionScore = computeAttentionScore({
-      healthStatus: p.healthStatus,
-      spi,
-      cpi,
-      compositeScore: composite,
-      openActionItems: openAI,
-      highRisks: highR,
-      criticalIssues: critI,
+      healthStatus: p.healthStatus, spi, cpi, compositeScore: composite,
+      openActionItems: openAI, highRisks: highR, criticalIssues: critI,
+    });
+
+    // Trend: last 4 reports ordered oldest→newest for sparklines
+    const trendReports = [...p.statusReports].reverse();
+    const spiTrend    = trendReports.map(r => r.healthScore?.spi ?? null);
+    const cpiTrend    = trendReports.map(r => r.healthScore?.cpi ?? null);
+    const compositeTrend = trendReports.map(r => r.healthScore?.compositeScore ?? null);
+
+    // Burn %: sum cost entries / budget
+    const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
+    const burnPct = p.budget && p.budget > 0 ? Math.round((totalSpent / p.budget) * 100) : null;
+
+    // Days to next milestone
+    const nm = p.milestones[0] ?? null;
+    const nextMilestoneDays = nm
+      ? Math.ceil((new Date(nm.dueDate).getTime() - now) / 86400000)
+      : null;
+
+    // Days since last report
+    const daysSinceReport = latestReport
+      ? Math.floor((now - new Date(latestReport.reportDate).getTime()) / 86400000)
+      : null;
+
+    const why = whyDiagnosis({
+      band, spi, cpi, burnPct, daysSinceReport,
+      highRisks: highR, criticalIssues: critI,
+      openActionItems: openAI, nextMilestoneDays,
     });
 
     return {
@@ -193,31 +227,40 @@ export async function GET(req: NextRequest) {
       openActionItems: openAI,
       highRisks: highR,
       criticalIssues: critI,
-      nextMilestone: p.milestones[0] ? { name: p.milestones[0].name, dueDate: p.milestones[0].dueDate } : null,
+      nextMilestone: nm ? { name: nm.name, dueDate: nm.dueDate, daysUntilDue: nextMilestoneDays } : null,
       phase: p.currentPhase,
       lastReportDate: latestReport?.reportDate ?? null,
+      daysSinceReport,
+      // New Phase-1 fields
+      spiTrend,
+      cpiTrend,
+      compositeTrend,
+      burnPct,
+      budget: p.budget,
+      currency: p.currency,
+      totalSpent,
+      whyDiagnosis: why,
+      artifactsGenerated: 0,
+      hoursSaved: 0,
+      dollarsSaved: 0,
     };
   });
 
-  // Sort within each band by attention score desc (deterministic)
   const sorted = [...rows].sort((a, b) => b.attentionScore - a.attentionScore);
 
   const bands = {
-    red: sorted.filter((r) => r.band === "red"),
-    amber: sorted.filter((r) => r.band === "amber"),
-    no_data: sorted.filter((r) => r.band === "no_data"),
-    green: sorted.filter((r) => r.band === "green"),
+    red:     sorted.filter(r => r.band === "red"),
+    amber:   sorted.filter(r => r.band === "amber"),
+    no_data: sorted.filter(r => r.band === "no_data"),
+    green:   sorted.filter(r => r.band === "green"),
   };
 
   const counts = {
-    red: bands.red.length,
-    amber: bands.amber.length,
-    no_data: bands.no_data.length,
-    green: bands.green.length,
+    red: bands.red.length, amber: bands.amber.length,
+    no_data: bands.no_data.length, green: bands.green.length,
     total: rows.length,
   };
 
-  // Summary stats for the header chips
   const overdueActionItems = await prisma.actionItem.count({
     where: {
       project: { OR: scopeOr },
@@ -226,5 +269,9 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ bands, counts, overdueActionItems, accountIds });
+  // Portfolio financials summary
+  const totalBudget = rows.reduce((s, r) => s + (r.budget ?? 0), 0);
+  const totalSpentAll = rows.reduce((s, r) => s + r.totalSpent, 0);
+
+  return NextResponse.json({ bands, counts, overdueActionItems, accountIds, totalBudget, totalSpentAll });
 }

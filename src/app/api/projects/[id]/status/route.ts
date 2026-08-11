@@ -132,7 +132,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       ev += t.baselineDays * (t.percentComplete / 100);
       if (t.percentComplete < 100 && new Date(t.baselineFinish) < todayDate) overdueCount++;
     }
-    const spi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
+    // Guard: only report SPI once at least 3% of baseline has elapsed.
+    // Near-zero pv (project just started) produces inflated ratios (e.g. 7.22) that
+    // mislead dashboards. Cap at 3.00 as a hard ceiling.
+    const minPvThreshold = totalBaseDays * 0.03;
+    const spi =
+      pv > 0 && pv >= minPvThreshold
+        ? Math.min(3.0, Math.round((ev / pv) * 100) / 100)
+        : null;
     const sv = Math.round((ev - pv) * 10) / 10;
     computedSpi = spi;
     // Live cost CPI from cost entries if available
