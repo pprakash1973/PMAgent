@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
+import { extractPdfText } from "@/lib/pdf";
 
 // Doc class → points toward evidence readiness score
 const DOC_CLASS_POINTS: Record<string, number> = {
@@ -99,14 +100,18 @@ async function extractFileText(file: File): Promise<string> {
   const buffer = Buffer.from(arrayBuffer);
 
   if (ext === "pdf") {
-    const pdfParse = require("pdf-parse/lib/pdf-parse");
-    const result = await pdfParse(buffer);
-    return result.text;
+    return await extractPdfText(buffer);
   }
   if (ext === "docx") {
-    const mammoth = require("mammoth");
-    const result = await mammoth.extractRawText({ buffer });
-    return result.value;
+    try {
+      const mammoth = require("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value;
+    } catch {
+      throw new Error(
+        "Could not read the DOCX file. Ensure it is a valid Word document (not a .doc renamed to .docx). Try re-saving it from Microsoft Word and uploading again."
+      );
+    }
   }
   if (ext === "xlsx" || ext === "xls") {
     const XLSX = require("xlsx");
@@ -152,11 +157,13 @@ export async function POST(
     return NextResponse.json({ error: err.message }, { status: 422 });
   }
 
-  // AI extraction of structured content
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    system: `You are a PMO AI assistant. Extract structured project information from requirements documents.
+  // AI extraction — non-fatal if it fails; document is still saved with empty extraction
+  let extractedContent: Record<string, unknown> = {};
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      system: `You are a PMO AI assistant. Extract structured project information from requirements documents.
 Return ONLY valid JSON in this exact shape:
 {
   "projectName": string | null,
@@ -170,58 +177,66 @@ Return ONLY valid JSON in this exact shape:
   "keyRequirements": string[]
 }
 Extract as much detail as possible. Use null/empty arrays for missing sections.`,
-    messages: [{
-      role: "user",
-      content: `Project: ${project.name}\n\nDocument content:\n${rawText.slice(0, 15000)}`,
-    }],
-  });
-
-  const responseText = message.content[0].type === "text" ? message.content[0].text : "{}";
-  let extractedContent: Record<string, unknown> = {};
-  try {
+      messages: [{
+        role: "user",
+        content: `Project: ${project.name}\n\nDocument content:\n${rawText.slice(0, 15000)}`,
+      }],
+    });
+    const responseText = message.content[0].type === "text" ? message.content[0].text : "{}";
     const fenced = responseText.match(/```json\s*([\s\S]*?)\s*```/);
     extractedContent = JSON.parse(fenced ? fenced[1] : responseText);
-  } catch { /* save with empty extraction */ }
+  } catch {
+    // AI extraction failed — continue with empty metadata; document is still stored and chunked
+  }
 
   // Chunk the raw text
   const chunks = chunkText(rawText);
 
   // Persist document + chunks in a transaction
-  const doc = await prisma.$transaction(async (tx) => {
-    const created = await tx.requirementsDocument.create({
-      data: {
-        projectId: id,
-        fileName: file.name,
-        fileFormat: file.name.split(".").pop()?.toLowerCase() ?? "unknown",
-        storageUri: `inline:${id}:${Date.now()}`,
-        extractedContent: extractedContent as object,
-        extractionConfidence: 0.85,
-        pmConfirmed: false,
-        uploadedById: user.id,
-        docClass,
-        effectiveDate,
-        confidentialityTier,
-        ingestionState: "ready",
-        chunkCount: chunks.length,
-      },
-    });
-
-    if (chunks.length > 0) {
-      await tx.documentChunk.createMany({
-        data: chunks.map(c => ({
-          id: `${created.id}-${c.chunkIndex}`,
-          documentId: created.id,
+  let doc;
+  try {
+    doc = await prisma.$transaction(async (tx) => {
+      const created = await tx.requirementsDocument.create({
+        data: {
           projectId: id,
-          ...c,
-        })),
+          fileName: file.name,
+          fileFormat: file.name.split(".").pop()?.toLowerCase() ?? "unknown",
+          storageUri: `inline:${id}:${Date.now()}`,
+          extractedContent: extractedContent as object,
+          extractionConfidence: 0.85,
+          pmConfirmed: false,
+          uploadedById: user.id,
+          docClass,
+          effectiveDate,
+          confidentialityTier,
+          ingestionState: "ready",
+          chunkCount: chunks.length,
+        },
       });
-    }
 
-    return created;
-  });
+      if (chunks.length > 0) {
+        await tx.documentChunk.createMany({
+          data: chunks.map(c => ({
+            id: `${created.id}-${c.chunkIndex}`,
+            documentId: created.id,
+            projectId: id,
+            ...c,
+          })),
+        });
+      }
+
+      return created;
+    });
+  } catch (err: any) {
+    console.error("[requirements upload] DB transaction failed:", err);
+    return NextResponse.json(
+      { error: "Failed to save document. Please try again." },
+      { status: 500 }
+    );
+  }
 
   // Recompute evidence readiness
-  const readiness = await computeAndSaveReadiness(id);
+  const readiness = await computeAndSaveReadiness(id).catch(() => ({ score: 0, band: "insufficient" }));
 
   return NextResponse.json({ doc, extractedContent, readiness, chunkCount: chunks.length }, { status: 201 });
 }

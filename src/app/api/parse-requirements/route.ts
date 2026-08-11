@@ -4,56 +4,7 @@ export const maxDuration = 120;
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { extractRequirements, generateProjectFromNL } from "@/lib/ai";
-
-// ─── PDF text extraction ──────────────────────────────────────────────────────
-
-/**
- * Extract text from a PDF preserving row structure.
- *
- * pdfjs returns text items in content-stream order, which for tables may be
- * column-by-column or otherwise scrambled. We reconstruct proper reading order
- * by grouping items with similar y-positions into rows, sorting each row by x,
- * then sorting rows top-to-bottom. This ensures every table row becomes one
- * contiguous line of text regardless of how the PDF was generated.
- */
-async function extractPdfText(buffer: Buffer): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
-  pdfjs.GlobalWorkerOptions.workerSrc = "";
-  const pdfDoc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
-
-  const allLines: string[] = [];
-
-  for (let p = 1; p <= pdfDoc.numPages; p++) {
-    const page = await pdfDoc.getPage(p);
-    const content = await page.getTextContent();
-    const items: any[] = (content.items as any[]).filter((it) => it.str?.trim());
-
-    // Group items into rows by y-position (tolerance: 3 points handles minor baseline shifts)
-    const rows: { y: number; cells: { x: number; str: string }[] }[] = [];
-    for (const item of items) {
-      const y = item.transform[5] as number;
-      const x = item.transform[4] as number;
-      const row = rows.find((r) => Math.abs(r.y - y) <= 3);
-      if (row) {
-        row.cells.push({ x, str: item.str });
-      } else {
-        rows.push({ y, cells: [{ x, str: item.str }] });
-      }
-    }
-
-    // Sort rows top-to-bottom (PDF y=0 is the bottom of the page)
-    rows.sort((a, b) => b.y - a.y);
-
-    for (const row of rows) {
-      // Sort cells left-to-right
-      row.cells.sort((a, b) => a.x - b.x);
-      allLines.push(row.cells.map((c) => c.str).join(" "));
-    }
-  }
-
-  return allLines.join("\n");
-}
+import { extractPdfText } from "@/lib/pdf";
 
 // ─── Text normalisation ───────────────────────────────────────────────────────
 
