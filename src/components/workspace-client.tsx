@@ -2893,6 +2893,21 @@ function ScopeControlTab({ project }: { project: any }) {
       if (!res.ok) throw new Error(data?.error || "Upload failed");
       setDocs(prev => [data.doc, ...prev]);
       setShowUploadForm(false);
+
+      // Auto-extract requirements from the newly uploaded document
+      setExtracting(true);
+      setExtractError(null);
+      try {
+        const exRes = await fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" });
+        const exData = await exRes.json().catch(() => ({}));
+        if (exRes.ok) await loadData();
+        else setExtractError(exData.error || "Auto-extraction failed — click Extract to retry.");
+      } catch {
+        setExtractError("Auto-extraction failed — click Extract to retry.");
+      } finally {
+        setExtracting(false);
+      }
+
       router.refresh();
     } catch (err: any) {
       setUploadError(err.message || "Upload failed");
