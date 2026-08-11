@@ -59,7 +59,7 @@ export async function GET(
     }
   }
 
-  const [latestReport, risks, issues, milestones, artifacts] = await Promise.all([
+  const [latestReport, risks, issues, milestones, artifacts, costEntries] = await Promise.all([
     prisma.statusReport.findFirst({
       where: { projectId: id },
       orderBy: { reportDate: "desc" },
@@ -68,12 +68,12 @@ export async function GET(
     prisma.risk.findMany({
       where: { projectId: id },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 50,
     }),
     prisma.issue.findMany({
       where: { projectId: id },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 50,
     }),
     prisma.milestone.findMany({
       where: { projectId: id },
@@ -82,6 +82,10 @@ export async function GET(
     prisma.artifact.findMany({
       where: { projectId: id },
       orderBy: { updatedAt: "desc" },
+    }),
+    prisma.costEntry.findMany({
+      where: { projectId: id },
+      select: { amount: true },
     }),
   ]);
 
@@ -113,6 +117,11 @@ export async function GET(
     // Tables not yet migrated — return empty arrays
   }
 
+  const totalSpent = costEntries.reduce((s, e) => s + e.amount, 0);
+  const burnPct = project.budget && project.budget > 0
+    ? Math.round((totalSpent / project.budget) * 100)
+    : null;
+
   return NextResponse.json({
     project: {
       id: project.id,
@@ -127,6 +136,7 @@ export async function GET(
       startDate: project.startDate?.toISOString() ?? null,
       endDate: project.endDate?.toISOString() ?? null,
     },
+    burnPct,
     health: latestReport?.healthScore
       ? {
           compositeScore: latestReport.healthScore.compositeScore,

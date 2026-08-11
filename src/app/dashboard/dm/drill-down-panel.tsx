@@ -12,6 +12,7 @@ type ReviewData = {
     accountName: string | null; programName: string | null; pmName: string;
     budget: number | null; currency: string; startDate: string | null; endDate: string | null;
   };
+  burnPct: number | null;
   health: { compositeScore: number | null; spi: number | null; cpi: number | null; ragStatus: string | null } | null;
   risks: { id: string; description: string; probability: string; impact: string; status: string; owner: string | null }[];
   issues: { id: string; description: string; severity: string; status: string; owner: string | null }[];
@@ -23,11 +24,6 @@ type ReviewData = {
 
 type Tab = "review" | "action-item";
 
-const PRIORITY_LABEL: Record<string, string> = { p1: "P1 · Immediate", p2: "P2 · This week", p3: "P3 · This cycle" };
-const STATUS_COLOR: Record<string, string> = {
-  open: "#c17d12", acknowledged: "#006E74", in_progress: "#4f5bd5",
-  blocked: "#cf3f3a", submitted: "#6b7280", closed: "#158a5a", cancelled: "#94a3b8",
-};
 const CATEGORIES = [
   "schedule", "cost", "scope_change", "risk", "issue",
   "quality", "stakeholder", "resource", "governance", "artifact", "data_hygiene",
@@ -49,57 +45,304 @@ function healthColor(status: string | null) {
   return "#158a5a";
 }
 
-function ReviewTab({ data }: { data: ReviewData }) {
-  const h = data.health;
+function daysLabel(dueDateStr: string): { text: string; color: string } {
+  const now = Date.now();
+  const due = new Date(dueDateStr).getTime();
+  const days = Math.ceil((due - now) / 86400000);
+  if (days < 0) return { text: `${Math.abs(days)}d overdue`, color: "#cf3f3a" };
+  if (days === 0) return { text: "Due today", color: "#cf3f3a" };
+  if (days <= 7) return { text: `${days}d`, color: "#c17d12" };
+  if (days <= 14) return { text: `${days}d`, color: "#c17d12" };
+  return { text: `${days}d`, color: "#64748b" };
+}
+
+// ── Section header ──────────────────────────────────────────────────────────
+
+function Section({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div>
+      <h3 style={{
+        fontSize: 12, fontWeight: 700, color: accent ?? UST_PETROL,
+        marginBottom: 10, paddingBottom: 6,
+        borderBottom: `2px solid ${accent ?? UST_BORDER}`,
+        textTransform: "uppercase", letterSpacing: "0.06em",
+      }}>
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
 
-      {/* Health */}
-      <Section title="Health">
-        {h ? (
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <Stat label="Composite" value={h.compositeScore ? `${h.compositeScore.toFixed(0)}` : "—"} color={healthColor(h.ragStatus)} />
-            <Stat label="SPI" value={h.spi ? h.spi.toFixed(2) : "—"} color={h.spi !== null && h.spi < 0.85 ? "#cf3f3a" : "#158a5a"} />
-            <Stat label="CPI" value={h.cpi ? h.cpi.toFixed(2) : "—"} color={h.cpi !== null && h.cpi < 0.85 ? "#cf3f3a" : "#158a5a"} />
-          </div>
-        ) : <p style={{ fontSize: 13, color: "#94a3b8" }}>No health data yet — submit a status report first.</p>}
-      </Section>
+function Empty({ text }: { text: string }) {
+  return <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, fontStyle: "italic" }}>{text}</p>;
+}
 
-      {/* Milestones */}
-      <Section title={`Milestones (${data.milestones.length})`}>
-        {data.milestones.length === 0
-          ? <Empty text="No milestones" />
-          : data.milestones.slice(0, 5).map((m) => (
-            <Row key={m.id} left={m.name} right={new Date(m.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
-              badge={badge(m.status, m.status === "complete" ? "#158a5a" : m.status === "at_risk" ? "#cf3f3a" : "#6b7280")} />
-          ))}
-      </Section>
+function Row({ left, right, badge: b, badge2 }: { left: string; right: string; badge?: React.ReactNode; badge2?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8, padding: "6px 0", borderBottom: `1px solid #f1f5f9` }}>
+      <span style={{ flex: 1, fontSize: 13, color: "#1e293b", lineHeight: 1.4 }}>{left}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {b}{badge2}
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>{right}</span>
+      </div>
+    </div>
+  );
+}
 
-      {/* Risks */}
-      <Section title={`Open Risks (${data.risks.filter(r => r.status === "open").length})`}>
-        {data.risks.filter(r => r.status === "open").length === 0
-          ? <Empty text="No open risks" />
-          : data.risks.filter(r => r.status === "open").slice(0, 8).map((r) => (
-            <Row key={r.id}
-              left={r.description}
-              right={r.owner ?? "Unassigned"}
-              badge={badge(`${r.probability} / ${r.impact}`, r.impact === "high" || r.impact === "very_high" ? "#cf3f3a" : "#c17d12")}
+function Stat({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
+  return (
+    <div style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 8, padding: "10px 16px", textAlign: "center", flex: 1 }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, marginTop: 2 }}>{label}</div>
+      {sub && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── 1. Upcoming Milestones ─────────────────────────────────────────────────
+
+function MilestonesSection({ milestones }: { milestones: ReviewData["milestones"] }) {
+  const upcoming = milestones
+    .filter(m => m.status !== "complete")
+    .slice(0, 3);
+
+  return (
+    <Section title="Upcoming Milestones">
+      {upcoming.length === 0 ? (
+        <Empty text="No pending milestones" />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {upcoming.map((m) => {
+            const dl = daysLabel(m.dueDate);
+            const dueStr = new Date(m.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+            const milestoneColor = m.status === "at_risk" ? "#cf3f3a" : dl.color === "#cf3f3a" ? "#cf3f3a" : UST_TEAL;
+            return (
+              <div key={m.id} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "10px 12px", borderRadius: 8,
+                background: m.status === "at_risk" ? "#fef2f2" : UST_WASH,
+                border: `1px solid ${m.status === "at_risk" ? "#fca5a5" : UST_BORDER}`,
+              }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                  background: milestoneColor,
+                }} />
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{m.name}</span>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, color: dl.color,
+                    background: `${dl.color}12`, padding: "1px 7px", borderRadius: 5,
+                  }}>{dl.text}</span>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>{dueStr}</span>
+                </div>
+                {m.status !== "pending" && badge(m.status.replace(/_/g, " "), milestoneColor)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ── 2. Health & Metrics ─────────────────────────────────────────────────────
+
+function HealthSection({ health, burnPct, healthStatus }: {
+  health: ReviewData["health"];
+  burnPct: number | null;
+  healthStatus: string;
+}) {
+  const rag = health?.ragStatus ?? healthStatus;
+  const ragColor = healthColor(rag);
+  const ragLabel = rag === "red" ? "RED" : rag === "amber" ? "AMBER" : "GREEN";
+
+  return (
+    <Section title="Project Health & Metrics">
+      {/* RAG pill */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          padding: "6px 16px", borderRadius: 20,
+          background: `${ragColor}15`, border: `1.5px solid ${ragColor}50`,
+        }}>
+          <div style={{ width: 10, height: 10, borderRadius: "50%", background: ragColor }} />
+          <span style={{ fontSize: 14, fontWeight: 700, color: ragColor }}>{ragLabel}</span>
+        </div>
+        {!health && (
+          <span style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
+            No status report submitted yet
+          </span>
+        )}
+      </div>
+
+      {health ? (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Stat
+            label="Composite Score"
+            value={health.compositeScore !== null ? `${health.compositeScore.toFixed(0)}` : "—"}
+            color={ragColor}
+            sub="out of 100"
+          />
+          <Stat
+            label="Schedule (SPI)"
+            value={health.spi !== null ? health.spi.toFixed(2) : "—"}
+            color={health.spi !== null ? (health.spi < 0.85 ? "#cf3f3a" : health.spi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
+            sub={health.spi !== null && health.spi < 1 ? "behind" : health.spi !== null ? "on track" : undefined}
+          />
+          <Stat
+            label="Cost (CPI)"
+            value={health.cpi !== null ? health.cpi.toFixed(2) : "—"}
+            color={health.cpi !== null ? (health.cpi < 0.85 ? "#cf3f3a" : health.cpi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
+            sub={health.cpi !== null && health.cpi < 1 ? "over budget" : health.cpi !== null ? "within budget" : undefined}
+          />
+          {burnPct !== null && (
+            <Stat
+              label="Budget Burned"
+              value={`${burnPct}%`}
+              color={burnPct > 90 ? "#cf3f3a" : burnPct > 75 ? "#c17d12" : "#158a5a"}
+              sub="of total budget"
+            />
+          )}
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {burnPct !== null && (
+            <Stat
+              label="Budget Burned"
+              value={`${burnPct}%`}
+              color={burnPct > 90 ? "#cf3f3a" : burnPct > 75 ? "#c17d12" : "#158a5a"}
+              sub="of total budget"
+            />
+          )}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ── 3. Critical / High Issues ───────────────────────────────────────────────
+
+function CriticalIssuesSection({ issues }: { issues: ReviewData["issues"] }) {
+  const critical = issues.filter(i => i.status === "open" && i.severity === "critical");
+  const high = issues.filter(i => i.status === "open" && i.severity === "high");
+  const total = critical.length + high.length;
+
+  return (
+    <Section title={`Critical & High Issues${total > 0 ? ` (${total})` : ""}`} accent={total > 0 ? "#cf3f3a" : undefined}>
+      {total === 0 ? (
+        <Empty text="No critical or high-severity open issues" />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {critical.map(i => (
+            <IssueRiskRow
+              key={i.id}
+              description={i.description}
+              owner={i.owner}
+              label="Critical"
+              labelColor="#cf3f3a"
             />
           ))}
-      </Section>
-
-      {/* Issues */}
-      <Section title={`Open Issues (${data.issues.filter(i => i.status === "open").length})`}>
-        {data.issues.filter(i => i.status === "open").length === 0
-          ? <Empty text="No open issues" />
-          : data.issues.filter(i => i.status === "open").slice(0, 8).map((i) => (
-            <Row key={i.id}
-              left={i.description}
-              right={i.owner ?? "Unassigned"}
-              badge={badge(i.severity, i.severity === "critical" ? "#cf3f3a" : i.severity === "high" ? "#c17d12" : "#6b7280")}
+          {high.map(i => (
+            <IssueRiskRow
+              key={i.id}
+              description={i.description}
+              owner={i.owner}
+              label="High"
+              labelColor="#c17d12"
             />
           ))}
-      </Section>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ── 4. Critical / High Risks ────────────────────────────────────────────────
+
+function CriticalRisksSection({ risks }: { risks: ReviewData["risks"] }) {
+  const criticalRisks = risks.filter(r =>
+    r.status === "open" &&
+    (r.probability === "very_high" || r.impact === "very_high" ||
+     (r.probability === "high" && r.impact === "high"))
+  );
+  const highRisks = risks.filter(r =>
+    r.status === "open" &&
+    !criticalRisks.includes(r) &&
+    (r.probability === "high" || r.impact === "high")
+  );
+  const total = criticalRisks.length + highRisks.length;
+
+  return (
+    <Section title={`Critical & High Risks${total > 0 ? ` (${total})` : ""}`} accent={total > 0 ? "#c17d12" : undefined}>
+      {total === 0 ? (
+        <Empty text="No critical or high open risks" />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {criticalRisks.map(r => (
+            <IssueRiskRow
+              key={r.id}
+              description={r.description}
+              owner={r.owner}
+              label={`${r.probability.replace("_", " ")} prob / ${r.impact.replace("_", " ")} impact`}
+              labelColor="#cf3f3a"
+            />
+          ))}
+          {highRisks.map(r => (
+            <IssueRiskRow
+              key={r.id}
+              description={r.description}
+              owner={r.owner}
+              label={`${r.probability.replace("_", " ")} prob / ${r.impact.replace("_", " ")} impact`}
+              labelColor="#c17d12"
+            />
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function IssueRiskRow({ description, owner, label, labelColor }: {
+  description: string; owner: string | null; label: string; labelColor: string;
+}) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-start", gap: 10,
+      padding: "9px 12px", borderRadius: 8,
+      background: `${labelColor}08`, border: `1px solid ${labelColor}30`,
+    }}>
+      <div style={{ width: 3, alignSelf: "stretch", background: labelColor, borderRadius: 2, flexShrink: 0 }} />
+      <div style={{ flex: 1 }}>
+        <p style={{ margin: 0, fontSize: 13, color: "#1e293b", lineHeight: 1.4 }}>{description}</p>
+        {owner && <p style={{ margin: "3px 0 0", fontSize: 11, color: "#64748b" }}>Owner: {owner}</p>}
+      </div>
+      <span style={{
+        fontSize: 10, fontWeight: 700, color: labelColor,
+        background: `${labelColor}18`, border: `1px solid ${labelColor}40`,
+        padding: "2px 7px", borderRadius: 5, flexShrink: 0, textTransform: "capitalize",
+      }}>{label}</span>
+    </div>
+  );
+}
+
+// ── ReviewTab (main layout) ─────────────────────────────────────────────────
+
+function ReviewTab({ data }: { data: ReviewData }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+      {/* 1. Upcoming Milestones */}
+      <MilestonesSection milestones={data.milestones} />
+
+      {/* 2. Health & Metrics */}
+      <HealthSection health={data.health} burnPct={data.burnPct} healthStatus={data.project.healthStatus} />
+
+      {/* 3. Critical / High Issues */}
+      <CriticalIssuesSection issues={data.issues} />
+
+      {/* 4. Critical / High Risks */}
+      <CriticalRisksSection risks={data.risks} />
 
       {/* Artifacts */}
       <Section title="Artifacts">
@@ -110,20 +353,6 @@ function ReviewTab({ data }: { data: ReviewData }) {
               left={a.artifactType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
               right={new Date(a.updatedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
               badge={badge(a.status, a.status === "final" ? "#158a5a" : "#c17d12")}
-            />
-          ))}
-      </Section>
-
-      {/* Action Items on this project */}
-      <Section title={`Action Items (${data.actionItems.length})`}>
-        {data.actionItems.length === 0
-          ? <Empty text="No action items — create one to direct the PM" />
-          : data.actionItems.map((ai) => (
-            <Row key={ai.id}
-              left={`${ai.reference} · ${ai.title}`}
-              right={ai.dueDate ? new Date(ai.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "No due date"}
-              badge={badge(ai.priority, "#4f5bd5")}
-              badge2={badge(ai.status.replace(/_/g, " "), STATUS_COLOR[ai.status] ?? "#6b7280")}
             />
           ))}
       </Section>
@@ -146,6 +375,8 @@ function ReviewTab({ data }: { data: ReviewData }) {
     </div>
   );
 }
+
+// ── Action Item Tab ─────────────────────────────────────────────────────────
 
 function ActionItemTab({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
   const [form, setForm] = useState({
@@ -264,44 +495,6 @@ function ActionItemTab({ projectId, onCreated }: { projectId: string; onCreated:
   );
 }
 
-// ── Shared sub-components ─────────────────────────────────────────────────────
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h3 style={{ fontSize: 13, fontWeight: 700, color: UST_PETROL, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${UST_BORDER}` }}>
-        {title}
-      </h3>
-      {children}
-    </div>
-  );
-}
-
-function Empty({ text }: { text: string }) {
-  return <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>{text}</p>;
-}
-
-function Row({ left, right, badge: b, badge2 }: { left: string; right: string; badge?: React.ReactNode; badge2?: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8, padding: "6px 0", borderBottom: `1px solid #f1f5f9` }}>
-      <span style={{ flex: 1, fontSize: 13, color: "#1e293b", lineHeight: 1.4 }}>{left}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        {b}{badge2}
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>{right}</span>
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 8, padding: "10px 16px", textAlign: "center" }}>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, marginTop: 2 }}>{label}</div>
-    </div>
-  );
-}
-
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem, hideActionItem = false }: {
@@ -326,7 +519,6 @@ export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem,
 
   useEffect(() => { load(); }, [load]);
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handler);
@@ -336,7 +528,7 @@ export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem,
   function handleActionItemCreated() {
     setActionItemCreated(true);
     setTab("review");
-    load(); // refresh to show new action item
+    load();
   }
 
   const tabBtn = (t: Tab, label: string) => (
@@ -363,7 +555,7 @@ export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem,
 
       {/* Panel */}
       <div style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(640px, 95vw)",
+        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(680px, 95vw)",
         background: "#fff", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)", zIndex: 50,
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
