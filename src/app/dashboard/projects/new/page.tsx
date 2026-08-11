@@ -68,6 +68,7 @@ const emptyForm = {
   programId: "",
   clusterId: "",
   pmOwnerId: "",
+  engagementType: "application_development",
   projectType: "fixed_bid",
   methodology: "milestone_based",
   commercialModel: "fixed_price",
@@ -712,6 +713,16 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
           <div className="space-y-2">
             <Label>Industry</Label>
             <Input placeholder="Retail, Financial Services, Healthcare..." value={form.industry} onChange={(e) => update("industry", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Engagement Type</Label>
+            <Select value={form.engagementType} onValueChange={(v) => update("engagementType", v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="application_development">Application Development</SelectItem>
+                <SelectItem value="product_development">Product Development</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label>Methodology</Label>
