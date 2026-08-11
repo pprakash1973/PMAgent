@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-const CREATE_ROLES = ["pgm", "pm", "admin"];
+const CREATE_ROLES = ["pgm", "pm", "dm", "admin"];
 
 // 2 working days from now (skip Sat/Sun)
 function slaDeadline(from: Date): Date {

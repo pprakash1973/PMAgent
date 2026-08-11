@@ -7,7 +7,7 @@ import { HealthDonut, EVMScatter, SpiDistribution } from "@/components/executive
 import { getProductivityStatsForUser, getProductivityStatsForProjects } from "@/lib/productivity";
 import { ProductivityMeter } from "@/components/productivity-meter";
 import { SteeringDeckGenerator } from "@/components/steering-deck-generator";
-import DhDashboardClient, { type DhProject, type TrendPoint } from "./dh-dashboard-client";
+import DhDashboardClient, { type DhProject, type TrendPoint, type ClusterHealth } from "./dh-dashboard-client";
 
 const CAN_EXECUTIVE = ["dh", "admin"];
 
@@ -63,12 +63,33 @@ function computeProjectEVM(tasks: { baselineStart: Date | null; baselineFinish: 
   return { pv: Math.round(pv * 10) / 10, ev: Math.round(ev * 10) / 10, sv, spi, overallPct };
 }
 
+// Rule-based why-diagnosis for DH red digest (same logic as dm/triage whyDiagnosis)
+function computeWhyDiagnosis(p: {
+  rag: string; spi: number | null; cpi: number | null; burnPct: number;
+  daysSinceReport: number | null; highRisks: number; criticalIssues: number; openActionItems: number;
+}): string {
+  if (p.daysSinceReport !== null && p.daysSinceReport > 14) {
+    return `No status report in ${p.daysSinceReport} days — health cannot be assessed. PM nudge may be needed.`;
+  }
+  const flags: string[] = [];
+  if (p.spi !== null && p.spi < 0.75) flags.push(`schedule slipping (SPI ${p.spi.toFixed(2)})`);
+  if (p.cpi !== null && p.cpi < 0.85) flags.push(`cost running adverse (CPI ${p.cpi.toFixed(2)})`);
+  if (p.burnPct > 80 && (p.spi === null || p.spi < 0.90)) flags.push(`burn at ${Math.round(p.burnPct)}% with schedule risk`);
+  if (p.criticalIssues > 0) flags.push(`${p.criticalIssues} critical issue${p.criticalIssues > 1 ? "s" : ""} open`);
+  if (p.highRisks >= 3) flags.push(`${p.highRisks} high risks unmitigated`);
+  if (p.spi !== null && p.spi >= 0.75 && p.spi < 0.90) flags.push(`schedule under pressure (SPI ${p.spi.toFixed(2)})`);
+  if (p.cpi !== null && p.cpi >= 0.85 && p.cpi < 0.92) flags.push(`margin tightening (CPI ${p.cpi.toFixed(2)})`);
+  if (p.openActionItems > 3) flags.push(`${p.openActionItems} PM actions unresolved`);
+  if (flags.length === 0) return "Watch: marginal signals — no single critical driver. Review for trend.";
+  return flags.slice(0, 3).join("; ") + ".";
+}
+
 export default async function ExecutivePage() {
   const session = await auth();
   const user = session!.user as any;
   if (!CAN_EXECUTIVE.includes(user.role)) redirect("/dashboard/projects");
 
-  // ── DH persona: scoped executive dashboard ────────────────────────────────
+  // ── DH persona: command centre ────────────────────────────────────────────
   if (user.role === "dh") {
     const assignments = await prisma.clusterAssignment.findMany({
       where: { userId: user.id },
@@ -81,7 +102,7 @@ export default async function ExecutivePage() {
         deletedAt: null,
         OR: [
           ...(clusterIds.length ? [{ clusterId: { in: clusterIds } }] : []),
-          { clusterId: null, orgId: user.orgId }, // unassigned projects visible to any DH in the org
+          { clusterId: null, orgId: user.orgId },
         ],
       },
       include: {
@@ -95,6 +116,13 @@ export default async function ExecutivePage() {
           take: 6,
           include: { healthScore: true },
         },
+        _count: {
+          select: {
+            risks:       { where: { status: "open", probability: { in: ["high", "very_high"] } } },
+            issues:      { where: { status: "open", severity:   { in: ["critical", "high"] } } },
+            actionItems: { where: { status: { in: ["open", "acknowledged", "in_progress", "blocked"] } } },
+          },
+        },
       },
     });
 
@@ -104,7 +132,6 @@ export default async function ExecutivePage() {
       projProdStats = await getProductivityStatsForProjects(rawProjects.map((p) => p.id));
     } catch {}
 
-    // Compute live EVM per project (reuse helper below)
     const now = Date.now();
     const dhProjects: DhProject[] = rawProjects.map((p) => {
       const tasks = p.scheduleTasks;
@@ -129,12 +156,22 @@ export default async function ExecutivePage() {
       const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
       const budPct = p.budget && p.budget > 0 ? Math.round((totalSpent / p.budget) * 100) : 0;
 
-      // derive RAG from live SPI + stored health
-      let rag: "red" | "amber" | "green" = p.healthStatus as any ?? "green";
+      let rag: "red" | "amber" | "green" = (p.healthStatus as any) ?? "green";
       if (spi !== null) {
         if (spi < 0.8) rag = "red";
         else if (spi < 0.9 && rag === "green") rag = "amber";
       }
+
+      const latestReport = p.statusReports[0] ?? null;
+      const daysSinceReport = latestReport
+        ? Math.floor((now - new Date(latestReport.reportDate).getTime()) / 86400000)
+        : null;
+
+      const highRisks = (p._count as any).risks ?? 0;
+      const criticalIssues = (p._count as any).issues ?? 0;
+      const openActionItems = (p._count as any).actionItems ?? 0;
+
+      const whyDiagnosis = computeWhyDiagnosis({ rag, spi, cpi: storedCpi, burnPct: budPct, daysSinceReport, highRisks, criticalIssues, openActionItems });
 
       return {
         id:          p.id,
@@ -151,11 +188,16 @@ export default async function ExecutivePage() {
         cpi:         storedCpi ?? null,
         schedPct,
         budPct,
-        budget:           p.budget ?? null,
-        phase:            (p as any).currentPhase ?? "initiation",
+        budget:      p.budget ?? null,
+        phase:       (p as any).currentPhase ?? "initiation",
+        whyDiagnosis,
+        highRisks,
+        criticalIssues,
+        openActionItems,
+        daysSinceReport,
         artifactsGenerated: projProdStats[p.id]?.artifactsGenerated ?? 0,
-        hoursSaved:       projProdStats[p.id]?.hoursSaved ?? 0,
-        dollarsSaved:     projProdStats[p.id]?.dollarsSaved ?? 0,
+        hoursSaved:         projProdStats[p.id]?.hoursSaved ?? 0,
+        dollarsSaved:       projProdStats[p.id]?.dollarsSaved ?? 0,
       };
     });
 
@@ -179,22 +221,35 @@ export default async function ExecutivePage() {
       const greenCount = reports.filter(r => r.rag === "green").length;
       return {
         label,
-        avgSpi:    spiVals.length ? spiVals.reduce((a,b) => a+b,0)/spiVals.length : null,
-        avgCpi:    cpiVals.length ? cpiVals.reduce((a,b) => a+b,0)/cpiVals.length : null,
+        avgSpi:    spiVals.length ? spiVals.reduce((a, b) => a + b, 0) / spiVals.length : null,
+        avgCpi:    cpiVals.length ? cpiVals.reduce((a, b) => a + b, 0) / cpiVals.length : null,
         healthPct: reports.length ? Math.round(greenCount / reports.length * 100) : null,
       };
     });
 
-    // Fetch open/acknowledged escalations in scope
+    // Cluster health: aggregate RAG per cluster
+    const clusterMap = new Map<string, ClusterHealth>();
+    for (const p of dhProjects) {
+      const cid = p.clusterId || "__unassigned__";
+      const cname = p.clusterName || "Unassigned";
+      if (!clusterMap.has(cid)) clusterMap.set(cid, { id: cid, name: cname, red: 0, amber: 0, green: 0, total: 0 });
+      const entry = clusterMap.get(cid)!;
+      entry.total++;
+      if (p.rag === "red") entry.red++;
+      else if (p.rag === "amber") entry.amber++;
+      else entry.green++;
+    }
+    const clusterHealth: ClusterHealth[] = [...clusterMap.values()]
+      .sort((a, b) => b.red - a.red || b.amber - a.amber || a.name.localeCompare(b.name));
+
+    // Fetch open escalations in scope
     const dhEscalations = await prisma.escalation.findMany({
       where: {
-        orgId:  user.orgId,
-        status: { in: ["open", "acknowledged", "in_progress"] },
-        projectId: clusterIds.length
-          ? { in: rawProjects.map(p => p.id) }
-          : undefined,
+        orgId:     user.orgId,
+        status:    { in: ["open", "acknowledged", "in_progress"] },
+        projectId: rawProjects.length ? { in: rawProjects.map(p => p.id) } : undefined,
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ severity: "asc" }, { createdAt: "asc" }],
       take: 50,
       select: {
         id: true, title: true, severity: true, status: true, targetType: true,
@@ -212,6 +267,7 @@ export default async function ExecutivePage() {
           trends={trends}
           userName={user.name ?? user.email ?? "DH"}
           escalations={JSON.parse(JSON.stringify(dhEscalations))}
+          clusterHealth={clusterHealth}
         />
       </div>
     );
