@@ -50,6 +50,33 @@ function kpiVal(v: string): string {
 
 const FOOTER_TEXT = "AI-Generated Draft — PM Review Required  |  Confidential and Proprietary. © 2026 UST Global Inc";
 
+// ── Extended visual helpers ────────────────────────────────────────────────────
+
+// Extract first parseable number from a value string ("USD 1,234K" → 1234000, "65%" → 65, "1.2M" → 1200000)
+function parseNum(v: unknown): number | null {
+  if (v == null) return null;
+  const s = String(v);
+  const withSuffix = s.match(/(-?\d[\d,]*\.?\d*)\s*([KkMmBb])\b/);
+  if (withSuffix) {
+    const n = parseFloat(withSuffix[1].replace(/,/g, ""));
+    const mult = /b/i.test(withSuffix[2]) ? 1_000_000_000 : /m/i.test(withSuffix[2]) ? 1_000_000 : 1_000;
+    return isNaN(n) ? null : n * mult;
+  }
+  const plain = s.replace(/,/g, "").match(/-?\d+\.?\d*/);
+  if (!plain) return null;
+  const n = parseFloat(plain[0]);
+  return isNaN(n) ? null : n;
+}
+
+// Horizontal progress bar — pct 0–100
+function addProgressBar(slide: any, x: number, y: number, w: number, h: number, pct: number, fillColor: string, bgColor = "E5EDEF") {
+  slide.addShape("rect", { x, y, w, h, fill: { color: bgColor }, line: { color: bgColor, width: 0 } });
+  const fw = (Math.min(100, Math.max(0, pct)) / 100) * w;
+  if (fw > 0.02) {
+    slide.addShape("rect", { x, y, w: fw, h, fill: { color: fillColor }, line: { color: fillColor, width: 0 } });
+  }
+}
+
 // ── Shared slide helpers ───────────────────────────────────────────────────────
 
 function addFooter(slide: any, projectName: string, pageNum: number) {
@@ -210,6 +237,29 @@ function buildStatusReport(pptx: any, content: any, projectName: string) {
   // Summary text
   const summText = safeStr(content.executiveSummary ?? content.summary ?? "");
   if (summText) s2.addText(summText, { x: 0.3, y: 4.9, w: 12.73, h: 0.9, fontSize: 10.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+  // Visual progress indicators — % complete bar + SPI/CPI gauges
+  const pctCmplt = parseNum(content.percentComplete);
+  if (pctCmplt !== null) {
+    s2.addText("Overall Completion", { x: 0.3, y: 5.95, w: 3.2, h: 0.24, fontSize: 8.5, bold: true, color: DARK_GRAY, fontFace: "Aptos" });
+    addProgressBar(s2, 3.6, 5.97, 8.6, 0.2, pctCmplt, TEAL);
+    s2.addText(`${Math.round(pctCmplt)}%`, { x: 12.3, y: 5.92, w: 0.7, h: 0.28, fontSize: 9, bold: true, color: TEAL, fontFace: "Aptos" });
+  }
+  const spiVal = parseNum(content.spi); const cpiVal = parseNum(content.cpi);
+  if (spiVal !== null || cpiVal !== null) {
+    const rowY = 6.3;
+    if (spiVal !== null) {
+      const sc = spiVal >= 1 ? GREEN : spiVal >= 0.85 ? "FFC000" : RED;
+      s2.addText("SPI", { x: 0.3, y: rowY, w: 0.7, h: 0.22, fontSize: 8.5, bold: true, color: sc, fontFace: "Aptos" });
+      addProgressBar(s2, 1.1, rowY + 0.01, 4.8, 0.18, Math.min(100, spiVal * 100), sc);
+      s2.addText(safeStr(content.spi), { x: 6.0, y: rowY, w: 0.7, h: 0.22, fontSize: 8.5, bold: true, color: sc, fontFace: "Aptos" });
+    }
+    if (cpiVal !== null) {
+      const cc = cpiVal >= 1 ? GREEN : cpiVal >= 0.85 ? "FFC000" : RED;
+      s2.addText("CPI", { x: 6.9, y: rowY, w: 0.7, h: 0.22, fontSize: 8.5, bold: true, color: cc, fontFace: "Aptos" });
+      addProgressBar(s2, 7.7, rowY + 0.01, 4.7, 0.18, Math.min(100, cpiVal * 100), cc);
+      s2.addText(safeStr(content.cpi), { x: 12.5, y: rowY, w: 0.5, h: 0.22, fontSize: 8.5, bold: true, color: cc, fontFace: "Aptos" });
+    }
+  }
 
   // ── Slide 3: Milestone Tracker — color-coded status chips ──
   const ms = toArray(content.milestoneStatus ?? content.milestones);
@@ -230,7 +280,7 @@ function buildStatusReport(pptx: any, content: any, projectName: string) {
     s3.addTable([headerRow, ...dataRows], { x: 0.3, y: 0.85, w: 12.73, colW: [4.5, 2.0, 2.2, 1.53, 2.5], border: { color: MID_WASH } });
   }
 
-  // ── Slide 4: Schedule & Budget Performance + EVM panel ──
+  // ── Slide 4: Schedule & Budget Performance + EVM ──
   const s4 = contentSlide(pptx, "Schedule & Budget Performance", projectName, page++);
   kpiStrip(pptx, s4, [
     { label: "% Complete", value: safeStr(content.percentComplete ?? "—") + "%" },
@@ -238,25 +288,71 @@ function buildStatusReport(pptx: any, content: any, projectName: string) {
     { label: "CPI", value: safeStr(content.cpi ?? "—") },
     { label: "Budget Spent", value: safeStr(content.budgetSpent ?? content.actualCost ?? "—") },
   ], 0.85);
-  // EVM dark panel
-  s4.addShape(pptx.ShapeType.rect, { x: 0.3, y: 2.55, w: 12.73, h: 2.3, fill: { color: PETROL } });
-  s4.addText("Earned Value Metrics", { x: 0.45, y: 2.65, w: 4, h: 0.35, fontSize: 10, bold: true, color: TEAL_L, fontFace: "Aptos" });
-  const evmItems = [
-    { label: "PV", val: content.plannedValue ?? content.pv ?? "—" },
-    { label: "EV", val: content.earnedValue ?? content.ev ?? "—" },
-    { label: "AC", val: content.actualCost ?? content.ac ?? "—" },
-    { label: "SV", val: content.scheduleVariance ?? content.sv ?? "—" },
-    { label: "CV", val: content.costVariance ?? content.cv ?? "—" },
-    { label: "EAC", val: content.eac ?? "—" },
-  ];
-  evmItems.forEach((e, i) => {
-    const ex = 0.5 + i * 2.1;
-    s4.addText(e.label, { x: ex, y: 3.05, w: 1.9, h: 0.3, fontSize: 9, bold: true, color: TEAL_L, align: "center", fontFace: "Aptos" });
-    s4.addText(safeStr(e.val), { x: ex, y: 3.38, w: 1.9, h: 0.5, fontSize: 16, bold: true, color: WHITE, align: "center", fontFace: "Aptos" });
-    s4.addShape(pptx.ShapeType.rect, { x: ex + 0.85, y: 3.1, w: 0.04, h: 1.1, fill: { color: TEAL_L, transparency: 60 } });
-  });
+  // EVM: column chart when PV/EV/AC are numeric; dark text panel otherwise
+  const pvNum = parseNum(content.plannedValue ?? content.pv);
+  const evNum = parseNum(content.earnedValue ?? content.ev);
+  const acNum = parseNum(content.actualCost ?? content.ac);
+  if (pvNum !== null && evNum !== null && acNum !== null) {
+    s4.addChart("bar", [
+      { name: "PV (Planned Value)", labels: [""], values: [pvNum] },
+      { name: "EV (Earned Value)",  labels: [""], values: [evNum] },
+      { name: "AC (Actual Cost)",   labels: [""], values: [acNum] },
+    ], {
+      x: 0.3, y: 2.55, w: 8.0, h: 2.75,
+      chartColors: [PETROL, TEAL, "FFC000"],
+      barGrouping: "clustered",
+      barDir: "col",
+      showLegend: true,
+      legendPos: "b",
+      showValue: false,
+      catAxisLineShow: false,
+      catAxisLabelColor: DARK_GRAY,
+      valAxisLabelColor: DARK_GRAY,
+    });
+    // Right panel: SV / CV / EAC
+    s4.addShape(pptx.ShapeType.rect, { x: 8.6, y: 2.55, w: 4.43, h: 2.75, fill: { color: PETROL } });
+    s4.addText("Variance & Forecast", { x: 8.7, y: 2.68, w: 4.2, h: 0.3, fontSize: 9, bold: true, color: TEAL_L, fontFace: "Aptos" });
+    [
+      { label: "SV", val: content.scheduleVariance ?? content.sv ?? "—" },
+      { label: "CV", val: content.costVariance ?? content.cv ?? "—" },
+      { label: "EAC", val: content.eac ?? "—" },
+    ].forEach((e, i) => {
+      const ey = 3.12 + i * 0.72;
+      s4.addText(e.label, { x: 8.78, y: ey, w: 1.0, h: 0.3, fontSize: 9, bold: true, color: TEAL_L, fontFace: "Aptos" });
+      s4.addText(safeStr(e.val), { x: 9.85, y: ey, w: 3.1, h: 0.3, fontSize: 13, bold: true, color: WHITE, align: "right", fontFace: "Aptos" });
+      if (i < 2) s4.addShape(pptx.ShapeType.rect, { x: 8.75, y: ey + 0.37, w: 4.2, h: 0.04, fill: { color: TEAL_L, transparency: 60 } });
+    });
+  } else {
+    // Dark EVM text panel
+    s4.addShape(pptx.ShapeType.rect, { x: 0.3, y: 2.55, w: 12.73, h: 2.3, fill: { color: PETROL } });
+    s4.addText("Earned Value Metrics", { x: 0.45, y: 2.65, w: 4, h: 0.35, fontSize: 10, bold: true, color: TEAL_L, fontFace: "Aptos" });
+    const evmItems = [
+      { label: "PV", val: content.plannedValue ?? content.pv ?? "—" },
+      { label: "EV", val: content.earnedValue ?? content.ev ?? "—" },
+      { label: "AC", val: content.actualCost ?? content.ac ?? "—" },
+      { label: "SV", val: content.scheduleVariance ?? content.sv ?? "—" },
+      { label: "CV", val: content.costVariance ?? content.cv ?? "—" },
+      { label: "EAC", val: content.eac ?? "—" },
+    ];
+    evmItems.forEach((e, i) => {
+      const ex = 0.5 + i * 2.1;
+      s4.addText(e.label, { x: ex, y: 3.05, w: 1.9, h: 0.3, fontSize: 9, bold: true, color: TEAL_L, align: "center", fontFace: "Aptos" });
+      s4.addText(safeStr(e.val), { x: ex, y: 3.38, w: 1.9, h: 0.5, fontSize: 16, bold: true, color: WHITE, align: "center", fontFace: "Aptos" });
+      s4.addShape(pptx.ShapeType.rect, { x: ex + 0.85, y: 3.1, w: 0.04, h: 1.1, fill: { color: TEAL_L, transparency: 60 } });
+    });
+  }
+  // Budget burn gauge
+  const burnSpent = parseNum(content.budgetSpent ?? content.actualCost ?? content.ac);
+  const burnTotal = parseNum(content.budget ?? content.bac);
+  if (burnSpent !== null && burnTotal !== null && burnTotal > 0) {
+    const burnPct = Math.min(120, (burnSpent / burnTotal) * 100);
+    const gaugeColor = burnPct > 100 ? RED : burnPct > 85 ? "FFC000" : GREEN;
+    s4.addText("Budget Burn", { x: 0.3, y: 5.5, w: 2.5, h: 0.24, fontSize: 9, bold: true, color: DARK_GRAY, fontFace: "Aptos" });
+    addProgressBar(s4, 2.9, 5.52, 8.8, 0.2, burnPct, gaugeColor);
+    s4.addText(`${Math.round(burnPct)}%`, { x: 11.8, y: 5.47, w: 1.0, h: 0.28, fontSize: 10, bold: true, color: gaugeColor, align: "right", fontFace: "Aptos" });
+  }
   const finNote = safeStr(content.financialStatus ?? content.budgetNarrative ?? "");
-  if (finNote) s4.addText(finNote, { x: 0.3, y: 5.0, w: 12.73, h: 0.8, fontSize: 10.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+  if (finNote) s4.addText(finNote, { x: 0.3, y: 5.88, w: 12.73, h: 0.75, fontSize: 10.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
 
   // ── Slide 5: Accomplishments & Next Steps ──
   const s5 = contentSlide(pptx, "Accomplishments & Next Steps", projectName, page++);
@@ -446,6 +542,12 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   const milestones = content.milestones ?? [];
   if (milestones.length) {
     const s5 = contentSlide(pptx, "Key Milestones & Timeline", projectName, page++);
+    // Milestone completion badge (top-right, below phase band)
+    const completedMs = milestones.filter((m: any) => (safeStr(m.status)).toLowerCase().match(/complete|done/)).length;
+    s5.addShape(pptx.ShapeType.roundRect, { x: 10.5, y: 1.3, w: 2.5, h: 0.58, fill: { color: "E6F9F3" }, line: { color: GREEN, width: 1.5 }, rectRadius: 0.08 });
+    s5.addText(`${completedMs}/${milestones.length}`, { x: 10.5, y: 1.3, w: 1.35, h: 0.58, fontSize: 20, bold: true, color: GREEN, align: "center", valign: "middle", fontFace: "Aptos" });
+    s5.addText("milestones\ncomplete", { x: 11.85, y: 1.3, w: 1.15, h: 0.58, fontSize: 8, color: DARK_GRAY, valign: "middle", wrap: true, fontFace: "Aptos" });
+    addProgressBar(s5, 10.5, 1.93, 2.5, 0.14, milestones.length > 0 ? (completedMs / milestones.length) * 100 : 0, GREEN);
     // Phase band
     const phases = ["Initiation", "Planning", "Execution", "Monitoring", "Closure"];
     const pbw = 12.73 / phases.length;
@@ -460,8 +562,13 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     msSlice.forEach((m: any, i: number) => {
       const mx = 0.5 + i * step;
       const above = i % 2 === 0;
-      // Circle node (diamond replaced — rotate not supported in addShape)
-      s5.addShape(pptx.ShapeType.ellipse, { x: mx - 0.18, y: 3.61, w: 0.36, h: 0.36, fill: { color: TEAL } });
+      // Circle node — color-coded by milestone status
+      const mSt = (m.status ?? "").toLowerCase();
+      const nodeClr = mSt.includes("complete") || mSt.includes("done") ? GREEN
+        : mSt.includes("progress") || mSt.includes("active") || mSt.includes("current") ? "FFC000"
+        : mSt.includes("delay") || mSt.includes("late") || mSt.includes("risk") ? RED
+        : TEAL;
+      s5.addShape(pptx.ShapeType.ellipse, { x: mx - 0.18, y: 3.61, w: 0.36, h: 0.36, fill: { color: nodeClr } });
       // Name label
       s5.addText(safeStr(m.name ?? m.milestone).slice(0, 28), {
         x: mx - 1.2, y: above ? 2.1 : 4.1, w: 2.4, h: 0.7,
@@ -532,10 +639,10 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     s7.addShape(pptx.ShapeType.roundRect, { x: 0.3, y: 0.88 + i * 1.45, w: 7.5, h: 1.3, fill: { color: WASH }, line: { color: lvlColor, width: 2 }, rectRadius: 0.08 });
     s7.addShape(pptx.ShapeType.rect, { x: 0.3, y: 0.88 + i * 1.45, w: 1.1, h: 1.3, fill: { color: lvlColor } });
     s7.addText(level.slice(0, 8).toUpperCase(), { x: 0.3, y: 0.88 + i * 1.45, w: 1.1, h: 1.3, fontSize: 9, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
-    s7.addText(rText.slice(0, 130), { x: 1.5, y: 0.93 + i * 1.45, w: 5.6, h: 0.9, fontSize: 10, color: SOFT_BLACK, wrap: true, valign: "middle", fontFace: "Aptos" });
+    s7.addText(rText.slice(0, 120), { x: 1.5, y: 0.93 + i * 1.45, w: 5.6, h: 0.72, fontSize: 10, color: SOFT_BLACK, wrap: true, valign: "middle", fontFace: "Aptos" });
     const prob = typeof r === "object" ? safeStr(r.probability ?? "") : "";
     const imp = typeof r === "object" ? safeStr(r.impact ?? "") : "";
-    // P/I pills: shape + text separately (fill on addText is not valid in PptxGenJS)
+    // P/I pills
     if (prob) {
       s7.addShape(pptx.ShapeType.roundRect, { x: 7.05, y: 0.93 + i * 1.45, w: 0.7, h: 0.32, fill: { color: TEAL_L }, rectRadius: 0.05 });
       s7.addText(`P:${prob}`, { x: 7.05, y: 0.93 + i * 1.45, w: 0.7, h: 0.32, fontSize: 7.5, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
@@ -543,6 +650,14 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     if (imp) {
       s7.addShape(pptx.ShapeType.roundRect, { x: 7.05, y: 1.29 + i * 1.45, w: 0.7, h: 0.32, fill: { color: lvlColor }, rectRadius: 0.05 });
       s7.addText(`I:${imp}`, { x: 7.05, y: 1.29 + i * 1.45, w: 0.7, h: 0.32, fontSize: 7.5, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
+    }
+    // Exposure score gauge when P and I are both on a numeric 1–5 scale
+    const probN = parseNum(prob); const impN = parseNum(imp);
+    if (probN !== null && impN !== null && probN <= 5 && impN <= 5) {
+      const score = Math.round(probN * impN);
+      s7.addText("EXPOSURE", { x: 1.5, y: 1.7 + i * 1.45, w: 1.3, h: 0.17, fontSize: 7, bold: true, color: DARK_GRAY, fontFace: "Aptos" });
+      addProgressBar(s7, 2.85, 1.72 + i * 1.45, 3.7, 0.13, (score / 25) * 100, lvlColor, MID_WASH);
+      s7.addText(`${score}/25`, { x: 6.6, y: 1.7 + i * 1.45, w: 0.85, h: 0.17, fontSize: 7, bold: true, color: lvlColor, align: "right", fontFace: "Aptos" });
     }
   });
   // 5×5 heat map (right)
@@ -598,6 +713,33 @@ function buildCharter(pptx: any, content: any, projectName: string) {
       s8.addText(safeStr(c), { x: 7.28, y: 3.1 + i * 0.55, w: 5.7, h: 0.48, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
     });
   }
+  // Contingency gauge — shows reserve as % of total budget
+  const budgetTotalNum = parseNum(budget.total);
+  const budgetContNum  = parseNum(budget.contingencyReserve);
+  if (budgetTotalNum !== null && budgetContNum !== null && budgetTotalNum > 0) {
+    const contPct = Math.min(40, (budgetContNum / budgetTotalNum) * 100);
+    s8.addText("Contingency Reserve", { x: 0.3, y: 5.65, w: 2.6, h: 0.26, fontSize: 9, bold: true, color: DARK_GRAY, fontFace: "Aptos" });
+    addProgressBar(s8, 3.0, 5.67, 9.1, 0.22, contPct, TEAL_L);
+    s8.addText(`${Math.round(contPct)}% of budget`, { x: 12.2, y: 5.62, w: 1.0, h: 0.3, fontSize: 9, bold: true, color: TEAL_L, align: "right", fontFace: "Aptos" });
+  }
+  // Budget breakdown chart if structured data available
+  const breakdown = budget.breakdown ?? budget.byPhase ?? content.phaseAllocation;
+  if (Array.isArray(breakdown) && breakdown.length >= 2 && !assumptions.length && !constraints.length) {
+    const bkLabels = breakdown.slice(0, 6).map((b: any) => safeStr(b.category ?? b.phase ?? b.name ?? ""));
+    const bkValues = breakdown.slice(0, 6).map((b: any) => parseNum(b.amount ?? b.value ?? b.cost) ?? 0);
+    if (bkValues.some((v) => v > 0)) {
+      s8.addChart("bar", [{ name: "Budget by Phase", labels: bkLabels, values: bkValues }], {
+        x: 0.3, y: 2.65, w: 12.73, h: 2.8,
+        chartColors: PHASE_COLORS,
+        barGrouping: "clustered",
+        barDir: "bar",
+        showLegend: false,
+        showValue: false,
+        catAxisLabelColor: DARK_GRAY,
+        valAxisLabelColor: DARK_GRAY,
+      });
+    }
+  }
 
   // ── Slide 9: Authorization & Sign-off ──
   const sigs = content.approvalSignatures ?? [{ role: "Project Sponsor" }, { role: "Project Manager" }, { role: "Steering Committee" }];
@@ -648,7 +790,7 @@ function buildDashboard(pptx: any, content: any, projectName: string) {
     });
   });
 
-  // Slide 3: Financial Performance (EVM)
+  // Slide 3: Financial Performance
   const s3 = contentSlide(pptx, "Financial Performance", projectName, page++);
   kpiStrip(pptx, s3, [
     { label: "Budget (BAC)", value: safeStr(content.bac ?? content.budget ?? "TBD") },
@@ -657,7 +799,36 @@ function buildDashboard(pptx: any, content: any, projectName: string) {
     { label: "Forecast (EAC)", value: safeStr(content.eac ?? "TBD") },
   ], 1.0);
   const cvNote = safeStr(content.costVarianceNarrative ?? "");
-  if (cvNote) s3.addText(cvNote, { x: 0.3, y: 2.9, w: 12.73, h: 0.8, fontSize: 11, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+  // Comparative column chart (BAC / AC / EAC) when values are numeric
+  const bacChartNum = parseNum(content.bac ?? content.budget);
+  const acChartNum  = parseNum(content.actualCost ?? content.ac);
+  const eacChartNum = parseNum(content.eac);
+  if (bacChartNum !== null && acChartNum !== null) {
+    const finSeries: { name: string; labels: string[]; values: number[] }[] = [
+      { name: "Budget (BAC)",    labels: [""], values: [bacChartNum] },
+      { name: "Actual Cost (AC)", labels: [""], values: [acChartNum] },
+    ];
+    const finColors = [PETROL, acChartNum > bacChartNum ? RED : TEAL];
+    if (eacChartNum !== null) {
+      finSeries.push({ name: "Forecast (EAC)", labels: [""], values: [eacChartNum] });
+      finColors.push(eacChartNum > bacChartNum ? "FFC000" : TEAL_L);
+    }
+    s3.addChart("bar", finSeries, {
+      x: 0.3, y: 2.75, w: 12.73, h: 3.2,
+      chartColors: finColors,
+      barGrouping: "clustered",
+      barDir: "col",
+      showLegend: true,
+      legendPos: "b",
+      showValue: false,
+      catAxisLineShow: false,
+      catAxisLabelColor: DARK_GRAY,
+      valAxisLabelColor: DARK_GRAY,
+    });
+    if (cvNote) s3.addText(cvNote, { x: 0.3, y: 6.1, w: 12.73, h: 0.55, fontSize: 10.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+  } else {
+    if (cvNote) s3.addText(cvNote, { x: 0.3, y: 2.9, w: 12.73, h: 0.8, fontSize: 11, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+  }
 
   // Slide 4: Schedule Performance
   const s4 = contentSlide(pptx, "Schedule Performance", projectName, page++);
