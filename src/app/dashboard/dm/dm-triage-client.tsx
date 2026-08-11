@@ -127,11 +127,13 @@ function BurnBar({ pct }: { pct: number }) {
 }
 
 // ── Attention Row ─────────────────────────────────────────────────────────────────
-function AttentionRow({ p, onReview, onEscalate, escalated }: {
+function AttentionRow({ p, onReview, onEscalate, onAddAction, escalated, addedActions }: {
   p: TriageRow;
   onReview: () => void;
   onEscalate: () => void;
+  onAddAction: () => void;
   escalated: boolean;
+  addedActions: number;
 }) {
   const rc = ragColor(p.band);
   const [hovered, setHovered] = useState(false);
@@ -246,7 +248,9 @@ function AttentionRow({ p, onReview, onEscalate, escalated }: {
             <button onClick={e => { e.stopPropagation(); onEscalate(); }} style={btnStyle("ghost-red")}>⚑ Escalate</button>
           )}
           {escalated && <span style={{ fontSize: 11, color: C.green, fontWeight: 600, fontFamily: C.FF, alignSelf: "center" }}>✓ Escalated</span>}
-          <button onClick={e => { e.stopPropagation(); }} style={btnStyle("ghost")}>+ Action</button>
+          <button onClick={e => { e.stopPropagation(); onAddAction(); }} style={btnStyle("ghost")}>
+            + Action{addedActions > 0 ? ` (${p.openActionItems + addedActions})` : ""}
+          </button>
           <button onClick={e => { e.stopPropagation(); onReview(); }} style={btnStyle("primary")}>Review →</button>
         </span>
       </div>
@@ -266,10 +270,12 @@ function btnStyle(variant: "primary" | "ghost" | "ghost-red"): React.CSSProperti
 }
 
 // ── Band section (attention queue) ────────────────────────────────────────────────
-function BandSection({ label, dotColor, projects, collapsed: initialCollapsed, onReview, onEscalate, escalatedIds }: {
+function BandSection({ label, dotColor, projects, collapsed: initialCollapsed, onReview, onEscalate, onAddAction, escalatedIds, addedActionsMap }: {
   label: string; dotColor: string; projects: TriageRow[];
   collapsed: boolean;
-  onReview: (id: string) => void; onEscalate: (p: TriageRow) => void; escalatedIds: Set<string>;
+  onReview: (id: string) => void; onEscalate: (p: TriageRow) => void;
+  onAddAction: (p: TriageRow) => void; escalatedIds: Set<string>;
+  addedActionsMap: Record<string, number>;
 }) {
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   if (projects.length === 0) return null;
@@ -295,7 +301,9 @@ function BandSection({ label, dotColor, projects, collapsed: initialCollapsed, o
               key={p.id} p={p}
               onReview={() => onReview(p.id)}
               onEscalate={() => onEscalate(p)}
+              onAddAction={() => onAddAction(p)}
               escalated={escalatedIds.has(p.id)}
+              addedActions={addedActionsMap[p.id] ?? 0}
             />
           ))}
         </div>
@@ -384,6 +392,139 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ── Add Action modal ──────────────────────────────────────────────────────────────
+const CATEGORIES = [
+  { v: "schedule",    l: "Schedule" },
+  { v: "cost",        l: "Cost" },
+  { v: "risk",        l: "Risk" },
+  { v: "issue",       l: "Issue" },
+  { v: "stakeholder", l: "Stakeholder" },
+  { v: "scope_change",l: "Scope change" },
+  { v: "quality",     l: "Quality" },
+  { v: "governance",  l: "Governance" },
+];
+
+function AddActionModal({ project, onClose, onSuccess }: {
+  project: TriageRow; onClose: () => void; onSuccess: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("schedule");
+  const [priority, setPriority] = useState<"p1" | "p2" | "p3">("p2");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inp: React.CSSProperties = {
+    width: "100%", boxSizing: "border-box" as const, border: `1.5px solid ${C.border}`,
+    borderRadius: 9, padding: "9px 12px", fontSize: 13.5, color: C.ink,
+    outline: "none", fontFamily: C.FF, background: C.surface,
+  };
+
+  const PRIS: { v: "p1" | "p2" | "p3"; l: string; sub: string; c: string }[] = [
+    { v: "p1", l: "P1", sub: "≤2 days", c: C.red },
+    { v: "p2", l: "P2", sub: "≤5 days", c: C.amber },
+    { v: "p3", l: "P3", sub: "≤15 days", c: C.green },
+  ];
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) { setError("Title is required."); return; }
+    if (priority === "p1" && description.trim().length < 40) {
+      setError("P1 items require a description of at least 40 characters."); return;
+    }
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/action-items`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), category, priority, description: description.trim() || null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error ?? "Failed to create action item."); return; }
+      onSuccess();
+    } catch { setError("Network error — please try again."); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,.42)", display: "flex", alignItems: "center", justifyContent: "center" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ width: 500, maxWidth: "calc(100vw - 32px)", background: "#fff", borderRadius: 18, boxShadow: "0 20px 60px rgba(0,0,0,.2)", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{ background: `linear-gradient(135deg,${C.teal},${C.petrol})`, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>＋</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", fontFamily: C.FF }}>New action item</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,.65)", fontFamily: C.FF }}>{project.name} · Assigned to PM: {project.pmName}</div>
+          </div>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,.18)", border: "none", color: "#fff", borderRadius: 8, width: 28, height: 28, cursor: "pointer", fontSize: 15, lineHeight: "28px", textAlign: "center" as const }}>×</button>
+        </div>
+
+        <form onSubmit={submit} style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* Title */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.inkFaint, display: "block", marginBottom: 5, fontFamily: C.FF }}>Title *</label>
+            <input required value={title} onChange={e => setTitle(e.target.value)} maxLength={200}
+              placeholder="What needs to be done?" style={{ ...inp, height: 38 }} autoFocus />
+          </div>
+
+          {/* Category + Priority row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.inkFaint, display: "block", marginBottom: 5, fontFamily: C.FF }}>Category</label>
+              <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, height: 38 }}>
+                {CATEGORIES.map(c => <option key={c.v} value={c.v}>{c.l}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.inkFaint, display: "block", marginBottom: 5, fontFamily: C.FF }}>Priority</label>
+              <div style={{ display: "flex", gap: 6 }}>
+                {PRIS.map(p => (
+                  <button key={p.v} type="button" onClick={() => setPriority(p.v)} style={{
+                    flex: 1, height: 38, border: `2px solid ${priority === p.v ? p.c : C.border}`,
+                    borderRadius: 8, background: priority === p.v ? `${p.c}14` : "#fff",
+                    cursor: "pointer", fontFamily: C.FF,
+                  }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: priority === p.v ? p.c : C.inkFaint }}>{p.l}</div>
+                    <div style={{ fontSize: 9.5, color: priority === p.v ? p.c : C.inkFaint, opacity: .7 }}>{p.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.inkFaint, display: "block", marginBottom: 5, fontFamily: C.FF }}>
+              Description {priority === "p1" && <span style={{ color: C.red }}>* (min 40 chars for P1)</span>}
+            </label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+              placeholder="What is the expected outcome? Include context for the PM."
+              style={{ ...inp, resize: "vertical" as const, minHeight: 72 }} />
+            {priority === "p1" && description.trim().length > 0 && (
+              <div style={{ fontSize: 11, color: description.trim().length >= 40 ? C.green : C.amber, marginTop: 3, fontFamily: C.FF }}>
+                {description.trim().length}/40 chars minimum
+              </div>
+            )}
+          </div>
+
+          {error && <div style={{ background: C.redBg, border: `1px solid ${C.redLine}`, borderRadius: 8, padding: "9px 13px", fontSize: 13, color: C.red, fontFamily: C.FF }}>{error}</div>}
+
+          <div style={{ display: "flex", gap: 9, justifyContent: "flex-end" }}>
+            <button type="button" onClick={onClose} style={{ height: 36, padding: "0 16px", border: `1px solid ${C.border}`, borderRadius: 8, background: "#fff", fontSize: 13, color: C.inkFaint, cursor: "pointer", fontFamily: C.FF }}>Cancel</button>
+            <button type="submit" disabled={saving} style={{
+              height: 36, padding: "0 20px", border: "none", borderRadius: 8,
+              background: saving ? "#ccc" : `linear-gradient(135deg,${C.teal},${C.petrol})`,
+              fontSize: 13, fontWeight: 600, color: "#fff", cursor: saving ? "not-allowed" : "pointer", fontFamily: C.FF,
+            }}>
+              {saving ? "Creating…" : "Create action item"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -478,6 +619,8 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
   const [searchQ, setSearchQ] = useState("");
   const [escalatedIds, setEscalatedIds] = useState<Set<string>>(new Set());
   const [escalateTarget, setEscalateTarget] = useState<TriageRow | null>(null);
+  const [actionTarget, setActionTarget] = useState<TriageRow | null>(null);
+  const [addedActionsMap, setAddedActionsMap] = useState<Record<string, number>>({});
 
   const q = searchQ.toLowerCase();
   const filter = (rows: TriageRow[]) =>
@@ -605,10 +748,10 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
             </div>
           )}
 
-          <BandSection label="Needs you now" dotColor={C.red} projects={filter(data.bands.red)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} escalatedIds={escalatedIds} />
-          <BandSection label="Watch" dotColor={C.amber} projects={filter(data.bands.amber)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} escalatedIds={escalatedIds} />
-          <BandSection label="No data" dotColor={C.grey} projects={filter(data.bands.no_data)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} escalatedIds={escalatedIds} />
-          <BandSection label="Steady" dotColor={C.green} projects={filter(data.bands.green)} collapsed={true} onReview={openReview} onEscalate={p => setEscalateTarget(p)} escalatedIds={escalatedIds} />
+          <BandSection label="Needs you now" dotColor={C.red} projects={filter(data.bands.red)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+          <BandSection label="Watch" dotColor={C.amber} projects={filter(data.bands.amber)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+          <BandSection label="No data" dotColor={C.grey} projects={filter(data.bands.no_data)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+          <BandSection label="Steady" dotColor={C.green} projects={filter(data.bands.green)} collapsed={true} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
 
           {q && filter(allProjects).length === 0 && (
             <div style={{ textAlign: "center" as const, padding: "40px 24px", color: C.inkFaint, fontFamily: C.FF, fontSize: 14 }}>No projects match "{searchQ}"</div>
@@ -622,6 +765,18 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
       {/* Review panel */}
       {reviewId && (
         <DrillDownPanel projectId={reviewId} onClose={() => setReviewId(null)} initialTab="review" openActionItem={() => {}} />
+      )}
+
+      {/* Add action modal */}
+      {actionTarget && (
+        <AddActionModal
+          project={actionTarget}
+          onClose={() => setActionTarget(null)}
+          onSuccess={() => {
+            setAddedActionsMap(prev => ({ ...prev, [actionTarget.id]: (prev[actionTarget.id] ?? 0) + 1 }));
+            setActionTarget(null);
+          }}
+        />
       )}
 
       {/* Escalation modal */}
