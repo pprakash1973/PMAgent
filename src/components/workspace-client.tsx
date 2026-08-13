@@ -393,6 +393,11 @@ function ProjectInfoTab({ project }: { project: any }) {
           <InfoField label="Currency" value={project.currency} />
         </div>
 
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
+          <InfoField label="Engagement Type" value={project.engagementType === "application_development" ? "Application Development" : project.engagementType === "product_development" ? "Product Development" : project.engagementType ?? null} />
+          <InfoField label="Engagement Mode" value={project.engagementMode ?? null} />
+        </div>
+
         {/* Description */}
         {project.description && (
           <>
@@ -3386,9 +3391,9 @@ function ScopeControlTab({ project }: { project: any }) {
         </div>
 
         {/* Right: requirements table */}
-        <div style={{ display: "flex", flexDirection: "column" as const }}>
+        <div style={{ display: "flex", flexDirection: "column" as const, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
           {/* Requirements header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 11px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 11px", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3 }}>
               {latestBaseline ? `Baselined requirements (${latestBaseline.label})` : "Requirements"}
             </span>
@@ -3411,6 +3416,13 @@ function ScopeControlTab({ project }: { project: any }) {
               </div>
             </div>
           )}
+
+          {/* Table column header */}
+          <div style={{ display: "flex", alignItems: "center", padding: "5px 11px", gap: 8, background: C.surface2, borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontFamily: "monospace", fontSize: 10, fontWeight: 700, color: C.text3, width: 52, flexShrink: 0, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>#</span>
+            <span style={{ flex: 1, fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>Requirement Statement</span>
+            <span style={{ width: 52, flexShrink: 0, fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>Actions</span>
+          </div>
 
           {loading ? (
             <div style={{ padding: "20px 11px", fontSize: 12, color: C.text3 }}>Loading…</div>
@@ -4761,8 +4773,8 @@ function OverviewTab({ project }: { project: any }) {
   const hs = latest?.healthScore ?? null;
 
   const compositeScore: number | null = hs?.compositeScore ?? null;
-  const spi: number | null = hs?.spi ?? null;
-  const cpi: number | null = hs?.cpi ?? null;
+  const spi: number | null = hs?.spi ?? (latest?.scheduleVariance != null ? 1 + latest.scheduleVariance / 100 : null);
+  const cpi: number | null = hs?.cpi ?? (latest?.budgetVariance != null ? 1 + latest.budgetVariance / 100 : null);
   const ev: number | null = hs?.ev ?? null;
   const ac: number | null = hs?.ac ?? null;
   const pv: number | null = hs?.pv ?? null;
@@ -4995,7 +5007,7 @@ const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "R
 
 const PREDICTIVE_NAV_GROUPS = [
   { section: "Project",        tabs: ["Overview", "Project Info"] },
-  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Schedule", "Cost", "Resources"] },
+  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Resources", "Schedule", "Cost"] },
   { section: "Risk & Quality", tabs: ["Risk", "Issues", "Registers"] },
   { section: "Reporting",      tabs: ["Status Reporting", "Baseline"] },
 ];
