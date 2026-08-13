@@ -419,6 +419,7 @@ function buildArtifactContent(
     // ── INITIATING ────────────────────────────────────────────────────────────
 
     project_charter: `Generate a Project Charter.
+CRITICAL: All milestone targetDates must fall within the project's startDate–endDate window from context. Reflect the stated methodology, engagement type, and billing model from context throughout.
 Return JSON with:
 - projectTitle (string)
 - projectCode (string): short alphanumeric code
@@ -426,6 +427,8 @@ Return JSON with:
 - preparedBy (string): always exactly "PM Agent on behalf of the Project Manager": always exactly "PM Agent on behalf of the Project Manager"
 - approvedBy (string): sponsor name
 - date (string): ISO date
+- projectStartDate (string): the project startDate from context
+- projectEndDate (string): the project endDate from context
 - projectDescription (string): clear, concise purpose statement
 - businessCase (string): strategic problem or opportunity this project addresses
 - objectives (array of strings): 3–5 SMART objectives — specific, measurable, achievable, relevant, time-bound
@@ -434,7 +437,7 @@ Return JSON with:
     inScope (array of strings): key deliverables explicitly included
     outOfScope (array of strings): explicit exclusions to prevent scope creep
 - deliverables (array of strings): major project deliverables
-- milestones (array of {name, targetDate, description})
+- milestones (array of {name, targetDate, description}): targetDates within project window
 - budget (object): {total (string), currency (string), fundingSource (string), contingencyReserve (string)}
 - stakeholders (array of {name, role, organization, power (High/Medium/Low), interest (High/Medium/Low), engagementLevel (Unaware/Resistant/Neutral/Supportive/Leading), notes})
 - risks (array of strings): top 3–5 high-level risks at initiation
@@ -596,10 +599,11 @@ Return JSON with:
   }`,
 
     milestone_plan: `Generate a Milestone Plan.
+CRITICAL: Use the project's startDate and endDate from the Project Context as this plan's startDate and endDate. All milestone plannedDates must fall strictly between those two dates.
 Return JSON with:
 - projectName (string)
-- startDate (string)
-- endDate (string)
+- startDate (string): the project startDate from context — do not invent a different date
+- endDate (string): the project endDate from context — do not invent a different date
 - baselineDate (string): when baseline was set
 - milestones (array of {
     id (string): M001, M002…
@@ -621,17 +625,18 @@ Return JSON with:
 - schedulePerformanceIndex (string): SPI if data available, else "TBD"`,
 
     resource_plan: `Generate a Resource Management Plan.
+CRITICAL: All team member startDate/endDate values must align to the project's startDate/endDate from context. Use generic numbered role names (e.g. "Developer 1", "Business Analyst 1") — never fabricated individual names.
 Return JSON with:
 - projectName (string)
 - teamDirectory (array of {
     id (string): R001, R002…
-    name (string)
+    name (string): generic role name (e.g. "Developer 1", "Business Analyst 1")
     role (string)
     department (string)
     skills (array of strings)
     allocationPercent (number): 0-100
-    startDate (string)
-    endDate (string)
+    startDate (string): within project timeline
+    endDate (string): within project timeline
     location (string)
     dailyRate (number | null): optional
     currency (string)
@@ -1186,11 +1191,50 @@ Return JSON with:
 
   const dynamicContext = `Project Context:\n${JSON.stringify(projectContext, null, 2)}\n\n${evidenceBlock}${requirements && !evidenceContext?.hasEvidence ? `Requirements / Source Document Content:\n${requirements}\n\n` : ""}`;
 
+  // Build a mandatory alignment instruction derived from the project context so that
+  // generated artifacts reference the correct dates, methodology, and engagement framing.
+  const pStart = projectContext.startDate ? String(projectContext.startDate).slice(0, 10) : null;
+  const pEnd   = projectContext.endDate   ? String(projectContext.endDate).slice(0, 10)   : null;
+  const methodologyLabels: Record<string, string> = {
+    waterfall: "Waterfall", agile: "Agile/Scrum", kanban: "Kanban", safe: "SAFe", hybrid: "Hybrid Agile",
+  };
+  const engagementTypeLabels: Record<string, string> = {
+    application_development: "Application Development", product_development: "Product Development",
+    consulting: "Consulting", implementation: "Implementation", migration: "Migration", transformation: "Transformation",
+  };
+  const billingLabels: Record<string, string> = {
+    fixed_price: "Fixed Price", time_and_material: "Time & Material",
+    managed_services: "Managed Services", staff_aug: "Staff Augmentation",
+  };
+  const alignLines: string[] = [];
+  if (pStart || pEnd) {
+    alignLines.push(
+      `Project timeline: ${pStart ?? "TBD"} → ${pEnd ?? "TBD"}. ` +
+      `ALL date fields, phases, milestones, and resource start/end dates MUST fall within this window. ` +
+      `Use these exact values wherever the artifact returns a project startDate or endDate.`
+    );
+  }
+  if (projectContext.methodology) {
+    const ml = methodologyLabels[String(projectContext.methodology)] ?? String(projectContext.methodology);
+    alignLines.push(`Methodology: ${ml}. Align all phases, ceremonies, terminology, planning cadence, and artifact structure to this methodology.`);
+  }
+  if (projectContext.engagementType) {
+    const et = engagementTypeLabels[String(projectContext.engagementType)] ?? String(projectContext.engagementType).replace(/_/g, " ");
+    alignLines.push(`Engagement type: ${et}. Tailor scope, deliverables, and team structure to this type of engagement.`);
+  }
+  if (projectContext.engagementMode) {
+    const bl = billingLabels[String(projectContext.engagementMode)] ?? String(projectContext.engagementMode).replace(/_/g, " ");
+    alignLines.push(`Billing model: ${bl}. Reflect this in cost estimates, resource rates, and any contractual or commercial sections.`);
+  }
+  const alignmentBlock = alignLines.length > 0
+    ? `\nMANDATORY PROJECT ALIGNMENT — apply to every field:\n${alignLines.map((l) => `- ${l}`).join("\n")}\n`
+    : "";
+
   // When a client template is active, its instructions lead the prompt so Claude
   // applies them before locking in the schema's default field list.
   const taskBlock = templateOverride?.userAddendum
     ? `Task: Generate a ${artifactType.replace(/_/g, " ")} for this project.
-
+${alignmentBlock}
 MANDATORY CLIENT-SPECIFIC REQUIREMENTS (apply these first — they override defaults):
 ${templateOverride.userAddendum}
 
@@ -1198,7 +1242,9 @@ Output format — produce a JSON object conforming to this schema:
 ${schema}
 
 Return the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`
-    : `Task: ${schema}\n\nReturn the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`;
+    : `Task: ${schema}
+${alignmentBlock}
+Return the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`;
 
   return [
     { text: taskBlock },

@@ -121,6 +121,7 @@ export async function generateArtifactForProject(
     code: project.code,
     customer: (project as any).customer,
     methodology: (project as any).methodology,
+    engagementType: (project as any).engagementType,
     engagementMode: (project as any).engagementMode,
     budget: project.budget,
     currency: project.currency,
