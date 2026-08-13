@@ -535,9 +535,8 @@ function ArtifactsTab({ project, catalog, onNavigate }: { project: any; catalog:
   const hasScope = !!latestBaseline;
 
   return (
-    <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
-      {/* Artifact panel */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <div>
+      <div>
         {/* Scope baseline status strip */}
         {hasScope && (staleArtifacts.length > 0 || ungeneratedBL.length > 0) && (
           <div style={{ border: `1px solid #fcd34d`, borderRadius: 10, padding: "10px 14px", marginBottom: 14, background: "#fffbeb", display: "flex", alignItems: "flex-start", gap: 10 }}>
@@ -587,56 +586,6 @@ function ArtifactsTab({ project, catalog, onNavigate }: { project: any; catalog:
         />
       </div>
 
-      {/* Right rail */}
-      <div style={{ width: 288, flexShrink: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Project health */}
-        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 17px" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const, marginBottom: 12 }}>Project Health</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: "50%",
-              background: `conic-gradient(${ragColor(healthStatus)} 0 ${healthScore || 0}%,#eceef2 ${healthScore || 0}% 100%)`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <div style={{
-                width: 42, height: 42, borderRadius: "50%", background: C.surface,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                font: "700 16px 'IBM Plex Mono'", color: ragColor(healthStatus),
-              }}>{healthScore ? Math.round(healthScore) : "—"}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: ragColor(healthStatus), textTransform: "capitalize" as const }}>{healthStatus}</div>
-              <div style={{ fontSize: "11.5px", color: C.text3, marginTop: 2 }}>
-                {project.budget ? formatCurrency(project.budget, project.currency) : "Budget TBD"}
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, marginTop: 15 }}>
-            {[
-              { label: "SPI", value: latestStatus?.scheduleVariance != null ? (1 + latestStatus.scheduleVariance / 100).toFixed(2) : "—", color: C.amber },
-              { label: "CPI", value: latestStatus?.budgetVariance != null ? (1 + latestStatus.budgetVariance / 100).toFixed(2) : "—", color: C.green },
-              { label: "Budget", value: project.budget ? `${Math.round((Number(latestStatus?.actualCost || 0) / project.budget) * 100)}%` : "—", color: C.text },
-            ].map(m => (
-              <div key={m.label} style={{ flex: 1, background: C.surface2, borderRadius: 9, padding: "9px 10px" }}>
-                <div style={{ fontSize: 10, color: C.text3 }}>{m.label}</div>
-                <div className="mono" style={{ fontSize: 16, fontWeight: 600, color: m.color }}>{m.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* AI Recommendations */}
-        {latestStatus?.aiSummary && (
-          <div style={{ background: "linear-gradient(160deg,#f4f5ff,#eef0fc)", border: `1px solid ${C.primaryBorder}`, borderRadius: 14, padding: "16px 17px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-              <span style={{ color: C.primary, fontSize: 14 }}>✦</span>
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".05em", color: C.primary, textTransform: "uppercase" as const }}>AI Summary</span>
-            </div>
-            <p style={{ fontSize: "12.5px", color: "#3a3f52", lineHeight: 1.6, margin: 0 }}>{latestStatus.aiSummary}</p>
-          </div>
-        )}
-
-      </div>
     </div>
   );
 }
@@ -1739,6 +1688,19 @@ function ScheduleTab({ project }: { project: any }) {
         <div>
           <div style={{ fontSize: 16, fontWeight: 600, color: C.text }}>Project Schedule</div>
           {tasks.length > 0 && <div style={{ fontSize: 12, color: C.text3, marginTop: 1 }}>{tasks.length} tasks · {phases.length} phases</div>}
+          {(project.startDate || project.endDate) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5, fontSize: 12 }}>
+              <CalendarDays size={12} color={C.primary} />
+              <span style={{ color: C.text3 }}>Project window:</span>
+              <span style={{ fontWeight: 600, color: C.primary }}>
+                {project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "TBD"}
+              </span>
+              <span style={{ color: C.text3 }}>→</span>
+              <span style={{ fontWeight: 600, color: C.primary }}>
+                {project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "TBD"}
+              </span>
+            </div>
+          )}
         </div>
         <div style={{ flex: 1 }} />
         {tasks.length > 0 && (
