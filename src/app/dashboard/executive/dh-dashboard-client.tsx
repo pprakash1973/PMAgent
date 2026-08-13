@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from "recharts";
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 export interface DhProject {
@@ -45,7 +46,7 @@ const C = {
   green: "#0F9F70", greenBg: "#E6F6F0", greenLine: "#BFE8D8",
   grey: "#6F7880", greyBg: "#EEF0F2", greyLine: "#DBE0E3",
   tabBar: "#003C51",
-  FF: "'Aptos','Calibri','Segoe UI',system-ui,sans-serif",
+  FF: "var(--font-inter),'Inter',system-ui,sans-serif",
   FM: "'Consolas','SF Mono','Courier New',monospace",
 };
 
@@ -314,6 +315,254 @@ function ClusterBar({ c }: { c: ClusterHealth }) {
   );
 }
 
+// ── Overview section ──────────────────────────────────────────────────────────────
+function OverviewSection({ projects, escalations }: { projects: DhProject[]; escalations: DhEscalation[] }) {
+  const redCount   = projects.filter(p => p.rag === "red").length;
+  const amberCount = projects.filter(p => p.rag === "amber").length;
+  const greenCount = projects.filter(p => p.rag === "green").length;
+  const total = projects.length || 1;
+
+  const spiVals = projects.map(p => p.spi).filter((v): v is number => v !== null);
+  const cpiVals = projects.map(p => p.cpi).filter((v): v is number => v !== null);
+  const avgSpi = spiVals.length ? spiVals.reduce((a, b) => a + b, 0) / spiVals.length : null;
+  const avgCpi = cpiVals.length ? cpiVals.reduce((a, b) => a + b, 0) / cpiVals.length : null;
+  const avgBudget = projects.length ? Math.round(projects.reduce((s, p) => s + p.budPct, 0) / projects.length) : null;
+  const onTimePct = projects.length ? Math.round(projects.filter(p => (p.spi ?? 0) >= 0.85).length / projects.length * 100) : null;
+  const revenueAtRisk = projects.filter(p => p.rag !== "green").reduce((s, p) => s + (p.budget ?? 0), 0);
+  const fmtM = (v: number) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v}`;
+
+  const topAtRisk = [...projects]
+    .filter(p => p.rag === "red" || p.rag === "amber")
+    .sort((a, b) => (a.spi ?? 999) - (b.spi ?? 999))
+    .slice(0, 5);
+
+  const openEscs = escalations.filter(e => ["open", "acknowledged", "in_progress"].includes(e.status)).slice(0, 4);
+
+  function KpiTile({ label, value, sub, color, bg }: { label: string; value: string | null; sub: string; color: string; bg: string }) {
+    return (
+      <div style={{ background: bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px" }}>
+        <div style={{ fontSize: 9.5, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: ".07em", marginBottom: 6, fontFamily: C.FF }}>{label}</div>
+        <div style={{ fontSize: 26, fontWeight: 700, color, fontVariantNumeric: "tabular-nums", lineHeight: 1.1, fontFamily: C.FM }}>{value ?? "—"}</div>
+        <div style={{ fontSize: 10.5, color: C.ink3, marginTop: 4, fontFamily: C.FF }}>{sub}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
+      {/* KPI strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 12, marginBottom: 20 }}>
+        <KpiTile label="Avg SPI" value={avgSpi !== null ? avgSpi.toFixed(2) : null} sub="Schedule performance" color={avgSpi !== null && avgSpi < 0.85 ? C.red : avgSpi !== null && avgSpi < 0.95 ? C.amber : C.teal} bg={avgSpi !== null && avgSpi < 0.85 ? C.redBg : avgSpi !== null && avgSpi < 0.95 ? C.amberBg : C.greenBg} />
+        <KpiTile label="Avg CPI" value={avgCpi !== null ? avgCpi.toFixed(2) : null} sub="Cost performance" color={avgCpi !== null && avgCpi < 0.85 ? C.red : avgCpi !== null && avgCpi < 0.95 ? C.amber : C.teal} bg={avgCpi !== null && avgCpi < 0.85 ? C.redBg : avgCpi !== null && avgCpi < 0.95 ? C.amberBg : C.greenBg} />
+        <KpiTile label="Budget Util." value={avgBudget !== null ? `${avgBudget}%` : null} sub="Across all projects" color={avgBudget !== null && avgBudget > 85 ? C.red : C.ink2} bg={C.surface} />
+        <KpiTile label="On-Time Delivery" value={onTimePct !== null ? `${onTimePct}%` : null} sub="Projects with SPI ≥ 0.85" color={onTimePct !== null && onTimePct < 60 ? C.red : onTimePct !== null && onTimePct < 75 ? C.amber : C.teal} bg={onTimePct !== null && onTimePct < 60 ? C.redBg : onTimePct !== null && onTimePct < 75 ? C.amberBg : C.greenBg} />
+        <KpiTile label="Active Projects" value={String(projects.length)} sub="Across all clusters" color={C.blue} bg={C.blueSoft} />
+        <KpiTile label="Revenue at Risk" value={revenueAtRisk > 0 ? fmtM(revenueAtRisk) : "$0"} sub="Critical + At Risk budget" color={revenueAtRisk > 0 ? C.red : C.green} bg={revenueAtRisk > 0 ? C.redBg : C.greenBg} />
+      </div>
+
+      {/* Health distribution bar */}
+      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 20px", marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: C.FF }}>Project Health Distribution</span>
+          <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{projects.length} total projects</span>
+        </div>
+        <div style={{ display: "flex", height: 14, borderRadius: 99, overflow: "hidden", gap: 1 }}>
+          {redCount > 0   && <div style={{ width: `${(redCount   / total) * 100}%`, background: C.red   }} title={`Critical: ${redCount}`} />}
+          {amberCount > 0 && <div style={{ width: `${(amberCount / total) * 100}%`, background: C.amber }} title={`At Risk: ${amberCount}`} />}
+          {greenCount > 0 && <div style={{ flex: 1, background: C.green }} title={`On Track: ${greenCount}`} />}
+        </div>
+        <div style={{ display: "flex", gap: 20, marginTop: 10 }}>
+          {[{ c: C.red, l: "Critical", v: redCount }, { c: C.amber, l: "At Risk", v: amberCount }, { c: C.green, l: "On Track", v: greenCount }].map(k => (
+            <div key={k.l} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: "50%", background: k.c, display: "inline-block" }} />
+              <span style={{ fontSize: 12, color: C.ink3, fontFamily: C.FF }}>{k.l}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: k.c, fontFamily: C.FM }}>{k.v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Two-column: at-risk + escalations */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* Top at-risk */}
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: C.FF }}>Top At-Risk Projects</span>
+            <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{redCount + amberCount} projects</span>
+          </div>
+          {topAtRisk.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.green, fontFamily: C.FF }}>✓ All projects on track</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {topAtRisk.map(p => (
+                <div key={p.id} style={{ borderLeft: `4px solid ${ragColor(p.rag)}`, paddingLeft: 12, paddingTop: 6, paddingBottom: 6, borderRadius: "0 8px 8px 0", background: p.rag === "red" ? C.redBg : C.amberBg }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontFamily: C.FF }}>{p.name}</div>
+                      <div style={{ fontSize: 11, color: C.ink3, marginTop: 2, fontFamily: C.FF }}>{p.clientName} · PM: {p.pmName}</div>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: `${ragColor(p.rag)}22`, color: ragColor(p.rag), border: `1px solid ${ragColor(p.rag)}33`, flexShrink: 0, fontFamily: C.FF }}>
+                      {p.rag === "red" ? "Critical" : "At Risk"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+                    <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>SPI <span style={{ fontWeight: 700, color: spiColor(p.spi), fontFamily: C.FM }}>{p.spi !== null ? p.spi.toFixed(2) : "—"}</span></span>
+                    <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>CPI <span style={{ fontWeight: 700, color: spiColor(p.cpi), fontFamily: C.FM }}>{p.cpi !== null ? p.cpi.toFixed(2) : "—"}</span></span>
+                    <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>Budget <span style={{ fontWeight: 700, color: p.budPct > 85 ? C.red : C.ink, fontFamily: C.FM }}>{p.budPct}%</span></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Open escalations */}
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: C.FF }}>Open Escalations</span>
+            <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{openEscs.length} open</span>
+          </div>
+          {openEscs.length === 0 ? (
+            <div style={{ fontSize: 13, color: C.green, fontFamily: C.FF }}>✓ No open escalations</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {openEscs.map((e, i) => {
+                const sv = sev(e.severity);
+                const age = Math.floor((Date.now() - new Date(e.createdAt).getTime()) / 86400000);
+                return (
+                  <div key={e.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, paddingTop: 12, paddingBottom: 12, borderBottom: i < openEscs.length - 1 ? `1px solid ${C.borderSoft}` : "none" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const, marginBottom: 3 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: C.ink, fontFamily: C.FF }}>{e.title}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 5, background: sv.bg, color: sv.c, border: `1px solid ${sv.border}`, fontFamily: C.FF }}>{e.severity}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>{e.project?.name} · {e.raisedBy.fullName}</div>
+                    </div>
+                    <div style={{ textAlign: "right" as const, flexShrink: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: age >= 3 ? C.red : C.amber, fontFamily: C.FM }}>{age}d</div>
+                      <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF }}>open</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Delivery metrics section ───────────────────────────────────────────────────────
+function MetricsSection({ trends, projects, clusterHealth }: { trends: TrendPoint[]; projects: DhProject[]; clusterHealth: ClusterHealth[] }) {
+  const spiByCluster = clusterHealth.map(c => {
+    const clusterProjects = projects.filter(p => p.clusterId === c.id);
+    const vals = clusterProjects.map(p => p.spi).filter((v): v is number => v !== null);
+    return { name: c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name, avgSpi: vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null, projects: c.total };
+  }).filter(c => c.avgSpi !== null);
+
+  const cpiByCluster = clusterHealth.map(c => {
+    const clusterProjects = projects.filter(p => p.clusterId === c.id);
+    const vals = clusterProjects.map(p => p.cpi).filter((v): v is number => v !== null);
+    return { name: c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name, avgCpi: vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null };
+  }).filter(c => c.avgCpi !== null);
+
+  const chartCard = (title: string, sub: string, children: React.ReactNode) => (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: C.FF }}>{title}</div>
+        <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 2, fontFamily: C.FF }}>{sub}</div>
+      </div>
+      {children}
+    </div>
+  );
+
+  const trendHasSpiData = trends.some(t => t.avgSpi !== null);
+  const trendHasCpiData = trends.some(t => t.avgCpi !== null);
+  const trendHasHealthData = trends.some(t => t.healthPct !== null);
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        {/* SPI trend */}
+        {chartCard("Portfolio SPI Trend", "Schedule performance index — 6-month rolling", (
+          trendHasSpiData ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={trends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
+                <YAxis domain={[0.5, 1.05]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => v.toFixed(2)} />
+                <ReferenceLine y={0.85} stroke={C.amber} strokeDasharray="4 4" />
+                <ReferenceLine y={0.95} stroke={C.green} strokeDasharray="4 4" />
+                <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(2) : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
+                <Line type="monotone" dataKey="avgSpi" name="Avg SPI" stroke={C.teal} strokeWidth={2.5} dot={{ r: 3, fill: C.teal }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No trend data available yet</div>
+        ))}
+
+        {/* CPI trend */}
+        {chartCard("Portfolio CPI Trend", "Cost performance index — 6-month rolling", (
+          trendHasCpiData ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={trends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
+                <YAxis domain={[0.5, 1.05]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => v.toFixed(2)} />
+                <ReferenceLine y={0.85} stroke={C.amber} strokeDasharray="4 4" />
+                <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(2) : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
+                <Line type="monotone" dataKey="avgCpi" name="Avg CPI" stroke={C.blue} strokeWidth={2.5} dot={{ r: 3, fill: C.blue }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No trend data available yet</div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* SPI by cluster */}
+        {chartCard("SPI by Cluster", "Average schedule performance per cluster", (
+          spiByCluster.length > 0 ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={spiByCluster} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: C.inkFaint }} />
+                <YAxis domain={[0, 1.1]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => v.toFixed(1)} />
+                <ReferenceLine y={0.85} stroke={C.amber} strokeDasharray="4 4" />
+                <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(2) : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
+                <Bar dataKey="avgSpi" name="Avg SPI" radius={[4, 4, 0, 0]}>
+                  {spiByCluster.map((entry, index) => (
+                    <Cell key={`spi-cell-${index}`} fill={(entry.avgSpi ?? 1) < 0.85 ? C.red : (entry.avgSpi ?? 1) < 0.95 ? C.amber : C.green} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No cluster data available yet</div>
+        ))}
+
+        {/* Health % trend */}
+        {chartCard("Portfolio Health % Trend", "% of projects on track — 6-month rolling", (
+          trendHasHealthData ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={trends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => `${v}%`} />
+                <ReferenceLine y={75} stroke={C.amber} strokeDasharray="4 4" />
+                <Tooltip formatter={(v) => typeof v === "number" ? `${v}%` : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
+                <Bar dataKey="healthPct" name="On Track %" radius={[4, 4, 0, 0]}>
+                  {trends.map((entry, index) => (
+                    <Cell key={`hp-cell-${index}`} fill={(entry.healthPct ?? 100) < 60 ? C.red : (entry.healthPct ?? 100) < 75 ? C.amber : C.green} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No health trend data available yet</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────────
 export default function DhDashboardClient({
   projects, trends, userName, escalations, clusterHealth,
@@ -324,7 +573,7 @@ export default function DhDashboardClient({
   escalations: DhEscalation[];
   clusterHealth: ClusterHealth[];
 }) {
-  const [tab, setTab] = useState<"escalations" | "red" | "clusters">("escalations");
+  const [tab, setTab] = useState<"overview" | "escalations" | "red" | "clusters" | "metrics">("overview");
   const [resolveTarget, setResolveTarget] = useState<DhEscalation | null>(null);
   const [ackedIds, setAckedIds] = useState<Set<string>>(new Set());
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
@@ -370,9 +619,11 @@ export default function DhDashboardClient({
 
       {/* Tab bar */}
       <div style={{ background: C.tabBar, borderBottom: "1px solid rgba(255,255,255,.1)", padding: "0 22px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+        {tabBtn("overview", "Overview")}
         {tabBtn("escalations", "Escalation inbox", openEscs.length)}
         {tabBtn("red", "Red projects", redProjects.length)}
         {tabBtn("clusters", "Cluster health")}
+        {tabBtn("metrics", "Delivery metrics")}
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingRight: 4 }}>
           {redCount > 0 && <span style={{ fontSize: 11.5, fontWeight: 600, color: C.red, background: C.redBg, borderRadius: 4, padding: "2px 8px", fontFamily: C.FF }}>{redCount} critical</span>}
@@ -380,6 +631,16 @@ export default function DhDashboardClient({
           <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.4)", fontFamily: C.FF }}>{totalProjects} projects · {clusterHealth.length} cluster{clusterHealth.length !== 1 ? "s" : ""}</span>
         </div>
       </div>
+
+      {/* ── Delivery overview ── */}
+      {tab === "overview" && (
+        <OverviewSection projects={projects} escalations={escalations} />
+      )}
+
+      {/* ── Delivery metrics ── */}
+      {tab === "metrics" && (
+        <MetricsSection trends={trends} projects={projects} clusterHealth={clusterHealth} />
+      )}
 
       {/* ── Escalation inbox ── */}
       {tab === "escalations" && (
