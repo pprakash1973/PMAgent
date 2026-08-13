@@ -61,6 +61,7 @@ export async function generateArtifactForProject(
       milestones: true,
       risks: true,
       requirementsDocs: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, take: 1 },
+      resources: true,
     },
   });
 
@@ -130,6 +131,13 @@ export async function generateArtifactForProject(
     teamSize: (project as any).teamSize,
     description: project.description,
     milestones: project.milestones,
+    resources: ((project as any).resources ?? []).map((r: any) => ({
+      name: r.name,
+      role: r.role,
+      allocation: r.allocation,
+      skills: r.skills,
+      email: r.email,
+    })),
     ...(artifactType === "traceability_matrix" && { scheduleTasks, wbsStructure: wbsContent }),
     ...(artifactType === "evm_analysis" && {
       costEntries: costEntries.map((e) => ({

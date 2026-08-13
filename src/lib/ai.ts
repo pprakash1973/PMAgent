@@ -501,7 +501,23 @@ Return JSON with:
 - constraints (array of strings)
 - governance (object): {sponsor (string), pm (string), steeringCommittee (string), reportingCadence (string)}
 - approvalSignatures (array of {role})
-- nextSteps (array of strings): immediate actions post-approval`,
+- nextSteps (array of strings): immediate actions post-approval
+- teamIntroduction (array of {name, role, expertise (array of strings, max 3 bullet points), email, availability (string, e.g. "100%" or "50%")}):
+    If project resources are provided in the context, use them (map name, role, skills to the fields).
+    Otherwise generate 5–7 placeholders using generic numbered roles (e.g. "Project Manager", "Technical Lead", "Business Analyst 1", "Developer 1", "QA Engineer 1").
+    For placeholders, use "[Name TBD]" for name and "[email@company.com]" for email.
+- raci (array of {activity (string), pm (string), technicalLead (string), ba (string), developer (string), qa (string), sponsor (string), client (string)}):
+    Generate a RACI matrix for 10–12 key project activities covering initiation, planning, execution, testing, and closure.
+    Each cell value must be one of: R (Responsible), A (Accountable), C (Consulted), I (Informed), or "—".
+    Every row must have exactly one A. PM is typically Accountable for planning/reporting activities.
+    Example activities: Project Kick-off, Requirements Gathering, Solution Architecture, Development Sprint Planning, Code Review, UAT Planning, UAT Sign-off, Risk Management, Status Reporting, Change Control, Go-Live Approval, Lessons Learned.
+- escalationChannels (object):
+    {
+      internal (array of {level (string: "L1"/"L2"/"L3"), title (string), name (string), contact (string), responseTime (string: e.g. "4 hours"), description (string)}): 3 levels — L1=Project Manager, L2=Delivery Head/Program Manager, L3=Executive Sponsor,
+      vendor (array of {level (string: "L1"/"L2"/"L3"), title (string), name (string), contact (string), responseTime (string), description (string)}): 3 vendor escalation levels — L1=Vendor Project Manager, L2=Vendor Account Manager, L3=Vendor Executive,
+      guidelines (array of strings): 4 clear escalation guidelines (when to escalate, expected behaviour, SLA expectations)
+    }
+    Use the governance object's pm and sponsor fields if available. Use generic placeholders like "[PM Name]", "[Account Manager]" where names are unknown.`,
 
     assumption_log: `Generate an Assumption Log.
 Return JSON with:

@@ -1523,7 +1523,9 @@ function ScheduleTab({ project }: { project: any }) {
       if (!editVal.trim()) return;
       await patchTask(taskId, { name: editVal.trim() });
     } else if (field === "baselineDays") {
-      const days = Math.max(1, parseInt(editVal) || 1);
+      // Input is in hours; convert to days (1 day = 8 hrs), minimum 1 day
+      const hrs = Math.max(1, parseInt(editVal) || 8);
+      const days = Math.max(1, Math.round(hrs / 8));
       const task = tasks.find(t => t.id === taskId);
       if (!task) return;
       const newFinish = addWorkingDays(new Date(task.baselineStart), days);
@@ -1895,7 +1897,7 @@ function ScheduleTab({ project }: { project: any }) {
                           <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Dates</span></div>
                           <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Status</span></div>
                           <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Assignee</span></div>
-                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Days</span></div>
+                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Hours</span></div>
                           <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>%</span></div>
                           <div />
                         </div>
@@ -1966,13 +1968,13 @@ function ScheduleTab({ project }: { project: any }) {
                                 )}
                               </div>
                               <div style={{ textAlign: "center" as const, cursor: "text" }}
-                                onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.baselineDays)); }}>
+                                onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8)); }}>
                                 {isEditDays ? (
-                                  <input autoFocus type="number" min={1} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
+                                  <input autoFocus type="number" min={1} step={4} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
                                     onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-                                    style={{ width: 36, height: 22, textAlign: "center", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                                    style={{ width: 42, height: 22, textAlign: "center", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                                 ) : (
-                                  <span style={{ fontSize: 12, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.baselineDays}d</span>
+                                  <span style={{ fontSize: 12, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
                                 )}
                               </div>
                               <div style={{ textAlign: "center" as const, cursor: "text" }}
@@ -2021,7 +2023,7 @@ function ScheduleTab({ project }: { project: any }) {
               <div style={{ width: GRID_W, flexShrink: 0, display: "flex", alignItems: "center" }}>
                 <div style={{ width: 28 }} />
                 <div style={{ flex: 1, padding: "7px 8px", font: `600 12px var(--font-inter),'Inter'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>Task</div>
-                <div style={{ width: 60, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>Days</div>
+                <div style={{ width: 60, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>Hours</div>
                 <div style={{ width: 52, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
                 <div style={{ width: 90, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const, padding: "7px 6px" }}>Start</div>
               </div>
@@ -2118,17 +2120,17 @@ function ScheduleTab({ project }: { project: any }) {
                             )}
                           </div>
 
-                          {/* Days */}
+                          {/* Hours */}
                           <div style={{ width: 60, textAlign: "center" as const, cursor: "text" }}
-                            onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.baselineDays)); }}>
+                            onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8)); }}>
                             {isEditDays ? (
-                              <input autoFocus type="number" min={1} value={editVal}
+                              <input autoFocus type="number" min={1} step={4} value={editVal}
                                 onChange={e => setEditVal(e.target.value)}
                                 onBlur={commitEdit}
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
                                 style={{ width: 44, height: 22, textAlign: "center", fontSize: 14, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                             ) : (
-                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: C.text2 }}>{t.baselineDays}d</span>
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: C.text2 }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
                             )}
                           </div>
 
@@ -4808,13 +4810,19 @@ function OverviewTab({ project }: { project: any }) {
   const scoreC = compositeScore === null ? C.text3 : compositeScore < 50 ? C.red : compositeScore < 70 ? C.amber : C.green;
   const fmt2 = (v: number | null) => v === null ? "—" : v.toFixed(2);
   const fmtK = (v: number | null) => v === null ? "—" : `$${Math.round(v / 1000)}K`;
-  const budgetPct = bac && ac ? Math.round((ac / bac) * 100) : null;
+  const budgetPct = bac && ac && ac > 0 ? Math.round((ac / bac) * 100) : null;
   const evPct = pv && ev ? Math.round((ev / pv) * 100) : null;
   const highRisks = risks.filter((r: any) => ["high", "very_high"].includes(r.probability ?? "")).length;
   const critIssues = issues.filter((i: any) => ["critical", "high"].includes(i.severity ?? "")).length;
 
-  const nextMs = ([...(project.milestones ?? [])] as any[])
-    .filter(m => m.status === "pending" && m.dueDate && new Date(m.dueDate) > new Date())
+  const allMilestones = (project.milestones ?? []) as any[];
+  const completedMsCount = allMilestones.filter((m: any) => (m.status ?? "").toLowerCase().match(/complet|done/)).length;
+  const pendingMsCount = allMilestones.length - completedMsCount;
+  const overdueMsCount = allMilestones.filter((m: any) => !(m.status ?? "").toLowerCase().match(/complet|done/) && m.dueDate && new Date(m.dueDate) < new Date()).length;
+  const msCompletionPct = allMilestones.length > 0 ? Math.round((completedMsCount / allMilestones.length) * 100) : null;
+
+  const nextMs = allMilestones
+    .filter((m: any) => !(m.status ?? "").toLowerCase().match(/complet|done/) && m.dueDate && new Date(m.dueDate) > new Date())
     .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0] ?? null;
   const daysToMs = nextMs ? Math.ceil((new Date(nextMs.dueDate).getTime() - Date.now()) / 86400000) : null;
 
@@ -4882,8 +4890,14 @@ function OverviewTab({ project }: { project: any }) {
 
       {/* Row 2 — metric chips */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
-        {chip("Schedule %", evPct !== null ? `${evPct}%` : null, evPct !== null ? (evPct >= 90 ? "On track" : evPct >= 80 ? "Slightly behind" : "Behind schedule") : "No EVM data", evPct !== null && evPct < 80 ? C.amber : C.primary)}
-        {chip("Budget Used", budgetPct !== null ? `${budgetPct}%` : null, budgetPct !== null ? `${fmtK(ac)} of ${fmtK(bac)}` : "No data", budgetPct !== null && budgetPct > 80 ? C.amber : C.primary)}
+        {chip("Schedule %",
+          evPct !== null ? `${evPct}%` : msCompletionPct !== null ? `${msCompletionPct}%` : null,
+          evPct !== null ? (evPct >= 90 ? "On track" : evPct >= 80 ? "Slightly behind" : "Behind schedule") : msCompletionPct !== null ? "Milestone completion" : "No data",
+          evPct !== null && evPct < 80 ? C.amber : msCompletionPct !== null && msCompletionPct < 50 ? C.amber : C.primary)}
+        {chip("Budget Used",
+          budgetPct !== null ? `${budgetPct}%` : bac !== null ? fmtK(bac) : null,
+          budgetPct !== null ? `${fmtK(ac)} of ${fmtK(bac)} (AC)` : bac !== null ? "Log costs in Cost tab to track" : "Set budget in Project Info",
+          budgetPct !== null && budgetPct > 80 ? C.amber : C.primary)}
         {chip("EAC Forecast", fmtK(eac), bac && eac ? (eac > bac ? `+${fmtK(eac - bac)} over BAC` : "Within budget") : "No forecast", eac !== null && bac !== null && eac > bac ? C.red : C.primary)}
         {chip("Open Risks", risks.length, `${highRisks} high priority`, risks.length > 5 ? C.red : risks.length > 2 ? C.amber : C.green)}
         {chip("Open Issues", issues.length, `${critIssues} critical / high`, issues.length > 3 ? C.red : issues.length > 1 ? C.amber : C.green)}
@@ -4918,34 +4932,42 @@ function OverviewTab({ project }: { project: any }) {
         </>)}
 
         {card(<>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 12 }}>Risks &amp; Issues</div>
-          {risks.length === 0 && issues.length === 0 ? (
-            <div style={{ fontSize: 12, color: C.text3, textAlign: "center", padding: "32px 0" }}>No open items — clean slate ✓</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              {risks.slice(0, 3).map((r: any) => {
-                const rs = riskScore(r);
-                const rc = rs >= 15 ? C.red : rs >= 8 ? C.amber : C.green;
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 12 }}>Milestone Progress</div>
+          {allMilestones.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.text3, textAlign: "center", padding: "32px 0" }}>No milestones defined yet</div>
+          ) : (<>
+            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px 0", background: C.greenLight, borderRadius: 10 }}>
+                <div style={{ fontSize: 36, fontWeight: 700, color: C.green, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{completedMsCount}</div>
+                <div style={{ fontSize: 9.5, color: C.green, fontWeight: 700, marginTop: 5, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>Completed</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", padding: "10px 0", background: overdueMsCount > 0 ? C.redLight : C.amberLight, borderRadius: 10 }}>
+                <div style={{ fontSize: 36, fontWeight: 700, color: overdueMsCount > 0 ? C.red : C.amber, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{pendingMsCount}</div>
+                <div style={{ fontSize: 9.5, color: overdueMsCount > 0 ? C.red : C.amber, fontWeight: 700, marginTop: 5, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>
+                  {overdueMsCount > 0 ? `Pending · ${overdueMsCount} overdue` : "Pending"}
+                </div>
+              </div>
+            </div>
+            <div style={{ height: 5, background: C.borderLight, borderRadius: 99, marginBottom: 8 }}>
+              <div style={{ height: "100%", width: `${msCompletionPct ?? 0}%`, background: C.green, borderRadius: 99, transition: "width .4s" }} />
+            </div>
+            <div style={{ fontSize: 10.5, color: C.text3, marginBottom: 10 }}>{msCompletionPct ?? 0}% complete · {allMilestones.length} total milestones</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {allMilestones.filter((m: any) => !(m.status ?? "").toLowerCase().match(/complet|done/)).slice(0, 3).map((m: any) => {
+                const isOverdue = m.dueDate && new Date(m.dueDate) < new Date();
+                const dLeft = m.dueDate ? Math.ceil((new Date(m.dueDate).getTime() - Date.now()) / 86400000) : null;
                 return (
-                  <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.surface2, borderRadius: 8 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: rc, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.description}</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: rc }}>{rs}</span>
-                  </div>
-                );
-              })}
-              {issues.slice(0, 2).map((i: any) => {
-                const ic = i.severity === "critical" ? C.red : i.severity === "high" ? C.amber : C.text3;
-                return (
-                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.surface2, borderRadius: 8 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: ic, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.description}</span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: ic, textTransform: "capitalize" as const }}>{i.severity}</span>
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", background: C.surface2, borderRadius: 8 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: isOverdue ? C.red : C.amber, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{m.name}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: isOverdue ? C.red : C.text3, whiteSpace: "nowrap" as const }}>
+                      {dLeft === null ? "—" : isOverdue ? `${Math.abs(dLeft)}d overdue` : `in ${dLeft}d`}
+                    </span>
                   </div>
                 );
               })}
             </div>
-          )}
+          </>)}
         </>)}
       </div>
 

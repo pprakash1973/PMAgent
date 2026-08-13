@@ -434,6 +434,8 @@ const PHASE_COLORS = ["006E74", "881E87", "185FA5", "B07C10", "3B6D11"];
 function buildCharter(pptx: any, content: any, projectName: string) {
   let page = 1;
   const title = content.projectTitle ?? projectName;
+  const milestones = content.milestones ?? [];
+  const stk = content.stakeholders ?? [];
 
   // ── Slide 1: Cover — split-panel ──
   const cov = pptx.addSlide();
@@ -479,6 +481,53 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   const sponsor = safeStr(content.sponsor ?? content.projectSponsor ?? "");
   if (sponsor) cov.addText(`Sponsor: ${sponsor}`, { x: 0.55, y: 5.05, w: 6.7, h: 0.3, fontSize: 9.5, color: DARK_GRAY, fontFace: "Aptos" });
   cov.addText(FOOTER_TEXT, { x: 0.4, y: 6.95, w: 7.0, h: 0.3, fontSize: 7, color: DARK_GRAY, fontFace: "Aptos" });
+
+  // ── Agenda Slide ──
+  const agSlide = pptx.addSlide();
+  agSlide.background = { color: WHITE };
+  agSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.33, h: 0.72, fill: { color: PETROL } });
+  agSlide.addText("Agenda", { x: 0.3, y: 0, w: 10, h: 0.72, fontSize: 22, bold: true, color: WHITE, valign: "middle", fontFace: "Aptos" });
+  agSlide.addText(title, { x: 0.3, y: 0, w: 12.73, h: 0.72, fontSize: 9, color: TEAL_L, align: "right", valign: "middle", fontFace: "Aptos" });
+
+  const agendaItems = [
+    "Executive Summary",
+    "Project Scope",
+    "Objectives & Success Criteria",
+    "Team Introduction",
+    ...(milestones.length ? ["Key Milestones & Timeline"] : []),
+    ...(stk.length ? ["Stakeholder Overview"] : []),
+    "RACI Matrix",
+    "Top Risks at Initiation",
+    "Budget & Resources",
+    "Escalation Channels",
+    "Authorization & Sign-off",
+  ];
+  const agMid = Math.ceil(agendaItems.length / 2);
+  const agLeft = agendaItems.slice(0, agMid);
+  const agRight = agendaItems.slice(agMid);
+  const agItemH = 0.56;
+  const agStartY = 1.0;
+  const agColors = [PETROL, TEAL, PETROL, TEAL, PETROL, TEAL, PETROL];
+
+  agLeft.forEach((t, i) => {
+    const iy = agStartY + i * agItemH;
+    const bColor = agColors[i % agColors.length];
+    agSlide.addShape(pptx.ShapeType.roundRect, { x: 0.3, y: iy, w: 6.1, h: agItemH - 0.06, fill: { color: i % 2 === 0 ? "EEF4F6" : "E8F5F6" }, line: { color: MID_WASH, width: 0.5 }, rectRadius: 0.06 });
+    agSlide.addShape(pptx.ShapeType.roundRect, { x: 0.3, y: iy, w: 0.52, h: agItemH - 0.06, fill: { color: bColor }, rectRadius: 0.06 });
+    agSlide.addText(String(i + 1), { x: 0.3, y: iy, w: 0.52, h: agItemH - 0.06, fontSize: 12, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
+    agSlide.addText(t, { x: 0.9, y: iy + 0.05, w: 5.4, h: agItemH - 0.16, fontSize: 11, color: SOFT_BLACK, valign: "middle", fontFace: "Aptos" });
+  });
+
+  agRight.forEach((t, i) => {
+    const num = agMid + i + 1;
+    const iy = agStartY + i * agItemH;
+    const bColor = agColors[num % agColors.length];
+    agSlide.addShape(pptx.ShapeType.roundRect, { x: 6.93, y: iy, w: 6.1, h: agItemH - 0.06, fill: { color: num % 2 === 0 ? "EEF4F6" : "E8F5F6" }, line: { color: MID_WASH, width: 0.5 }, rectRadius: 0.06 });
+    agSlide.addShape(pptx.ShapeType.roundRect, { x: 6.93, y: iy, w: 0.52, h: agItemH - 0.06, fill: { color: bColor }, rectRadius: 0.06 });
+    agSlide.addText(String(num), { x: 6.93, y: iy, w: 0.52, h: agItemH - 0.06, fontSize: 12, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: "Aptos" });
+    agSlide.addText(t, { x: 7.53, y: iy + 0.05, w: 5.4, h: agItemH - 0.16, fontSize: 11, color: SOFT_BLACK, valign: "middle", fontFace: "Aptos" });
+  });
+  agSlide.addText(FOOTER_TEXT, { x: 0.4, y: 7.0, w: 12.53, h: 0.3, fontSize: 7, color: DARK_GRAY, fontFace: "Aptos" });
 
   // ── Slide 2: Executive Summary — 3 icon columns + dark KPI strip ──
   const s2 = contentSlide(pptx, "Executive Summary", projectName, page++);
@@ -538,8 +587,53 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     s4.addText(safeStr(obj).slice(0, 200), { x: x + 0.1, y: y + 0.5, w: 3.9, h: 1.9, fontSize: 10, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
   });
 
+  // ── Team Introduction Slide ──
+  const teamData: any[] = content.teamIntroduction ?? [];
+  const sTeam = contentSlide(pptx, "Team Introduction", projectName, page++);
+  const defaultTeam = [
+    { name: "[Name TBD]", role: "Project Manager", expertise: ["Project Planning", "Stakeholder Management", "Risk Governance"], email: "[pm@company.com]", availability: "100%" },
+    { name: "[Name TBD]", role: "Technical Lead", expertise: ["Solution Architecture", "Technical Design", "Code Review"], email: "[tl@company.com]", availability: "100%" },
+    { name: "[Name TBD]", role: "Business Analyst", expertise: ["Requirements Gathering", "Process Mapping", "UAT Coordination"], email: "[ba@company.com]", availability: "80%" },
+    { name: "[Name TBD]", role: "Developer", expertise: ["Full Stack Development", "API Integration", "Unit Testing"], email: "[dev@company.com]", availability: "100%" },
+    { name: "[Name TBD]", role: "QA Engineer", expertise: ["Test Planning", "Automation", "Defect Management"], email: "[qa@company.com]", availability: "80%" },
+  ];
+  const teamCards = teamData.length > 0 ? teamData.slice(0, 8) : defaultTeam;
+  const tCardW = 3.0;
+  const tCardH = 2.55;
+  const tCardGap = 0.18;
+  const tPerRow = 4;
+
+  teamCards.forEach((member: any, i: number) => {
+    const col = i % tPerRow;
+    const row = Math.floor(i / tPerRow);
+    const cx = 0.3 + col * (tCardW + tCardGap);
+    const cy = 0.9 + row * (tCardH + 0.22);
+    const cardColor = PHASE_COLORS[i % PHASE_COLORS.length];
+
+    sTeam.addShape(pptx.ShapeType.roundRect, { x: cx, y: cy, w: tCardW, h: tCardH, fill: { color: WASH }, line: { color: MID_WASH, width: 0.75 }, rectRadius: 0.08 });
+    sTeam.addShape(pptx.ShapeType.roundRect, { x: cx, y: cy, w: tCardW, h: 0.82, fill: { color: cardColor }, rectRadius: 0.08 });
+    sTeam.addShape(pptx.ShapeType.rect, { x: cx, y: cy + 0.62, w: tCardW, h: 0.2, fill: { color: cardColor } });
+    const initials = safeStr(member.name ?? "").split(" ").filter(Boolean).map((w: string) => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+    sTeam.addShape(pptx.ShapeType.ellipse, { x: cx + 0.12, y: cy + 0.16, w: 0.55, h: 0.55, fill: { color: WHITE } });
+    sTeam.addText(initials, { x: cx + 0.12, y: cy + 0.16, w: 0.55, h: 0.55, fontSize: 11, bold: true, color: cardColor, align: "center", valign: "middle", fontFace: "Aptos" });
+    sTeam.addText(safeStr(member.name ?? "").slice(0, 22), { x: cx + 0.75, y: cy + 0.1, w: 2.15, h: 0.38, fontSize: 10, bold: true, color: WHITE, valign: "middle", wrap: true, fontFace: "Aptos" });
+    const avail = safeStr(member.availability ?? "");
+    if (avail && avail !== "—") {
+      sTeam.addShape(pptx.ShapeType.roundRect, { x: cx + tCardW - 0.62, y: cy + 0.52, w: 0.54, h: 0.22, fill: { color: "D8F5EC" }, rectRadius: 0.04 });
+      sTeam.addText(avail, { x: cx + tCardW - 0.62, y: cy + 0.52, w: 0.54, h: 0.22, fontSize: 7, bold: true, color: GREEN, align: "center", valign: "middle", fontFace: "Aptos" });
+    }
+    sTeam.addText(safeStr(member.role ?? ""), { x: cx + 0.12, y: cy + 0.9, w: tCardW - 0.24, h: 0.3, fontSize: 9.5, bold: true, color: cardColor, fontFace: "Aptos" });
+    const skills: string[] = Array.isArray(member.expertise) ? member.expertise : [safeStr(member.expertise ?? member.skills ?? "")].filter((s) => s && s !== "—");
+    skills.slice(0, 3).forEach((sk: string, si: number) => {
+      sTeam.addText(`• ${safeStr(sk).slice(0, 30)}`, { x: cx + 0.12, y: cy + 1.24 + si * 0.3, w: tCardW - 0.24, h: 0.28, fontSize: 8.5, color: SOFT_BLACK, fontFace: "Aptos" });
+    });
+    const email = safeStr(member.email ?? "");
+    if (email && email !== "—") {
+      sTeam.addText(email.slice(0, 34), { x: cx + 0.12, y: cy + tCardH - 0.28, w: tCardW - 0.24, h: 0.24, fontSize: 7.5, color: DARK_GRAY, fontFace: "Aptos" });
+    }
+  });
+
   // ── Slide 5: Milestones — phase-band + horizontal timeline ──
-  const milestones = content.milestones ?? [];
   if (milestones.length) {
     const s5 = contentSlide(pptx, "Key Milestones & Timeline", projectName, page++);
     // Milestone completion badge (top-right, below phase band)
@@ -589,7 +683,6 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   }
 
   // ── Slide 6: Stakeholder 2×2 matrix + table ──
-  const stk = content.stakeholders ?? [];
   if (stk.length) {
     const s6 = contentSlide(pptx, "Stakeholder Overview", projectName, page++);
     // 2×2 matrix
@@ -627,6 +720,68 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     const tHeader = tHeaders.map((h) => ({ text: h, options: { bold: true, color: WHITE, fill: { color: PETROL }, fontSize: 9, fontFace: "Aptos" } }));
     s6.addTable([tHeader, ...tRows], { x: 6.1, y: 0.88, w: 6.93, colW: [1.8, 1.8, 1.0, 1.0, 1.33], border: { color: MID_WASH } });
   }
+
+  // ── RACI Matrix Slide ──
+  const raciData: any[] = content.raci ?? [];
+  const sRaci = contentSlide(pptx, "RACI Matrix", projectName, page++);
+  const raciCellColors: Record<string, string> = { R: "FFCDD2", A: "CFE2FF", C: "D5EFF1", I: "F0F0F0" };
+  const raciCellText: Record<string, string> = { R: "C0392B", A: PETROL, C: TEAL, I: DARK_GRAY };
+  const legendDefs = [
+    { code: "R", label: "Responsible", bg: "FFCDD2", tc: "C0392B" },
+    { code: "A", label: "Accountable", bg: "CFE2FF", tc: PETROL },
+    { code: "C", label: "Consulted", bg: "D5EFF1", tc: TEAL },
+    { code: "I", label: "Informed", bg: "F0F0F0", tc: DARK_GRAY },
+  ];
+  legendDefs.forEach((leg, li) => {
+    const lx = 0.3 + li * 3.15;
+    sRaci.addShape(pptx.ShapeType.roundRect, { x: lx, y: 0.82, w: 3.0, h: 0.28, fill: { color: leg.bg }, line: { color: MID_WASH, width: 0.5 }, rectRadius: 0.04 });
+    sRaci.addText(`${leg.code} — ${leg.label}`, { x: lx, y: 0.82, w: 3.0, h: 0.28, fontSize: 8, bold: true, color: leg.tc, align: "center", valign: "middle", fontFace: "Aptos" });
+  });
+
+  const raciRoles = ["pm", "technicalLead", "ba", "developer", "qa", "sponsor", "client"];
+  const raciHeaders = ["PM", "Tech Lead", "BA", "Developer", "QA", "Sponsor", "Client"];
+  const actColW = 2.9;
+  const roleColW = (12.73 - actColW) / raciRoles.length;
+  const rRowH = 0.41;
+  const rTableY = 1.22;
+
+  sRaci.addShape(pptx.ShapeType.rect, { x: 0.3, y: rTableY, w: actColW, h: rRowH, fill: { color: PETROL } });
+  sRaci.addText("Activity", { x: 0.3, y: rTableY, w: actColW, h: rRowH, fontSize: 9, bold: true, color: WHITE, valign: "middle", align: "center", fontFace: "Aptos" });
+  raciHeaders.forEach((hdr, hi) => {
+    const hx = 0.3 + actColW + hi * roleColW;
+    sRaci.addShape(pptx.ShapeType.rect, { x: hx, y: rTableY, w: roleColW - 0.03, h: rRowH, fill: { color: PETROL } });
+    sRaci.addText(hdr, { x: hx, y: rTableY, w: roleColW - 0.03, h: rRowH, fontSize: 7.5, bold: true, color: WHITE, valign: "middle", align: "center", wrap: true, fontFace: "Aptos" });
+  });
+
+  const defaultRaci = [
+    { activity: "Project Kick-off", pm: "A", technicalLead: "R", ba: "R", developer: "I", qa: "I", sponsor: "C", client: "C" },
+    { activity: "Requirements Gathering", pm: "A", technicalLead: "C", ba: "R", developer: "C", qa: "C", sponsor: "I", client: "C" },
+    { activity: "Solution Architecture", pm: "I", technicalLead: "A", ba: "C", developer: "R", qa: "C", sponsor: "I", client: "I" },
+    { activity: "Sprint / Iteration Planning", pm: "A", technicalLead: "R", ba: "C", developer: "R", qa: "C", sponsor: "I", client: "I" },
+    { activity: "Development", pm: "I", technicalLead: "A", ba: "C", developer: "R", qa: "C", sponsor: "I", client: "I" },
+    { activity: "Code Review", pm: "I", technicalLead: "A", ba: "I", developer: "R", qa: "C", sponsor: "—", client: "—" },
+    { activity: "UAT Planning", pm: "A", technicalLead: "C", ba: "R", developer: "C", qa: "R", sponsor: "I", client: "C" },
+    { activity: "UAT Sign-off", pm: "C", technicalLead: "I", ba: "R", developer: "I", qa: "A", sponsor: "C", client: "R" },
+    { activity: "Risk Management", pm: "A", technicalLead: "R", ba: "C", developer: "C", qa: "C", sponsor: "I", client: "I" },
+    { activity: "Status Reporting", pm: "A", technicalLead: "C", ba: "C", developer: "I", qa: "I", sponsor: "I", client: "I" },
+    { activity: "Go-Live Approval", pm: "R", technicalLead: "C", ba: "C", developer: "C", qa: "C", sponsor: "A", client: "A" },
+    { activity: "Lessons Learned", pm: "A", technicalLead: "R", ba: "R", developer: "R", qa: "R", sponsor: "I", client: "C" },
+  ];
+  const raciRows = raciData.length >= 3 ? raciData.slice(0, 12) : defaultRaci;
+  raciRows.forEach((row: any, ri: number) => {
+    const ry = rTableY + rRowH + ri * rRowH;
+    const rowBg = ri % 2 === 0 ? WHITE : WASH;
+    sRaci.addShape(pptx.ShapeType.rect, { x: 0.3, y: ry, w: actColW, h: rRowH - 0.02, fill: { color: rowBg }, line: { color: MID_WASH, width: 0.25 } });
+    sRaci.addText(safeStr(row.activity ?? ""), { x: 0.38, y: ry + 0.04, w: actColW - 0.16, h: rRowH - 0.1, fontSize: 8.5, color: SOFT_BLACK, valign: "middle", fontFace: "Aptos" });
+    raciRoles.forEach((role, hi) => {
+      const hx = 0.3 + actColW + hi * roleColW;
+      const cellVal = safeStr(row[role] ?? "—");
+      const cellBg = raciCellColors[cellVal] ?? rowBg;
+      const cellTc = raciCellText[cellVal] ?? DARK_GRAY;
+      sRaci.addShape(pptx.ShapeType.rect, { x: hx, y: ry, w: roleColW - 0.03, h: rRowH - 0.02, fill: { color: cellBg }, line: { color: MID_WASH, width: 0.25 } });
+      sRaci.addText(cellVal, { x: hx, y: ry, w: roleColW - 0.03, h: rRowH - 0.02, fontSize: 9, bold: cellVal !== "—", color: cellTc, align: "center", valign: "middle", fontFace: "Aptos" });
+    });
+  });
 
   // ── Slide 7: Risks — severity-banded cards + 5×5 heat map ──
   const risks = content.risks ?? [];
@@ -740,6 +895,69 @@ function buildCharter(pptx: any, content: any, projectName: string) {
       });
     }
   }
+
+  // ── Escalation Channels Slide ──
+  const escData = content.escalationChannels ?? {};
+  const escInternal: any[] = escData.internal ?? [
+    { level: "L1", title: "Project Manager", name: "[PM Name]", contact: "[pm@company.com]", responseTime: "4 hrs", description: "Day-to-day issues, schedule changes, resource conflicts" },
+    { level: "L2", title: "Delivery Head", name: "[DH Name]", contact: "[dh@company.com]", responseTime: "8 hrs", description: "Scope changes, budget overruns, major client escalations" },
+    { level: "L3", title: "Executive Sponsor", name: "[Sponsor]", contact: "[exec@company.com]", responseTime: "24 hrs", description: "Strategic direction, critical risks and contract issues" },
+  ];
+  const escVendor: any[] = escData.vendor ?? [
+    { level: "L1", title: "Vendor Project Manager", name: "[Vendor PM]", contact: "[vpm@vendor.com]", responseTime: "4 hrs", description: "Delivery delays, quality issues, team capacity gaps" },
+    { level: "L2", title: "Vendor Account Manager", name: "[Account Mgr]", contact: "[am@vendor.com]", responseTime: "8 hrs", description: "SLA breaches, commercial issues, relationship management" },
+    { level: "L3", title: "Vendor Executive", name: "[Exec Name]", contact: "[exec@vendor.com]", responseTime: "24 hrs", description: "Strategic partnership and contract renegotiation" },
+  ];
+  const escGuidelines: string[] = escData.guidelines ?? [
+    "Attempt resolution at L1 before escalating — always document the issue and steps taken",
+    "Response times are SLAs; if breached, automatically escalate to the next level",
+    "All escalations must be logged in the project risk register within 24 hours",
+    "Client-facing escalations must be approved by the Project Manager before delivery",
+  ];
+
+  const sEsc = contentSlide(pptx, "Escalation Channels", projectName, page++);
+  const escCardW = 3.65;
+  const escCardH = 2.12;
+  const escStep = 4.14;
+  const escX0 = 0.76;
+  const escCardX = [escX0, escX0 + escStep, escX0 + 2 * escStep];
+
+  const drawEscCard = (slide: any, data: any, x: number, y: number, accentColor: string) => {
+    slide.addShape(pptx.ShapeType.roundRect, { x, y, w: escCardW, h: escCardH, fill: { color: WASH }, line: { color: MID_WASH, width: 0.75 }, rectRadius: 0.08 });
+    slide.addShape(pptx.ShapeType.roundRect, { x, y, w: escCardW, h: 0.65, fill: { color: accentColor }, rectRadius: 0.08 });
+    slide.addShape(pptx.ShapeType.rect, { x, y: y + 0.45, w: escCardW, h: 0.2, fill: { color: accentColor } });
+    slide.addShape(pptx.ShapeType.roundRect, { x: x + 0.1, y: y + 0.1, w: 0.42, h: 0.42, fill: { color: WHITE }, rectRadius: 0.05 });
+    slide.addText(safeStr(data.level ?? ""), { x: x + 0.1, y: y + 0.1, w: 0.42, h: 0.42, fontSize: 10, bold: true, color: accentColor, align: "center", valign: "middle", fontFace: "Aptos" });
+    slide.addText(safeStr(data.title ?? "").slice(0, 28), { x: x + 0.6, y: y + 0.1, w: escCardW - 0.7, h: 0.45, fontSize: 9, bold: true, color: WHITE, valign: "middle", wrap: true, fontFace: "Aptos" });
+    slide.addText(safeStr(data.name ?? ""), { x: x + 0.12, y: y + 0.72, w: escCardW - 0.24, h: 0.3, fontSize: 9.5, bold: true, color: SOFT_BLACK, fontFace: "Aptos" });
+    slide.addText(safeStr(data.description ?? "").slice(0, 90), { x: x + 0.12, y: y + 1.06, w: escCardW - 0.24, h: 0.56, fontSize: 8, color: DARK_GRAY, wrap: true, fontFace: "Aptos" });
+    slide.addShape(pptx.ShapeType.roundRect, { x: x + 0.12, y: y + 1.72, w: 1.05, h: 0.25, fill: { color: "FFF3CD" }, rectRadius: 0.04 });
+    slide.addText(`⏱ ${safeStr(data.responseTime ?? "")}`, { x: x + 0.12, y: y + 1.72, w: 1.05, h: 0.25, fontSize: 7, bold: true, color: "856404", align: "center", valign: "middle", fontFace: "Aptos" });
+    slide.addText(safeStr(data.contact ?? ""), { x: x + 1.24, y: y + 1.74, w: escCardW - 1.36, h: 0.22, fontSize: 7.5, color: TEAL, fontFace: "Aptos" });
+  };
+
+  sEsc.addShape(pptx.ShapeType.rect, { x: 0.3, y: 0.88, w: 0.08, h: escCardH + 0.32, fill: { color: PETROL } });
+  sEsc.addText("INTERNAL", { x: 0.42, y: 0.88, w: 1.2, h: 0.28, fontSize: 7.5, bold: true, color: PETROL, fontFace: "Aptos" });
+  escInternal.slice(0, 3).forEach((lvl: any, i: number) => {
+    drawEscCard(sEsc, lvl, escCardX[i], 1.18, PETROL);
+    if (i < 2) sEsc.addText("→", { x: escCardX[i] + escCardW + 0.05, y: 1.18 + escCardH / 2 - 0.2, w: 0.42, h: 0.4, fontSize: 18, bold: true, color: PETROL, align: "center", valign: "middle", fontFace: "Aptos" });
+  });
+
+  sEsc.addShape(pptx.ShapeType.rect, { x: 0.3, y: 3.55, w: 0.08, h: escCardH + 0.32, fill: { color: TEAL } });
+  sEsc.addText("VENDOR", { x: 0.42, y: 3.55, w: 1.2, h: 0.28, fontSize: 7.5, bold: true, color: TEAL, fontFace: "Aptos" });
+  escVendor.slice(0, 3).forEach((lvl: any, i: number) => {
+    drawEscCard(sEsc, lvl, escCardX[i], 3.85, TEAL);
+    if (i < 2) sEsc.addText("→", { x: escCardX[i] + escCardW + 0.05, y: 3.85 + escCardH / 2 - 0.2, w: 0.42, h: 0.4, fontSize: 18, bold: true, color: TEAL, align: "center", valign: "middle", fontFace: "Aptos" });
+  });
+
+  sEsc.addShape(pptx.ShapeType.rect, { x: 0.3, y: 6.1, w: 12.73, h: 0.04, fill: { color: MID_WASH } });
+  sEsc.addText("Escalation Guidelines:", { x: 0.3, y: 6.18, w: 2.2, h: 0.26, fontSize: 8, bold: true, color: PETROL, fontFace: "Aptos" });
+  escGuidelines.slice(0, 4).forEach((g: string, gi: number) => {
+    const gx = gi % 2 === 0 ? 2.6 : 8.0;
+    const gy = 6.18 + Math.floor(gi / 2) * 0.28;
+    sEsc.addShape(pptx.ShapeType.ellipse, { x: gx, y: gy + 0.07, w: 0.14, h: 0.14, fill: { color: TEAL_L } });
+    sEsc.addText(safeStr(g).slice(0, 80), { x: gx + 0.2, y: gy, w: 5.3, h: 0.26, fontSize: 7.5, color: SOFT_BLACK, wrap: true, fontFace: "Aptos" });
+  });
 
   // ── Slide 9: Authorization & Sign-off ──
   const sigs = content.approvalSignatures ?? [{ role: "Project Sponsor" }, { role: "Project Manager" }, { role: "Steering Committee" }];
