@@ -2041,14 +2041,13 @@ function ScheduleTab({ project }: { project: any }) {
                   </div>
                   {!msCollapsed && (
                     <div style={{ border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden", background: C.surface }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 140px 100px 1fr 50px 60px 44px", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 140px 100px 1fr 120px 44px", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
                         <div />
                         <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Milestone</span></div>
                         <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Due Date</span></div>
                         <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Status</span></div>
                         <div />
-                        <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Effort</span></div>
-                        <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Done</span></div>
+                        <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Action</span></div>
                         <div />
                       </div>
                       {milestones.map((m, mi) => {
@@ -2058,12 +2057,12 @@ function ScheduleTab({ project }: { project: any }) {
                         const dueLabel = m.dueDate ? new Date(m.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—";
                         return (
                           <div key={m.id}
-                            style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 140px 100px 1fr 50px 60px 44px", alignItems: "center", minHeight: 48, borderBottom: mi < milestones.length - 1 ? `1px solid ${C.borderLight}` : "none", background: isComplete ? C.greenLight : "transparent", transition: "background .1s" }}>
+                            style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 140px 100px 1fr 120px 44px", alignItems: "center", minHeight: 48, borderBottom: mi < milestones.length - 1 ? `1px solid ${C.borderLight}` : "none", background: isComplete ? C.greenLight : "transparent", transition: "background .1s" }}>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                               <span style={{ fontSize: 14, color: msColor, lineHeight: 1 }}>◆</span>
                             </div>
                             <div style={{ padding: "8px 8px 8px 0", minWidth: 0 }}>
-                              <div style={{ fontSize: 14, fontWeight: 500, color: isComplete ? C.green : C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", textDecoration: isComplete ? "line-through" : "none", opacity: isComplete ? 0.7 : 1 }}>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: isComplete ? C.green : C.amber, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", textDecoration: isComplete ? "line-through" : "none", opacity: isComplete ? 0.7 : 1 }}>
                                 {m.name}
                               </div>
                             </div>
@@ -2076,12 +2075,11 @@ function ScheduleTab({ project }: { project: any }) {
                               </span>
                             </div>
                             <div />
-                            <div style={{ textAlign: "center" as const, fontSize: 12, color: C.text3 }}>0h</div>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                               <button onClick={() => toggleMilestoneComplete(m.id, m.status ?? "pending")}
-                                title={isComplete ? "Mark pending" : "Mark complete"}
-                                style={{ width: 28, height: 28, borderRadius: "50%", border: `2px solid ${msColor}`, background: isComplete ? C.green : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: isComplete ? "#fff" : msColor, fontSize: 13, fontWeight: 700, transition: "all .15s" }}>
-                                {isComplete ? "✓" : ""}
+                                title={isComplete ? "Mark as pending" : "Mark as closed"}
+                                style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 28, padding: "0 10px", borderRadius: 8, border: `1.5px solid ${msColor}`, background: isComplete ? C.green : "transparent", cursor: "pointer", color: isComplete ? "#fff" : msColor, fontSize: 11.5, fontWeight: 600, transition: "all .15s" }}>
+                                {isComplete ? "✓ Closed" : "Mark closed"}
                               </button>
                             </div>
                             <div />

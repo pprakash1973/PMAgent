@@ -632,7 +632,7 @@ Return JSON with:
     status (string): Not Started | On Track | At Risk | Slipped | Complete
     isCritical (boolean): true if on critical path
     deliverables (array of strings): what is produced at this milestone
-    owner (string)
+    owner (string): generic project role ONLY — e.g. "Project Manager", "Technical Lead", "Delivery Manager", "Business Analyst", "Scrum Master". NEVER client names, company names, external organisation names, or individual person names
     predecessors (array of strings): milestone IDs this depends on
     variance (string): e.g. "+3 days" or "On schedule"
     notes (string)

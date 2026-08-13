@@ -59,11 +59,17 @@ export async function GET(
     }
   }
 
-  const [latestReport, risks, issues, milestones, artifacts, costEntries] = await Promise.all([
+  const [latestReport, allReports, risks, issues, milestones, artifacts, costEntries] = await Promise.all([
     prisma.statusReport.findFirst({
       where: { projectId: id },
       orderBy: { reportDate: "desc" },
       include: { healthScore: true },
+    }),
+    prisma.statusReport.findMany({
+      where: { projectId: id },
+      orderBy: { reportDate: "asc" },
+      take: 8,
+      select: { reportDate: true, healthScore: { select: { spi: true, cpi: true, compositeScore: true } } },
     }),
     prisma.risk.findMany({
       where: { projectId: id },
@@ -192,6 +198,12 @@ export async function GET(
       visibility: n.visibility,
       createdAt: n.createdAt.toISOString(),
       authorName: n.author.fullName,
+    })),
+    spiCpiHistory: allReports.map((r) => ({
+      date: r.reportDate.toISOString(),
+      spi: r.healthScore?.spi ?? null,
+      cpi: r.healthScore?.cpi ?? null,
+      compositeScore: r.healthScore?.compositeScore ?? null,
     })),
   });
 }
