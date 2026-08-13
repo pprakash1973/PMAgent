@@ -1362,6 +1362,10 @@ function ScheduleTab({ project }: { project: any }) {
   const [resources, setResources] = useState<any[]>([]);
   const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [milestones, setMilestones] = useState<any[]>(
+    [...(project.milestones ?? [])].sort((a: any, b: any) => new Date(a.dueDate ?? 0).getTime() - new Date(b.dueDate ?? 0).getTime())
+  );
+  const [msCollapsed, setMsCollapsed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1571,6 +1575,15 @@ function ScheduleTab({ project }: { project: any }) {
       setEditCell({ taskId: newTask.id, field: "name" });
       setEditVal("New task");
     }
+  }
+
+  async function toggleMilestoneComplete(msId: string, currentStatus: string) {
+    const newStatus = currentStatus === "completed" ? "pending" : "completed";
+    setMilestones(ms => ms.map(m => m.id === msId ? { ...m, status: newStatus } : m));
+    await fetch(`/api/projects/${project.id}/milestones/${msId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
   }
 
   async function saveAssignee(taskId: string, resourceId: string | null) {
@@ -2010,6 +2023,75 @@ function ScheduleTab({ project }: { project: any }) {
                   </div>
                 );
               })}
+
+              {/* ── Milestones section (list view) ── */}
+              {milestones.length > 0 && (
+                <div style={{ marginBottom: 6 }}>
+                  <div onClick={() => setMsCollapsed(v => !v)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: msCollapsed ? 8 : "8px 8px 0 0", border: `1px solid ${C.border}`, borderBottom: msCollapsed ? `1px solid ${C.border}` : "none", background: C.surface2, cursor: "pointer", userSelect: "none" as const }}
+                    onMouseEnter={e => (e.currentTarget.style.background = C.surface)}
+                    onMouseLeave={e => (e.currentTarget.style.background = C.surface2)}>
+                    <span style={{ fontSize: 11, color: C.text3, display: "inline-block", transition: "transform .17s", transform: msCollapsed ? "none" : "rotate(90deg)" }}>▶</span>
+                    <span style={{ fontSize: 13, color: C.amber }}>◆</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text }}>Milestones</span>
+                    <span style={{ fontSize: 12, color: C.text3 }}>{milestones.length} milestone{milestones.length !== 1 ? "s" : ""}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 500, padding: "2px 8px", borderRadius: 20, background: C.greenLight, color: C.green }}>
+                      {milestones.filter(m => (m.status ?? "").toLowerCase().includes("complet")).length}/{milestones.length} done
+                    </span>
+                  </div>
+                  {!msCollapsed && (
+                    <div style={{ border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden", background: C.surface }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 140px 100px 1fr 50px 60px 44px", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
+                        <div />
+                        <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Milestone</span></div>
+                        <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Due Date</span></div>
+                        <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Status</span></div>
+                        <div />
+                        <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Effort</span></div>
+                        <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Done</span></div>
+                        <div />
+                      </div>
+                      {milestones.map((m, mi) => {
+                        const isComplete = (m.status ?? "").toLowerCase().includes("complet");
+                        const isOverdue = !isComplete && m.dueDate && new Date(m.dueDate) < new Date();
+                        const msColor = isComplete ? C.green : isOverdue ? C.red : C.amber;
+                        const dueLabel = m.dueDate ? new Date(m.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "—";
+                        return (
+                          <div key={m.id}
+                            style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 140px 100px 1fr 50px 60px 44px", alignItems: "center", minHeight: 48, borderBottom: mi < milestones.length - 1 ? `1px solid ${C.borderLight}` : "none", background: isComplete ? C.greenLight : "transparent", transition: "background .1s" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <span style={{ fontSize: 14, color: msColor, lineHeight: 1 }}>◆</span>
+                            </div>
+                            <div style={{ padding: "8px 8px 8px 0", minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 500, color: isComplete ? C.green : C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", textDecoration: isComplete ? "line-through" : "none", opacity: isComplete ? 0.7 : 1 }}>
+                                {m.name}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "center" as const, fontSize: 12, color: isOverdue ? C.red : C.text2, fontWeight: isOverdue ? 600 : 400 }}>
+                              {dueLabel}{isOverdue && <span style={{ display: "block", fontSize: 10.5, color: C.red }}>overdue</span>}
+                            </div>
+                            <div style={{ padding: "0 5px" }}>
+                              <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", borderRadius: 20, fontSize: 11, fontWeight: 500, color: msColor, background: isComplete ? C.greenLight : isOverdue ? C.redLight : C.amberLight }}>
+                                {isComplete ? "Completed" : isOverdue ? "Overdue" : "Pending"}
+                              </span>
+                            </div>
+                            <div />
+                            <div style={{ textAlign: "center" as const, fontSize: 12, color: C.text3 }}>0h</div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <button onClick={() => toggleMilestoneComplete(m.id, m.status ?? "pending")}
+                                title={isComplete ? "Mark pending" : "Mark complete"}
+                                style={{ width: 28, height: 28, borderRadius: "50%", border: `2px solid ${msColor}`, background: isComplete ? C.green : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: isComplete ? "#fff" : msColor, fontSize: 13, fontWeight: 700, transition: "all .15s" }}>
+                                {isComplete ? "✓" : ""}
+                              </button>
+                            </div>
+                            <div />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -2177,6 +2259,41 @@ function ScheduleTab({ project }: { project: any }) {
                     </div>
                   </div>
                 ))}
+
+                {/* Milestones — Gantt left pane */}
+                {milestones.length > 0 && (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "5px 8px 5px 28px", gap: 6 }}>
+                      <span style={{ fontSize: 13, color: C.amber }}>◆</span>
+                      <div style={{ font: `700 12px var(--font-inter),'Inter'`, color: C.amber, letterSpacing: ".04em", textTransform: "uppercase" as const }}>Milestones</div>
+                    </div>
+                    {milestones.map(m => {
+                      const isComplete = (m.status ?? "").toLowerCase().includes("complet");
+                      const isOverdue = !isComplete && m.dueDate && new Date(m.dueDate) < new Date();
+                      const msColor = isComplete ? C.green : isOverdue ? C.red : C.amber;
+                      const dueLabel = m.dueDate ? new Date(m.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "—";
+                      return (
+                        <div key={m.id} style={{ display: "flex", alignItems: "center", borderTop: `1px solid ${C.borderLight}`, height: ROW_H, background: isComplete ? C.greenLight : "transparent" }}>
+                          <div style={{ width: 28, display: "flex", justifyContent: "center", flexShrink: 0 }}>
+                            <span style={{ fontSize: 12, color: msColor }}>◆</span>
+                          </div>
+                          <div style={{ flex: 1, padding: "0 4px", overflow: "hidden" }}>
+                            <span style={{ fontSize: 14, fontWeight: 500, color: isComplete ? C.green : C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", display: "block", textDecoration: isComplete ? "line-through" : "none", opacity: isComplete ? 0.7 : 1 }}>{m.name}</span>
+                          </div>
+                          <div style={{ width: 60, textAlign: "center" as const, fontFamily: "'IBM Plex Mono',monospace", fontSize: 13.5, color: C.text3 }}>0h</div>
+                          <div style={{ width: 52, display: "flex", justifyContent: "center" }}>
+                            <button onClick={() => toggleMilestoneComplete(m.id, m.status ?? "pending")}
+                              title={isComplete ? "Mark pending" : "Mark complete"}
+                              style={{ width: 22, height: 22, borderRadius: "50%", border: `2px solid ${msColor}`, background: isComplete ? C.green : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: isComplete ? "#fff" : msColor, fontSize: 11, fontWeight: 700 }}>
+                              {isComplete ? "✓" : ""}
+                            </button>
+                          </div>
+                          <div style={{ width: 90, padding: "0 6px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, color: isOverdue ? C.red : C.text3, fontWeight: isOverdue ? 600 : 400 }}>{dueLabel}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Gantt pane — right */}
@@ -2266,6 +2383,48 @@ function ScheduleTab({ project }: { project: any }) {
                     <div style={{ height: 32, borderTop: `1px solid ${C.borderLight}` }} />
                   </div>
                 ))}
+
+                {/* Milestones — Gantt right pane */}
+                {milestones.length > 0 && (
+                  <div>
+                    <div style={{ height: 29, background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}` }} />
+                    {milestones.map(m => {
+                      const isComplete = (m.status ?? "").toLowerCase().includes("complet");
+                      const isOverdue = !isComplete && m.dueDate && new Date(m.dueDate) < new Date();
+                      const msColor = isComplete ? C.green : isOverdue ? C.red : C.amber;
+                      const duePct = m.dueDate ? Math.max(0, Math.min(100, ((new Date(m.dueDate).getTime() - minStart.getTime()) / totalMs) * 100)) : -1;
+                      return (
+                        <div key={m.id} style={{ position: "relative", height: ROW_H, borderTop: `1px solid ${C.borderLight}`, background: isComplete ? C.greenLight : "transparent" }}>
+                          {weeks.map((_, i) => (
+                            <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${(i / weeks.length) * 100}%`, width: 1, background: C.borderLight, opacity: 0.6 }} />
+                          ))}
+                          {duePct >= 0 && (
+                            <>
+                              <div title={m.name} style={{
+                                position: "absolute", top: "50%", left: `${duePct}%`,
+                                transform: "translate(-50%, -50%) rotate(45deg)",
+                                width: 14, height: 14,
+                                background: msColor === C.green ? "#22c55e" : msColor === C.red ? "#ef4444" : "#f59e0b",
+                                border: `2px solid ${msColor === C.green ? "#15803d" : msColor === C.red ? "#b91c1c" : "#b45309"}`,
+                                zIndex: 4,
+                              }} />
+                              <div style={{
+                                position: "absolute", top: "50%", transform: "translateY(-50%)",
+                                left: `calc(${duePct}% + 10px)`,
+                                font: `500 10.5px 'IBM Plex Mono'`,
+                                color: isOverdue ? C.red : C.text3,
+                                whiteSpace: "nowrap" as const,
+                                pointerEvents: "none",
+                              }}>
+                                {m.dueDate ? new Date(m.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : ""}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -4826,6 +4985,19 @@ function OverviewTab({ project }: { project: any }) {
     .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0] ?? null;
   const daysToMs = nextMs ? Math.ceil((new Date(nextMs.dueDate).getTime() - Date.now()) / 86400000) : null;
 
+  const [assumptionsCount, setAssumptionsCount] = React.useState<number | null>(null);
+  const [openDepsCount, setOpenDepsCount] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    fetch(`/api/projects/${project.id}/assumptions`)
+      .then(r => r.ok ? r.json() : [])
+      .then((d: any[]) => setAssumptionsCount(Array.isArray(d) ? d.length : 0))
+      .catch(() => setAssumptionsCount(0));
+    fetch(`/api/projects/${project.id}/dependencies`)
+      .then(r => r.ok ? r.json() : [])
+      .then((d: any[]) => setOpenDepsCount(Array.isArray(d) ? d.filter((x: any) => (x.status ?? "open") === "open").length : 0))
+      .catch(() => setOpenDepsCount(0));
+  }, [project.id]);
+
   const card = (children: React.ReactNode, style?: React.CSSProperties) => (
     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 18px", ...style }}>
       {children}
@@ -4889,7 +5061,7 @@ function OverviewTab({ project }: { project: any }) {
       </div>
 
       {/* Row 2 — metric chips */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 10 }}>
         {chip("Schedule %",
           evPct !== null ? `${evPct}%` : msCompletionPct !== null ? `${msCompletionPct}%` : null,
           evPct !== null ? (evPct >= 90 ? "On track" : evPct >= 80 ? "Slightly behind" : "Behind schedule") : msCompletionPct !== null ? "Milestone completion" : "No data",
@@ -4901,6 +5073,8 @@ function OverviewTab({ project }: { project: any }) {
         {chip("EAC Forecast", fmtK(eac), bac && eac ? (eac > bac ? `+${fmtK(eac - bac)} over BAC` : "Within budget") : "No forecast", eac !== null && bac !== null && eac > bac ? C.red : C.primary)}
         {chip("Open Risks", risks.length, `${highRisks} high priority`, risks.length > 5 ? C.red : risks.length > 2 ? C.amber : C.green)}
         {chip("Open Issues", issues.length, `${critIssues} critical / high`, issues.length > 3 ? C.red : issues.length > 1 ? C.amber : C.green)}
+        {chip("Assumptions", assumptionsCount ?? "…", assumptionsCount === 0 ? "None logged" : "Project assumptions", C.primary)}
+        {chip("Open Deps", openDepsCount ?? "…", openDepsCount === 0 ? "None open" : openDepsCount === 1 ? "1 dependency open" : `${openDepsCount} dependencies open`, (openDepsCount ?? 0) > 3 ? C.red : (openDepsCount ?? 0) > 0 ? C.amber : C.green)}
       </div>
 
       {/* Row 3 — health trend + risks list */}
