@@ -395,7 +395,6 @@ function ProjectInfoTab({ project }: { project: any }) {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
           <InfoField label="Engagement Type" value={project.engagementType === "application_development" ? "Application Development" : project.engagementType === "product_development" ? "Product Development" : project.engagementType ?? null} />
-          <InfoField label="Engagement Mode" value={project.engagementMode ?? null} />
         </div>
 
         {/* Description */}
@@ -1377,6 +1376,9 @@ function ScheduleTab({ project }: { project: any }) {
   // Gantt drag-resize
   const dragRef = useRef<{ taskId: string; startX: number; startDays: number } | null>(null);
 
+  // Regenerate confirmation modal
+  const [regenConfirm, setRegenConfirm] = useState<{ tasks: any[] } | null>(null);
+
   // Critical path
   const [showCritical, setShowCritical] = useState(false);
   const criticalIds = useMemo(() => computeCriticalIds(tasks), [tasks]);
@@ -1487,20 +1489,7 @@ function ScheduleTab({ project }: { project: any }) {
 
     if (res.status === 409 && data.requiresConfirmation) {
       setGenerating(false);
-      const taskLines = (data.tasksWithProgress as any[])
-        .slice(0, 8)
-        .map((t: any) => `  • [${t.wbsCode}] ${t.name ?? ""} — ${t.percentComplete}% complete`)
-        .join("\n");
-      const extra = data.tasksWithProgress.length > 8 ? `\n  … and ${data.tasksWithProgress.length - 8} more` : "";
-      const confirmed = window.confirm(
-        `⚠ Schedule has tasks with recorded progress:\n\n${taskLines}${extra}\n\n` +
-        `Regenerating will:\n` +
-        `  • Preserve progress on existing tasks\n` +
-        `  • Add new tasks from the revised WBS\n` +
-        `  • Flag de-scoped tasks (not delete)\n\n` +
-        `Proceed?`
-      );
-      if (confirmed) generate(true);
+      setRegenConfirm({ tasks: data.tasksWithProgress as any[] });
       return;
     }
 
@@ -1683,6 +1672,61 @@ function ScheduleTab({ project }: { project: any }) {
 
   return (
     <div>
+      {/* ── Regenerate confirmation modal ── */}
+      {regenConfirm && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: C.surface, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,.18)", width: 420, maxWidth: "90vw", overflow: "hidden" }}>
+            {/* Header */}
+            <div style={{ background: C.amberLight, borderBottom: `1px solid ${C.amber}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18 }}>⚠</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.amber }}>Tasks have recorded progress</div>
+                <div style={{ fontSize: 12, color: C.text2, marginTop: 1 }}>Regenerating won&apos;t lose any progress already captured</div>
+              </div>
+            </div>
+            {/* Task list */}
+            <div style={{ padding: "14px 18px", maxHeight: 220, overflowY: "auto" as const }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 8 }}>
+                {regenConfirm.tasks.length} task{regenConfirm.tasks.length !== 1 ? "s" : ""} with progress
+              </div>
+              {regenConfirm.tasks.slice(0, 8).map((t: any, i: number) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: `1px solid ${C.borderLight}` }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: C.text3, flexShrink: 0 }}>{t.wbsCode}</span>
+                  <span style={{ flex: 1, fontSize: 12, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{t.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.green, flexShrink: 0 }}>{t.percentComplete}%</span>
+                </div>
+              ))}
+              {regenConfirm.tasks.length > 8 && (
+                <div style={{ fontSize: 11, color: C.text3, padding: "5px 0" }}>…and {regenConfirm.tasks.length - 8} more</div>
+              )}
+            </div>
+            {/* What happens */}
+            <div style={{ padding: "0 18px 14px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 6 }}>What regeneration does</div>
+              {[
+                ["✓", C.green, "Keeps all existing progress intact"],
+                ["+", C.primary, "Adds new tasks from the updated WBS"],
+                ["⚑", C.amber, "Flags de-scoped tasks as inactive (not deleted)"],
+              ].map(([icon, color, text]) => (
+                <div key={text} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                  <span style={{ width: 18, height: 18, borderRadius: "50%", background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color, flexShrink: 0 }}>{icon}</span>
+                  <span style={{ fontSize: 12, color: C.text2 }}>{text}</span>
+                </div>
+              ))}
+            </div>
+            {/* Actions */}
+            <div style={{ padding: "12px 18px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setRegenConfirm(null)} style={{ padding: "8px 18px", border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.surface, color: C.text2, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={() => { setRegenConfirm(null); generate(true); }} style={{ padding: "8px 20px", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, background: C.primary, color: "#fff", cursor: "pointer" }}>
+                Regenerate Schedule
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" as const }}>
         <div>
@@ -3272,88 +3316,77 @@ function ScopeControlTab({ project }: { project: any }) {
         </div>
       )}
 
-      {/* ── Main two-column layout ──────────────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+      {/* ── Stacked layout: source docs row → requirements table ──────────── */}
+      <div style={{ display: "flex", flexDirection: "column" as const, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
 
-        {/* Left: source docs */}
-        <div style={{ borderRight: `1px solid ${C.border}`, padding: "10px 11px" }}>
+        {/* Source Documents — horizontal tile row */}
+        <div style={{ padding: "12px 14px", borderBottom: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3, marginBottom: 8 }}>Source Documents</div>
-          {docs.map((doc: any) => {
-            const ext = (doc.fileName?.split(".").pop()?.toUpperCase() || "DOC") as string;
-            const isChecked = selectedDocIds.has(doc.id);
-            return (
-              <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 6px", borderRadius: 7, marginBottom: 3, background: isChecked ? C.primaryLight : "transparent" }}>
-                {docs.length >= 2 && (
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => setSelectedDocIds(prev => {
-                      const next = new Set(prev);
-                      if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id);
-                      return next;
-                    })}
-                    style={{ cursor: "pointer", flexShrink: 0 }}
-                  />
-                )}
-                <div style={{ width: 26, height: 26, borderRadius: 5, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: C.text, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{doc.fileName}</div>
-                  <div style={{ fontSize: 10, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
+          <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "flex-start" }}>
+            {docs.map((doc: any) => {
+              const ext = (doc.fileName?.split(".").pop()?.toUpperCase() || "DOC") as string;
+              const isChecked = selectedDocIds.has(doc.id);
+              return (
+                <div
+                  key={doc.id}
+                  onClick={docs.length >= 2 ? () => setSelectedDocIds(prev => { const next = new Set(prev); if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id); return next; }) : undefined}
+                  style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", borderRadius: 8, background: isChecked ? C.primaryLight : C.surface2, border: `1px solid ${isChecked ? C.primaryBorder : C.border}`, cursor: docs.length >= 2 ? "pointer" : "default" }}
+                >
+                  <div style={{ width: 28, height: 28, borderRadius: 5, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: C.text, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{doc.fileName}</div>
+                    <div style={{ fontSize: 10, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
+                  </div>
+                  {!latestBaseline && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
+                      title="Delete document (only allowed before baselining)"
+                      style={{ padding: "1px 4px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 10, color: C.red, background: "transparent", cursor: "pointer", flexShrink: 0, lineHeight: 1.4 }}
+                    >✕</button>
+                  )}
                 </div>
-                {!latestBaseline && (
-                  <button
-                    onClick={() => handleDeleteDoc(doc.id, doc.fileName)}
-                    title="Delete document (only allowed before baselining)"
-                    style={{ padding: "1px 4px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 10, color: C.red, background: "transparent", cursor: "pointer", flexShrink: 0, lineHeight: 1.4 }}
-                  >✕</button>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
 
-          {/* Upload row */}
-          <div style={{ marginTop: 6 }}>
-            {showUploadForm ? (
-              <div style={{ border: `1px solid ${C.border}`, borderRadius: 7, padding: "8px 9px", background: C.surface2 }}>
-                <select value={docClass} onChange={e => setDocClass(e.target.value)} style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 6px", fontSize: 11, background: C.surface, marginBottom: 6 }}>
+            {/* Upload tile */}
+            {!showUploadForm ? (
+              <button onClick={() => setShowUploadForm(true)} style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", border: `1.5px dashed ${C.border}`, borderRadius: 8, fontSize: 11, color: C.text3, background: "transparent", cursor: "pointer" }}>
+                + Upload doc
+              </button>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 10px", background: C.surface2 }}>
+                <select value={docClass} onChange={e => setDocClass(e.target.value)} style={{ border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 6px", fontSize: 11, background: C.surface }}>
                   {DOC_CLASS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
                 <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, background: uploading ? C.surface2 : C.primary, color: uploading ? C.text3 : "#fff", borderRadius: 5, padding: "5px 9px", cursor: uploading ? "not-allowed" : "pointer" }}>
                   {uploading ? "Uploading…" : "Choose file"}
                   <input type="file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv" style={{ display: "none" }} disabled={uploading} onChange={handleFileChange} />
                 </label>
-                {uploadError && <div style={{ fontSize: 10, color: C.red, marginTop: 4 }}>{uploadError}</div>}
-                <button onClick={() => setShowUploadForm(false)} style={{ fontSize: 10, color: C.text3, background: "transparent", border: "none", cursor: "pointer", marginTop: 4 }}>Cancel</button>
+                {uploadError && <div style={{ fontSize: 10, color: C.red }}>{uploadError}</div>}
+                <button onClick={() => setShowUploadForm(false)} style={{ fontSize: 10, color: C.text3, background: "transparent", border: "none", cursor: "pointer" }}>Cancel</button>
               </div>
-            ) : (
-              <button onClick={() => setShowUploadForm(true)} style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", border: `1px dashed ${C.border}`, borderRadius: 6, padding: "5px 7px", fontSize: 11, color: C.text3, background: "transparent", cursor: "pointer" }}>
-                + Upload doc
+            )}
+
+            {/* Impact analysis — shown inline when 2+ docs are selected */}
+            {docs.length >= 2 && selectedDocIds.size >= 2 && (
+              <button
+                onClick={runImpactAnalysis}
+                disabled={impactStatus === "running"}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", fontSize: 11, fontWeight: 600, background: impactStatus === "running" ? C.surface2 : "#4f46e5", color: impactStatus === "running" ? C.text3 : "#fff", border: "none", borderRadius: 8, cursor: impactStatus === "running" ? "not-allowed" : "pointer", opacity: impactStatus === "running" ? 0.7 : 1 }}
+              >
+                {impactStatus === "running" ? "Analysing…" : `Run Impact Analysis (${selectedDocIds.size})`}
               </button>
             )}
+            {docs.length >= 2 && selectedDocIds.size < 2 && (
+              <div style={{ display: "flex", alignItems: "center", fontSize: 10, color: C.text3, fontStyle: "italic", padding: "7px 0" }}>
+                {selectedDocIds.size === 0 ? "Click docs to compare" : "Select 1 more to compare"}
+              </div>
+            )}
           </div>
-
-          {/* Impact Analysis controls — shown when 2+ docs available */}
-          {docs.length >= 2 && (
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.borderLight}` }}>
-              {selectedDocIds.size >= 2 ? (
-                <button
-                  onClick={runImpactAnalysis}
-                  disabled={impactStatus === "running"}
-                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 11, fontWeight: 600, background: impactStatus === "running" ? C.surface2 : "#4f46e5", color: impactStatus === "running" ? C.text3 : "#fff", border: "none", borderRadius: 6, padding: "6px 8px", cursor: impactStatus === "running" ? "not-allowed" : "pointer", opacity: impactStatus === "running" ? 0.7 : 1 }}
-                >
-                  {impactStatus === "running" ? "Analysing…" : `Run Impact Analysis (${selectedDocIds.size})`}
-                </button>
-              ) : (
-                <div style={{ fontSize: 10, color: C.text3, textAlign: "center" as const, fontStyle: "italic", padding: "2px 0" }}>
-                  {selectedDocIds.size === 0 ? "☑ Select 2+ docs to compare" : "Select 1 more to compare"}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Right: requirements table */}
-        <div style={{ display: "flex", flexDirection: "column" as const, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+        {/* Requirements table — full width below */}
+        <div style={{ display: "flex", flexDirection: "column" as const }}>
           {/* Requirements header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 11px", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3 }}>
@@ -4238,14 +4271,15 @@ function fmt$(n: number, currency = "USD") {
   return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
 }
 
-function CostBurndownChart({ series, currency }: { series: any[]; currency: string }) {
+function CostBurndownChart({ series, currency, budget }: { series: any[]; currency: string; budget?: number | null }) {
   if (!series.length) return null;
 
   const W = 560; const H = 200; const PAD = { top: 14, right: 16, bottom: 34, left: 68 };
   const inner = { w: W - PAD.left - PAD.right, h: H - PAD.top - PAD.bottom };
 
   const allVals = series.flatMap((s) => [s.pv, s.ev, s.ac]).filter((v) => v > 0);
-  const maxV = allVals.length ? Math.max(...allVals) * 1.1 : 1;
+  const dataMax = allVals.length ? Math.max(...allVals) : 0;
+  const maxV = Math.max(dataMax * 1.1, budget ?? 0) || 1;
 
   function xOf(i: number) { return PAD.left + (i / Math.max(series.length - 1, 1)) * inner.w; }
   function yOf(v: number) { return PAD.top + inner.h - (v / maxV) * inner.h; }
@@ -4303,12 +4337,20 @@ function CostBurndownChart({ series, currency }: { series: any[]; currency: stri
       <path d={linePath("pv")} fill="none" stroke={C.text3} strokeWidth={1.5} strokeDasharray="5 3" />
       <path d={linePath("ev")} fill="none" stroke="#006E74" strokeWidth={2} />
       <path d={linePath("ac")} fill="none" stroke={C.red} strokeWidth={2} />
+      {/* Budget reference line */}
+      {budget != null && budget > 0 && (
+        <>
+          <line x1={PAD.left} x2={W - PAD.right} y1={yOf(budget)} y2={yOf(budget)} stroke={C.primary} strokeWidth={1.5} strokeDasharray="6 3" />
+          <text x={W - PAD.right + 2} y={yOf(budget) + 4} fontSize={8} fill={C.primary} textAnchor="start">Budget</text>
+        </>
+      )}
       {[
         { color: C.text3, label: "PV (Planned)", dash: true },
         { color: "#006E74", label: "EV (Earned)", dash: false },
         { color: C.red, label: "AC (Actual)", dash: false },
+        ...(budget != null && budget > 0 ? [{ color: C.primary, label: "Budget", dash: true }] : []),
       ].map((l, i) => (
-        <g key={i} transform={`translate(${PAD.left + i * 110}, ${H - 8})`}>
+        <g key={i} transform={`translate(${PAD.left + i * 100}, ${H - 8})`}>
           <line x1={0} x2={16} y1={0} y2={0} stroke={l.color} strokeWidth={2} strokeDasharray={l.dash ? "4 2" : undefined} />
           <text x={20} y={4} fontSize={8.5} fill={C.text2}>{l.label}</text>
         </g>
@@ -4399,13 +4441,16 @@ function CostTab({ project }: { project: any }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* ── KPI strip ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 }}>
           {(() => {
+            const budget = project.budget ?? null;
             const cv  = s ? s.totalEV - s.totalAC : null;
-            const eac = s?.cpi != null && s.cpi > 0 && project.budget ? project.budget / s.cpi : null;
+            const eac = s?.cpi != null && s.cpi > 0 && budget ? budget / s.cpi : null;
             const cvColor = cv == null ? C.text : cv >= 0 ? C.green : C.red;
             const cvBg    = cv == null ? C.surface2 : cv >= 0 ? C.greenLight : C.redLight;
+            const budgetUsedPct = budget && s?.totalAC ? Math.round((s.totalAC / budget) * 100) : null;
             return [
+              { label: "Budget", value: budget != null ? fmt$(budget, currency) : "—", sub: budgetUsedPct != null ? `${budgetUsedPct}% consumed · from Project Info` : "Set in Project Info", color: C.primary, bg: "#EDF5F6" },
               { label: "EV",  value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value — budgeted cost of work performed",       color: TEAL,     bg: TEAL_BG  },
               { label: "AC",  value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost — actual cost of work performed to date",   color: C.text,   bg: C.surface2 },
               { label: "CV",  value: cv != null ? fmt$(cv, currency) : "—", sub: cv == null ? "CV = EV − AC" : cv >= 0 ? "Under budget ✓" : "Over budget", color: cvColor, bg: cvBg },
@@ -4487,7 +4532,7 @@ function CostTab({ project }: { project: any }) {
               {loading ? (
                 <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>Loading…</div>
               ) : data?.series?.length ? (
-                <CostBurndownChart series={data.series} currency={currency} />
+                <CostBurndownChart series={data.series} currency={currency} budget={project.budget ?? null} />
               ) : (
                 <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>
                   No cost data yet. Add entries to see the burndown.
@@ -4879,12 +4924,12 @@ function OverviewTab({ project }: { project: any }) {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {risks.slice(0, 3).map((r: any) => {
-                const rs = (r.score ?? 0) as number;
+                const rs = riskScore(r);
                 const rc = rs >= 15 ? C.red : rs >= 8 ? C.amber : C.green;
                 return (
                   <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.surface2, borderRadius: 8 }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: rc, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</span>
+                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.description}</span>
                     <span style={{ fontSize: 10, fontWeight: 700, color: rc }}>{rs}</span>
                   </div>
                 );
@@ -4894,7 +4939,7 @@ function OverviewTab({ project }: { project: any }) {
                 return (
                   <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.surface2, borderRadius: 8 }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: ic, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.title}</span>
+                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.description}</span>
                     <span style={{ fontSize: 10, fontWeight: 600, color: ic, textTransform: "capitalize" as const }}>{i.severity}</span>
                   </div>
                 );
@@ -5151,9 +5196,6 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
                 );
               })()}
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, color: C.text2, border: `1px solid #d3d7de`, borderRadius: 999, padding: "2px 9px" }}>
-              {project.engagementMode === "high_level" ? "Governance Mode" : "Detailed Mode"}
-            </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
             <span className="mono" style={{ fontSize: 12, color: C.text3 }}>

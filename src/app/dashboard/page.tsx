@@ -235,7 +235,7 @@ export default async function DashboardPage() {
             <p style={{ fontSize: 13, color: C.faint, margin: 0 }}>Create your first project to get started</p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,1fr))", gap: 14, marginBottom: 32 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(310px,calc(50% - 7px)))", gap: 14, marginBottom: 32 }}>
             {rows.map(p => {
               const rc = ragColor(p.healthStatus);
               const sc = scoreColor(p.attentionScore);
