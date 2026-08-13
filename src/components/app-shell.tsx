@@ -39,7 +39,7 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
       <Link href={href} style={{
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         gap: 6, width: 56, height: 56, borderRadius: 14, cursor: "pointer",
-        fontFamily: "'Aptos','Calibri',sans-serif", fontSize: "9.5px", fontWeight: 600,
+        fontFamily: "var(--font-inter),'Inter',sans-serif", fontSize: "9.5px", fontWeight: 600,
         background: active ? "rgba(255,255,255,0.15)" : "transparent",
         color: active ? "#ffffff" : "rgba(255,255,255,0.55)",
         textDecoration: "none", border: "none", transition: "background .15s,color .15s",
@@ -64,7 +64,7 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
       }}>
         <svg width="22" height="14" viewBox="0 0 44 28" fill="none">
           {/* UST wordmark simplified */}
-          <text x="0" y="20" fontFamily="'Aptos','Calibri',sans-serif" fontWeight="700" fontSize="18" fill="#fff">UST</text>
+          <text x="0" y="20" fontFamily="var(--font-inter),'Inter',sans-serif" fontWeight="700" fontSize="18" fill="#fff">UST</text>
         </svg>
       </div>
 
@@ -100,7 +100,7 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           gap: 5, width: 56, height: 52, borderRadius: 14, cursor: "pointer",
           background: "transparent", border: "none", color: "rgba(255,255,255,0.55)",
-          fontFamily: "'Aptos','Calibri',sans-serif", fontSize: "9.5px", fontWeight: 600,
+          fontFamily: "var(--font-inter),'Inter',sans-serif", fontSize: "9.5px", fontWeight: 600,
         }}
         onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#fff"; }}
         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.55)"; }}
@@ -115,7 +115,7 @@ function LeftRail({ role, userName }: { role: string; userName: string }) {
         style={{
           width: 34, height: 34, borderRadius: "50%", background: UST_TEAL_L,
           color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-          font: "600 12px 'Aptos','Calibri',sans-serif", marginTop: 6, marginBottom: 2,
+          font: "600 12px var(--font-inter),'Inter',sans-serif", marginTop: 6, marginBottom: 2,
         }}
       >{initialsOf(userName)}</div>
     </div>
@@ -220,7 +220,7 @@ function DockedAIBar({ role }: { role: string }) {
             placeholder='Ask PM Agent anything about your portfolio — "which projects are at risk?", "draft a status email"…'
             style={{
               flex: 1, border: "none", background: "transparent", outline: "none",
-              fontSize: 13, color: UST_SOFT_BLK, fontFamily: "'Aptos','Calibri',sans-serif",
+              fontSize: 13, color: UST_SOFT_BLK, fontFamily: "var(--font-inter),'Inter',sans-serif",
             }}
           />
           <span
@@ -241,7 +241,7 @@ function DockedAIBar({ role }: { role: string }) {
                 style={{
                   fontSize: 11, color: UST_TEAL, background: `${UST_TEAL}12`, border: "none",
                   borderRadius: 999, padding: "6px 11px", cursor: "pointer", fontWeight: 600,
-                  fontFamily: "'Aptos','Calibri',sans-serif", whiteSpace: "nowrap" as const,
+                  fontFamily: "var(--font-inter),'Inter',sans-serif", whiteSpace: "nowrap" as const,
                 }}
               >{s}</button>
             ))}
