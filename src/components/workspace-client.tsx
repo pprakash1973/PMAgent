@@ -32,6 +32,7 @@ const C = {
   border: "#e2e5ea", borderLight: "#eceef2",
   surface: "#fff", surface2: "#f7f8fa",
   text: "#1a1d24", text2: "#5b616e", text3: "#8a909c",
+  FF: "var(--font-inter),'Inter',system-ui,sans-serif",
 };
 
 function ragColor(s: string) {
@@ -61,7 +62,7 @@ function SectionHeader({ label }: { label: string }) {
   return (
     <div style={{
       padding: "8px 18px 4px",
-      font: "700 10px 'IBM Plex Sans'",
+      font: "700 10px var(--font-inter),'Inter'",
       letterSpacing: ".05em", color: C.text3, textTransform: "uppercase" as const,
     }}>{label}</div>
   );
@@ -173,7 +174,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
             style={{
               marginLeft: 20, marginTop: 2, height: 34, padding: "0 16px",
               background: C.primary, color: "#fff", border: "none",
-              borderRadius: 9, font: `600 12px 'IBM Plex Sans',sans-serif`,
+              borderRadius: 9, font: `600 12px var(--font-inter),'Inter',sans-serif`,
               cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
               boxShadow: "0 2px 6px rgba(79,91,213,.3)",
             }}
@@ -240,7 +241,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
                     style={{
                       width: "100%", padding: "8px 10px", fontSize: 12.5,
                       border: `1px solid ${C.border}`, borderRadius: 8,
-                      fontFamily: "'IBM Plex Sans',sans-serif", resize: "vertical",
+                      fontFamily: "var(--font-inter),'Inter',sans-serif", resize: "vertical",
                       boxSizing: "border-box",
                     }}
                   />
@@ -255,7 +256,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
                     style={{
                       height: 34, padding: "0 18px", background: advancing ? "#8a9ed4" : C.primary,
                       color: "#fff", border: "none", borderRadius: 9,
-                      font: `600 12.5px 'IBM Plex Sans',sans-serif`, cursor: advancing ? "default" : "pointer",
+                      font: `600 12.5px var(--font-inter),'Inter',sans-serif`, cursor: advancing ? "default" : "pointer",
                     }}
                   >{advancing ? "Advancing…" : `Advance to ${nextPhaseName}`}</button>
                 ) : overrideMode ? (
@@ -266,7 +267,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
                       height: 34, padding: "0 18px",
                       background: advancing || !justification.trim() ? "#e2a060" : C.amber,
                       color: "#fff", border: "none", borderRadius: 9,
-                      font: `600 12.5px 'IBM Plex Sans',sans-serif`,
+                      font: `600 12.5px var(--font-inter),'Inter',sans-serif`,
                       cursor: advancing || !justification.trim() ? "default" : "pointer",
                     }}
                   >{advancing ? "Advancing…" : "Override & Advance"}</button>
@@ -276,7 +277,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
                     style={{
                       height: 34, padding: "0 14px", background: C.surface,
                       color: C.amber, border: `1px solid ${C.amber}40`, borderRadius: 9,
-                      font: `500 12px 'IBM Plex Sans',sans-serif`, cursor: "pointer",
+                      font: `500 12px var(--font-inter),'Inter',sans-serif`, cursor: "pointer",
                     }}
                   >Override gate (manager)</button>
                 )}
@@ -1271,7 +1272,7 @@ function RecoveryPanel({ projectId, spi }: { projectId: string; spi: number }) {
             height: 34, padding: "0 16px",
             background: C.red, color: "#fff",
             border: "none", borderRadius: 8,
-            font: `700 12.5px 'IBM Plex Sans',sans-serif`, cursor: "pointer",
+            font: `700 12.5px var(--font-inter),'Inter',sans-serif`, cursor: "pointer",
             display: "flex", alignItems: "center", gap: 7, flexShrink: 0,
           }}
         >
@@ -1739,7 +1740,7 @@ function ScheduleTab({ project }: { project: any }) {
           <div style={{ display: "flex", border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
             {(["list", "gantt"] as const).map(v => (
               <button key={v} onClick={() => setViewMode(v)}
-                style={{ height: 30, padding: "0 12px", background: viewMode === v ? C.primary : C.surface, color: viewMode === v ? "#fff" : C.text2, border: "none", font: `500 12px 'IBM Plex Sans'`, cursor: "pointer" }}>
+                style={{ height: 30, padding: "0 12px", background: viewMode === v ? C.primary : C.surface, color: viewMode === v ? "#fff" : C.text2, border: "none", font: `500 12px var(--font-inter),'Inter'`, cursor: "pointer" }}>
                 {v === "list" ? "☰ List" : "≡ Timeline"}
               </button>
             ))}
@@ -1747,18 +1748,18 @@ function ScheduleTab({ project }: { project: any }) {
         )}
         {tasks.length > 0 && viewMode === "gantt" && (
           <button onClick={() => setShowCritical(v => !v)}
-            style={{ height: 30, padding: "0 11px", background: showCritical ? C.redLight : C.surface, color: showCritical ? C.red : C.text2, border: `1px solid ${showCritical ? C.red : C.border}`, borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, cursor: "pointer" }}>
+            style={{ height: 30, padding: "0 11px", background: showCritical ? C.redLight : C.surface, color: showCritical ? C.red : C.text2, border: `1px solid ${showCritical ? C.red : C.border}`, borderRadius: 8, font: `500 12px var(--font-inter),'Inter'`, cursor: "pointer" }}>
             {showCritical ? "✕ Critical" : "⚑ Critical"}
           </button>
         )}
         {tasks.length > 0 && (
           <a href={`/api/projects/${project.id}/schedule/export`} download
-            style={{ height: 30, padding: "0 12px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, cursor: "pointer", display: "flex", alignItems: "center", textDecoration: "none" }}>
+            style={{ height: 30, padding: "0 12px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 8, font: `500 12px var(--font-inter),'Inter'`, cursor: "pointer", display: "flex", alignItems: "center", textDecoration: "none" }}>
             ↓ Export
           </a>
         )}
         <button onClick={() => generate()} disabled={generating}
-          style={{ height: 30, padding: "0 12px", background: generating ? C.surface2 : C.primary, color: generating ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `500 12px 'IBM Plex Sans'`, cursor: generating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          style={{ height: 30, padding: "0 12px", background: generating ? C.surface2 : C.primary, color: generating ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `500 12px var(--font-inter),'Inter'`, cursor: generating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
           {generating
             ? <><span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
             : tasks.length > 0 ? "↺ Regenerate" : "✦ Generate from WBS"}
@@ -1869,7 +1870,7 @@ function ScheduleTab({ project }: { project: any }) {
                       <span style={{ fontSize: 12, color: C.text3 }}>{totalForPhase} task{totalForPhase !== 1 ? "s" : ""}</span>
                       <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 500, padding: "2px 8px", borderRadius: 20, background: doneBg, color: doneC }}>{doneForPhase}/{totalForPhase} done</span>
                       <button onClick={e => { e.stopPropagation(); addTask(phase); }}
-                        style={{ height: 24, padding: "0 9px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, font: `500 11px 'IBM Plex Sans'`, color: C.text3, cursor: "pointer" }}
+                        style={{ height: 24, padding: "0 9px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 6, font: `500 11px var(--font-inter),'Inter'`, color: C.text3, cursor: "pointer" }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = C.primaryLight; (e.currentTarget as HTMLElement).style.color = C.primary; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = C.surface; (e.currentTarget as HTMLElement).style.color = C.text3; }}>
                         + Add
@@ -1909,7 +1910,7 @@ function ScheduleTab({ project }: { project: any }) {
                                 {isEditName ? (
                                   <input ref={inputRef} autoFocus value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
                                     onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-                                    style={{ width: "100%", fontSize: 14, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "'IBM Plex Sans',sans-serif", color: C.text }} />
+                                    style={{ width: "100%", fontSize: 14, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "var(--font-inter),'Inter',sans-serif", color: C.text }} />
                                 ) : (
                                   <div onClick={() => { setEditCell({ taskId: t.id, field: "name" }); setEditVal(t.name); }}
                                     style={{ fontSize: 14, fontWeight: 500, color: isCrit ? C.red : C.text, cursor: "text", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }} title={t.name}>
@@ -2008,17 +2009,17 @@ function ScheduleTab({ project }: { project: any }) {
               {/* Grid header */}
               <div style={{ width: GRID_W, flexShrink: 0, display: "flex", alignItems: "center" }}>
                 <div style={{ width: 28 }} />
-                <div style={{ flex: 1, padding: "7px 8px", font: `600 12px 'IBM Plex Sans'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>Task</div>
-                <div style={{ width: 60, textAlign: "center" as const, font: `600 12px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>Days</div>
-                <div style={{ width: 52, textAlign: "center" as const, font: `600 12px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
-                <div style={{ width: 90, font: `600 12px 'IBM Plex Sans'`, color: C.text3, textTransform: "uppercase" as const, padding: "7px 6px" }}>Start</div>
+                <div style={{ flex: 1, padding: "7px 8px", font: `600 12px var(--font-inter),'Inter'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>Task</div>
+                <div style={{ width: 60, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>Days</div>
+                <div style={{ width: 52, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
+                <div style={{ width: 90, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const, padding: "7px 6px" }}>Start</div>
               </div>
               {/* Gantt header — 2 rows: month groups + week ticks */}
               <div style={{ flex: 1, borderLeft: `1px solid ${C.border}`, overflow: "hidden" }}>
                 {/* Month row */}
                 <div style={{ display: "flex", borderBottom: `1px solid ${C.borderLight}` }}>
                   {monthGroups.map((mg, i) => (
-                    <div key={i} style={{ flex: mg.count, borderLeft: i > 0 ? `1px solid ${C.borderLight}` : "none", padding: "3px 6px", font: `600 11.5px 'IBM Plex Sans'`, color: C.text2, whiteSpace: "nowrap" as const, overflow: "hidden" }}>
+                    <div key={i} style={{ flex: mg.count, borderLeft: i > 0 ? `1px solid ${C.borderLight}` : "none", padding: "3px 6px", font: `600 11.5px var(--font-inter),'Inter'`, color: C.text2, whiteSpace: "nowrap" as const, overflow: "hidden" }}>
                       {mg.label}
                     </div>
                   ))}
@@ -2042,7 +2043,7 @@ function ScheduleTab({ project }: { project: any }) {
                   <div key={phase}>
                     {/* Phase header */}
                     <div style={{ display: "flex", alignItems: "center", background: "#f0f1f9", borderTop: `1px solid ${C.borderLight}`, padding: "5px 8px 5px 28px" }}>
-                      <div style={{ font: `700 12px 'IBM Plex Sans'`, color: C.primary, letterSpacing: ".04em", textTransform: "uppercase" as const, flex: 1 }}>{phase}</div>
+                      <div style={{ font: `700 12px var(--font-inter),'Inter'`, color: C.primary, letterSpacing: ".04em", textTransform: "uppercase" as const, flex: 1 }}>{phase}</div>
                     </div>
                     {filteredTasks.filter(t => t.phase === phase).map(t => {
                       const isEditName = editCell?.taskId === t.id && editCell?.field === "name";
@@ -2079,7 +2080,7 @@ function ScheduleTab({ project }: { project: any }) {
                                 onChange={e => setEditVal(e.target.value)}
                                 onBlur={commitEdit}
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
-                                style={{ width: "100%", fontSize: 15.5, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "'IBM Plex Sans',sans-serif" }}
+                                style={{ width: "100%", fontSize: 15.5, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "var(--font-inter),'Inter',sans-serif" }}
                               />
                             ) : (
                               <div onClick={() => { setEditCell({ taskId: t.id, field: "name" }); setEditVal(t.name); }}
@@ -2216,7 +2217,7 @@ function ScheduleTab({ project }: { project: any }) {
                                 <div style={{
                                   position: "absolute", top: 0, left: 4, right: 10, bottom: 0,
                                   display: "flex", alignItems: "center",
-                                  font: `500 11.5px 'IBM Plex Sans'`,
+                                  font: `500 11.5px var(--font-inter),'Inter'`,
                                   color: t.percentComplete > 40 ? "#fff" : C.text3,
                                   whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis",
                                   pointerEvents: "none",
@@ -2294,10 +2295,10 @@ function ScheduleTab({ project }: { project: any }) {
                 onChange={e => setAiCmd(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") runAiCommand(); }}
                 placeholder='e.g. "Shift Phase 2 by 2 weeks" or "Mark all design tasks complete"'
-                style={{ flex: 1, height: 36, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0 12px", fontSize: 16, fontFamily: "'IBM Plex Sans',sans-serif", outline: "none" }}
+                style={{ flex: 1, height: 36, border: `1px solid ${C.border}`, borderRadius: 8, padding: "0 12px", fontSize: 16, fontFamily: "var(--font-inter),'Inter',sans-serif", outline: "none" }}
               />
               <button onClick={runAiCommand} disabled={aiLoading || !aiCmd.trim()}
-                style={{ height: 36, padding: "0 18px", background: aiLoading ? C.surface2 : C.primary, color: aiLoading ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `600 15px 'IBM Plex Sans'`, cursor: aiLoading || !aiCmd.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                style={{ height: 36, padding: "0 18px", background: aiLoading ? C.surface2 : C.primary, color: aiLoading ? C.text3 : "#fff", border: "none", borderRadius: 8, font: `600 15px var(--font-inter),'Inter'`, cursor: aiLoading || !aiCmd.trim() ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                 {aiLoading ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Running…</> : "Run AI"}
               </button>
             </div>
@@ -2310,11 +2311,11 @@ function ScheduleTab({ project }: { project: any }) {
                 <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ fontSize: 15.5, fontWeight: 600, color: C.text, flex: 1 }}>{aiDiff.summary}</div>
                   <button onClick={applyAiDiff} disabled={applyingDiff}
-                    style={{ height: 30, padding: "0 14px", background: C.green, color: "#fff", border: "none", borderRadius: 7, font: `600 14px 'IBM Plex Sans'`, cursor: applyingDiff ? "not-allowed" : "pointer" }}>
+                    style={{ height: 30, padding: "0 14px", background: C.green, color: "#fff", border: "none", borderRadius: 7, font: `600 14px var(--font-inter),'Inter'`, cursor: applyingDiff ? "not-allowed" : "pointer" }}>
                     {applyingDiff ? "Applying…" : "✓ Apply"}
                   </button>
                   <button onClick={() => setAiDiff(null)}
-                    style={{ height: 30, padding: "0 14px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, font: `600 14px 'IBM Plex Sans'`, cursor: "pointer" }}>
+                    style={{ height: 30, padding: "0 14px", background: C.surface, color: C.text2, border: `1px solid ${C.border}`, borderRadius: 7, font: `600 14px var(--font-inter),'Inter'`, cursor: "pointer" }}>
                     Discard
                   </button>
                 </div>
@@ -2404,7 +2405,7 @@ function ResourcesTab({ project }: { project: any }) {
         <div style={{ fontSize: 15, fontWeight: 600 }}>Resource Roster</div>
         {resources.length > 0 && <span style={{ fontSize: 12.5, color: C.text3, marginLeft: 10 }}>{resources.length} team member{resources.length !== 1 ? "s" : ""}</span>}
         <div style={{ flex: 1 }} />
-        <button onClick={openAdd} style={{ height: 32, padding: "0 14px", background: C.primary, color: "#fff", border: "none", borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+        <button onClick={openAdd} style={{ height: 32, padding: "0 14px", background: C.primary, color: "#fff", border: "none", borderRadius: 8, font: `600 12.5px var(--font-inter),'Inter'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
           + Add Resource
         </button>
       </div>
@@ -2423,7 +2424,7 @@ function ResourcesTab({ project }: { project: any }) {
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.text2 }}>{f.label}</span>
                 <input type={f.type} placeholder={f.placeholder} value={(form as any)[f.key]}
                   onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                  style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 14, fontFamily: "'IBM Plex Sans',sans-serif", outline: "none" }} />
+                  style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 14, fontFamily: "var(--font-inter),'Inter',sans-serif", outline: "none" }} />
               </label>
             ))}
           </div>
@@ -2431,7 +2432,7 @@ function ResourcesTab({ project }: { project: any }) {
             <label style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: C.text2 }}>Role *</span>
               <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
-                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 14, fontFamily: "'IBM Plex Sans',sans-serif", background: C.surface }}>
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 14, fontFamily: "var(--font-inter),'Inter',sans-serif", background: C.surface }}>
                 {ROLES.map(r => <option key={r}>{r}</option>)}
               </select>
             </label>
@@ -2439,31 +2440,31 @@ function ResourcesTab({ project }: { project: any }) {
               <span style={{ fontSize: 12, fontWeight: 600, color: C.text2 }}>Allocation %</span>
               <input type="number" min={10} max={200} value={form.allocationPct}
                 onChange={e => setForm(p => ({ ...p, allocationPct: Number(e.target.value) }))}
-                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 14, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 14, fontFamily: "var(--font-inter),'Inter',sans-serif" }} />
             </label>
             <label style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: C.text2 }}>Start Date</span>
               <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
-                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 14, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 14, fontFamily: "var(--font-inter),'Inter',sans-serif" }} />
             </label>
             <label style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: C.text2 }}>End Date</span>
               <input type="date" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
-                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 14, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+                style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 8px", fontSize: 14, fontFamily: "var(--font-inter),'Inter',sans-serif" }} />
             </label>
           </div>
           <label style={{ display: "flex", flexDirection: "column" as const, gap: 4, marginBottom: 14 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: C.text2 }}>Skills / Technologies</span>
             <input type="text" placeholder="e.g. React, Node.js, AWS" value={form.skills}
               onChange={e => setForm(p => ({ ...p, skills: e.target.value }))}
-              style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 14, fontFamily: "'IBM Plex Sans',sans-serif" }} />
+              style={{ height: 32, border: `1px solid ${C.border}`, borderRadius: 7, padding: "0 10px", fontSize: 14, fontFamily: "var(--font-inter),'Inter',sans-serif" }} />
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={save} disabled={saving || !form.name.trim()}
-              style={{ height: 32, padding: "0 18px", background: form.name.trim() ? C.primary : C.surface2, color: form.name.trim() ? "#fff" : C.text3, border: "none", borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: form.name.trim() ? "pointer" : "not-allowed" }}>
+              style={{ height: 32, padding: "0 18px", background: form.name.trim() ? C.primary : C.surface2, color: form.name.trim() ? "#fff" : C.text3, border: "none", borderRadius: 8, font: `600 12.5px var(--font-inter),'Inter'`, cursor: form.name.trim() ? "pointer" : "not-allowed" }}>
               {saving ? "Saving…" : editId ? "Save Changes" : "Add Resource"}
             </button>
-            <button onClick={() => setShowForm(false)} style={{ height: 32, padding: "0 14px", background: "none", border: `1px solid ${C.border}`, borderRadius: 8, font: `600 12.5px 'IBM Plex Sans'`, cursor: "pointer", color: C.text2 }}>Cancel</button>
+            <button onClick={() => setShowForm(false)} style={{ height: 32, padding: "0 14px", background: "none", border: `1px solid ${C.border}`, borderRadius: 8, font: `600 12.5px var(--font-inter),'Inter'`, cursor: "pointer", color: C.text2 }}>Cancel</button>
           </div>
         </div>
       )}
@@ -2474,7 +2475,7 @@ function ResourcesTab({ project }: { project: any }) {
           <div style={{ fontSize: 33, marginBottom: 12 }}>👥</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: C.primary, marginBottom: 8 }}>No team members yet</div>
           <div style={{ fontSize: 14, color: C.text2, maxWidth: 420, margin: "0 auto 18px" }}>Add your project team here. Once added, you can assign resources directly to schedule tasks.</div>
-          <button onClick={openAdd} style={{ height: 34, padding: "0 18px", background: C.primary, color: "#fff", border: "none", borderRadius: 8, font: `600 13px 'IBM Plex Sans'`, cursor: "pointer" }}>+ Add First Resource</button>
+          <button onClick={openAdd} style={{ height: 34, padding: "0 18px", background: C.primary, color: "#fff", border: "none", borderRadius: 8, font: `600 13px var(--font-inter),'Inter'`, cursor: "pointer" }}>+ Add First Resource</button>
         </div>
       ) : resources.length > 0 && (
         <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
@@ -4057,7 +4058,7 @@ function RequirementsTab({ project }: { project: any }) {
             {impactStatus === "error" ? (
               <div style={{ color: "#cf3f3a", fontSize: 13 }}>{impactText || "Analysis failed. Please try again."}</div>
             ) : (
-              <div style={{ fontSize: 13, color: "#1a2332", lineHeight: 1.75, whiteSpace: "pre-wrap" as const, fontFamily: "'IBM Plex Sans', -apple-system, sans-serif" }}>
+              <div style={{ fontSize: 13, color: "#1a2332", lineHeight: 1.75, whiteSpace: "pre-wrap" as const, fontFamily: "var(--font-inter),'Inter', -apple-system, sans-serif" }}>
                 {impactText || <span style={{ color: "#9ca3af" }}>Starting analysis…</span>}
                 {impactStatus === "running" && <span style={{ display: "inline-block", width: 8, height: 14, background: "#4f46e5", borderRadius: 2, marginLeft: 2, verticalAlign: "text-bottom", animation: "blink-cursor 1s step-end infinite" }} />}
               </div>
@@ -5145,7 +5146,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
                         borderRadius: 999, padding: "2px 9px",
                         cursor: canChange ? "pointer" : "default",
                         display: "flex", alignItems: "center", gap: 4,
-                        fontFamily: "'IBM Plex Sans',sans-serif",
+                        fontFamily: "var(--font-inter),'Inter',sans-serif",
                       }}
                     >
                       {sc.label}
@@ -5164,7 +5165,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
                               display: "block", width: "100%", textAlign: "left",
                               padding: "9px 14px", border: "none", background: "transparent",
                               cursor: "pointer", fontSize: 13, fontWeight: 500,
-                              color: nsc.color, fontFamily: "'IBM Plex Sans',sans-serif",
+                              color: nsc.color, fontFamily: "var(--font-inter),'Inter',sans-serif",
                             }}>
                               → Mark as {nsc.label}
                             </button>
@@ -5271,7 +5272,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
                     borderLeft: isActive ? "3px solid #0097AC" : "3px solid transparent",
                     color: isActive ? "#fff" : "rgba(255,255,255,.62)",
                     fontSize: 12.5, fontWeight: isActive ? 600 : 500,
-                    fontFamily: "'IBM Plex Sans',sans-serif",
+                    fontFamily: "var(--font-inter),'Inter',sans-serif",
                     transition: "all .1s",
                   }}>
                     <span style={{ color: isActive ? "#0097AC" : "rgba(255,255,255,.4)", display: "flex", alignItems: "center", flexShrink: 0 }}>

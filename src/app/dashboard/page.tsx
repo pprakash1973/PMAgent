@@ -26,7 +26,7 @@ const C = {
   teal: "#006E74", lt: "#0097AC",
   text: "#0F2020", muted: "#6B7E8A", faint: "#94a3b8",
   red: "#c5392b", amber: "#c17d12", green: "#158a5a",
-  FF: "'Aptos','Calibri',system-ui,sans-serif",
+  FF: "var(--font-inter),'Inter',system-ui,sans-serif",
 } as const;
 
 function ragColor(s: string) { return s === "red" ? C.red : s === "amber" ? C.amber : C.green; }

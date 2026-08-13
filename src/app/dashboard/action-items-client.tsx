@@ -156,7 +156,7 @@ function ActionItemRow({ item, now }: { item: ActionItem; now: Date }) {
             style={{
               width: "100%", fontSize: 12, border: "1px solid #e2e5ea", borderRadius: 8,
               padding: "8px 12px", resize: "none", outline: "none",
-              fontFamily: "'Aptos','Calibri',system-ui,sans-serif",
+              fontFamily: "var(--font-inter),'Inter',system-ui,sans-serif",
               marginBottom: 10, boxSizing: "border-box", color: "#1a1d24", background: "#fff",
             }}
           />
