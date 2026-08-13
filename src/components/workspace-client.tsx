@@ -6,6 +6,10 @@ import {
   CircleDollarSign, Layers, BarChart2, GitCompare, Zap, Briefcase, Info,
   BookOpen, TrendingUp, Plus, Trash2, CheckCircle,
 } from "lucide-react";
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell,
+} from "recharts";
 import { useRouter } from "next/navigation";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { StatusQuestionnaire } from "@/components/status-questionnaire";
@@ -20,7 +24,8 @@ import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@
 import { useCopilot } from "@/components/copilot/CopilotContext";
 
 const C = {
-  primary: "#4f5bd5", primaryLight: "#eef0fc", primaryBorder: "#cfd4f5",
+  primary: "#006E74", primaryLight: "rgba(0,110,116,.08)", primaryBorder: "rgba(0,110,116,.25)",
+  tealL: "#0097AC",
   green: "#158a5a", greenLight: "#e3f3ea",
   amber: "#c17d12", amberLight: "#fbf0da",
   red: "#cf3f3a", redLight: "#fbe4e2",
@@ -4747,12 +4752,261 @@ function BaselineTab({ project }: { project: any }) {
   );
 }
 
+// ── Overview tab ───────────────────────────────────────────────────────────────
+
+function OverviewTab({ project }: { project: any }) {
+  const reports = (project.statusReports ?? []) as any[];
+  const latest = reports[0] ?? null;
+  const hs = latest?.healthScore ?? null;
+
+  const compositeScore: number | null = hs?.compositeScore ?? null;
+  const spi: number | null = hs?.spi ?? null;
+  const cpi: number | null = hs?.cpi ?? null;
+  const ev: number | null = hs?.ev ?? null;
+  const ac: number | null = hs?.ac ?? null;
+  const pv: number | null = hs?.pv ?? null;
+  const eac: number | null = hs?.eac ?? null;
+  const bac: number | null = project.budget ?? null;
+
+  const risks = (project.risks ?? []) as any[];
+  const issues = (project.issues ?? []) as any[];
+
+  const trendData = ([...reports] as any[]).reverse().map((r: any) => ({
+    label: r.reportDate ? new Date(r.reportDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "?",
+    score: (r.healthScore?.compositeScore ?? null) as number | null,
+  })).filter(d => d.score !== null);
+
+  const evmData = ([
+    { name: "PV", value: pv, fill: "#003C51" },
+    { name: "EV", value: ev, fill: C.green },
+    { name: "AC", value: ac, fill: C.red },
+  ] as { name: string; value: number | null; fill: string }[]).filter(d => d.value !== null).map(d => ({
+    name: d.name, value: Math.round((d.value as number) / 1000), fill: d.fill,
+  }));
+
+  const healthRag = project.healthStatus ?? "green";
+  const scoreC = compositeScore === null ? C.text3 : compositeScore < 50 ? C.red : compositeScore < 70 ? C.amber : C.green;
+  const fmt2 = (v: number | null) => v === null ? "—" : v.toFixed(2);
+  const fmtK = (v: number | null) => v === null ? "—" : `$${Math.round(v / 1000)}K`;
+  const budgetPct = bac && ac ? Math.round((ac / bac) * 100) : null;
+  const evPct = pv && ev ? Math.round((ev / pv) * 100) : null;
+  const highRisks = risks.filter((r: any) => ["high", "very_high"].includes(r.probability ?? "")).length;
+  const critIssues = issues.filter((i: any) => ["critical", "high"].includes(i.severity ?? "")).length;
+
+  const nextMs = ([...(project.milestones ?? [])] as any[])
+    .filter(m => m.status === "pending" && m.dueDate && new Date(m.dueDate) > new Date())
+    .sort((a: any, b: any) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0] ?? null;
+  const daysToMs = nextMs ? Math.ceil((new Date(nextMs.dueDate).getTime() - Date.now()) / 86400000) : null;
+
+  const card = (children: React.ReactNode, style?: React.CSSProperties) => (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 18px", ...style }}>
+      {children}
+    </div>
+  );
+
+  const chip = (label: string, value: string | number | null, sub: string, valueColor: string) => (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "11px 14px" }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: valueColor, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>{value ?? "—"}</div>
+      <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".06em", marginTop: 4 }}>{label}</div>
+      <div style={{ fontSize: 10.5, color: C.text3, marginTop: 2, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Row 1 — KPI cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12 }}>
+        {card(<>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: ".05em" }}>Health Score</span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: ragBg(healthRag), color: ragColor(healthRag) }}>
+              {healthRag === "green" ? "On Track" : healthRag === "amber" ? "At Risk" : "Critical"}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 10 }}>
+            <span style={{ fontSize: 40, fontWeight: 700, color: scoreC, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>
+              {compositeScore ?? "—"}
+            </span>
+            <span style={{ fontSize: 14, color: C.text3 }}>/ 100</span>
+          </div>
+          <div style={{ height: 6, background: "#edf0f3", borderRadius: 99, marginBottom: 7 }}>
+            <div style={{ height: "100%", width: `${compositeScore ?? 0}%`, background: scoreC, borderRadius: 99 }} />
+          </div>
+          <div style={{ fontSize: 11, color: C.text3 }}>
+            {latest?.reportDate ? `Last report: ${new Date(latest.reportDate).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}` : "No status report submitted yet"}
+          </div>
+        </>)}
+
+        {card(<>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Schedule Perf.</div>
+          <div style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", marginBottom: 4, color: spi === null ? C.text3 : spi < 0.85 ? C.red : spi < 0.95 ? C.amber : C.green }}>
+            {fmt2(spi)}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.text3 }}>SPI · EV ÷ PV</div>
+          <div style={{ fontSize: 11, marginTop: 6, color: spi === null ? C.text3 : spi < 0.85 ? C.red : spi < 0.95 ? C.amber : C.green }}>
+            {spi === null ? "No EVM data" : spi < 0.85 ? "⚠ Behind schedule" : spi < 0.95 ? "⚠ Slightly behind" : "✓ On track"}
+          </div>
+        </>)}
+
+        {card(<>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Cost Perf.</div>
+          <div style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", marginBottom: 4, color: cpi === null ? C.text3 : cpi < 0.85 ? C.red : cpi < 0.95 ? C.amber : C.green }}>
+            {fmt2(cpi)}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.text3 }}>CPI · EV ÷ AC</div>
+          <div style={{ fontSize: 11, marginTop: 6, color: cpi === null ? C.text3 : cpi < 0.85 ? C.red : cpi < 0.95 ? C.amber : C.green }}>
+            {cpi === null ? "No EVM data" : cpi < 0.85 ? "⚠ Cost overrun" : cpi < 0.95 ? "⚠ Watch costs" : "✓ Within budget"}
+          </div>
+        </>)}
+      </div>
+
+      {/* Row 2 — metric chips */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
+        {chip("Schedule %", evPct !== null ? `${evPct}%` : null, evPct !== null ? (evPct >= 90 ? "On track" : evPct >= 80 ? "Slightly behind" : "Behind schedule") : "No EVM data", evPct !== null && evPct < 80 ? C.amber : C.primary)}
+        {chip("Budget Used", budgetPct !== null ? `${budgetPct}%` : null, budgetPct !== null ? `${fmtK(ac)} of ${fmtK(bac)}` : "No data", budgetPct !== null && budgetPct > 80 ? C.amber : C.primary)}
+        {chip("EAC Forecast", fmtK(eac), bac && eac ? (eac > bac ? `+${fmtK(eac - bac)} over BAC` : "Within budget") : "No forecast", eac !== null && bac !== null && eac > bac ? C.red : C.primary)}
+        {chip("Open Risks", risks.length, `${highRisks} high priority`, risks.length > 5 ? C.red : risks.length > 2 ? C.amber : C.green)}
+        {chip("Open Issues", issues.length, `${critIssues} critical / high`, issues.length > 3 ? C.red : issues.length > 1 ? C.amber : C.green)}
+      </div>
+
+      {/* Row 3 — health trend + risks list */}
+      <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 12 }}>
+        {card(<>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Health Trend</div>
+              <div style={{ fontSize: 11, color: C.text3 }}>{trendData.length} weekly reports</div>
+            </div>
+            {compositeScore !== null && <span style={{ fontSize: 22, fontWeight: 700, color: scoreC }}>{compositeScore}</span>}
+          </div>
+          {trendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={140}>
+              <LineChart data={trendData} margin={{ top: 4, right: 4, bottom: 0, left: -30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.text3 }} tickLine={false} axisLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: C.text3 }} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.border}`, boxShadow: "0 4px 12px rgba(0,0,0,.08)" }} />
+                <ReferenceLine y={75} stroke={C.green} strokeDasharray="4 3" />
+                <Line type="monotone" dataKey="score" stroke={C.primary} strokeWidth={2.5} dot={{ r: 3, fill: C.primary }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>
+              No health trend data — submit status reports to see the trend
+            </div>
+          )}
+        </>)}
+
+        {card(<>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 12 }}>Risks &amp; Issues</div>
+          {risks.length === 0 && issues.length === 0 ? (
+            <div style={{ fontSize: 12, color: C.text3, textAlign: "center", padding: "32px 0" }}>No open items — clean slate ✓</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {risks.slice(0, 3).map((r: any) => {
+                const rs = (r.score ?? 0) as number;
+                const rc = rs >= 15 ? C.red : rs >= 8 ? C.amber : C.green;
+                return (
+                  <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.surface2, borderRadius: 8 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: rc, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: rc }}>{rs}</span>
+                  </div>
+                );
+              })}
+              {issues.slice(0, 2).map((i: any) => {
+                const ic = i.severity === "critical" ? C.red : i.severity === "high" ? C.amber : C.text3;
+                return (
+                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.surface2, borderRadius: 8 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: ic, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.title}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: ic, textTransform: "capitalize" as const }}>{i.severity}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>)}
+      </div>
+
+      {/* Row 4 — EVM (only when data exists) */}
+      {evmData.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 12 }}>
+          {card(<>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 3 }}>EVM Snapshot</div>
+            <div style={{ fontSize: 11, color: C.text3, marginBottom: 10 }}>Planned Value · Earned Value · Actual Cost ($K)</div>
+            <ResponsiveContainer width="100%" height={120}>
+              <BarChart data={evmData} margin={{ top: 0, right: 0, bottom: 0, left: -30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: C.text2 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: C.text3 }} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(v: any) => [`$${v}K`]} contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                <Bar dataKey="value" radius={[5, 5, 0, 0]}>
+                  {evmData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </>)}
+          {card(<>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 12 }}>EVM Metrics</div>
+            {([
+              { label: "Planned Value (PV)", value: fmtK(pv) },
+              { label: "Earned Value (EV)",  value: fmtK(ev), note: ev && pv ? (ev < pv ? `−${fmtK(pv - ev)}` : `+${fmtK(ev - pv)}`) : undefined, noteColor: ev && pv ? (ev < pv ? C.amber : C.green) : undefined },
+              { label: "Actual Cost (AC)",   value: fmtK(ac) },
+              { label: "SPI",  value: fmt2(spi), valueColor: spi !== null ? (spi < 0.85 ? C.red : spi < 0.95 ? C.amber : C.green) : undefined },
+              { label: "CPI",  value: fmt2(cpi), valueColor: cpi !== null ? (cpi < 0.85 ? C.red : cpi < 0.95 ? C.amber : C.green) : undefined },
+              { label: "EAC",  value: fmtK(eac), valueColor: eac !== null && bac !== null && eac > bac ? C.red : undefined },
+            ] as { label: string; value: string; note?: string; noteColor?: string; valueColor?: string }[]).map(row => (
+              <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0", borderBottom: `1px solid ${C.borderLight}` }}>
+                <span style={{ fontSize: 11, color: C.text3 }}>{row.label}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  {row.note && <span style={{ fontSize: 10, color: row.noteColor ?? C.text3 }}>{row.note}</span>}
+                  <span style={{ fontSize: 12, fontWeight: 700, color: row.valueColor ?? C.text, fontVariantNumeric: "tabular-nums" }}>{row.value}</span>
+                </div>
+              </div>
+            ))}
+          </>)}
+        </div>
+      )}
+
+      {/* Next milestone strip */}
+      {nextMs && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+          <CalendarDays size={14} color={C.primary} />
+          <span style={{ fontSize: 12, color: C.text3 }}>Next milestone:</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1 }}>{nextMs.name}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: daysToMs !== null && daysToMs < 14 ? C.red : C.primary }}>
+            {daysToMs === 0 ? "Due today" : daysToMs !== null && daysToMs < 0 ? `${Math.abs(daysToMs)}d overdue` : daysToMs !== null ? `${daysToMs}d` : "—"}
+          </span>
+          <span style={{ fontSize: 11, color: C.text3 }}>
+            {nextMs.dueDate ? new Date(nextMs.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const PREDICTIVE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
-const AGILE_TABS = ["Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting"];
+const PREDICTIVE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
+const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting"];
+
+const PREDICTIVE_NAV_GROUPS = [
+  { section: "Project",        tabs: ["Overview", "Project Info"] },
+  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Schedule", "Cost", "Resources"] },
+  { section: "Risk & Quality", tabs: ["Risk", "Issues", "Registers"] },
+  { section: "Reporting",      tabs: ["Status Reporting", "Baseline"] },
+];
+const AGILE_NAV_GROUPS = [
+  { section: "Project",        tabs: ["Overview", "Project Info"] },
+  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Sprints", "Schedule", "Commercial"] },
+  { section: "Risk & Quality", tabs: ["Risk", "Issues"] },
+  { section: "Reporting",      tabs: ["Status Reporting"] },
+];
 
 const TAB_META: Record<string, { icon: React.ReactNode }> = {
+  "Overview":         { icon: <TrendingUp size={14} /> },
   "Project Info":     { icon: <Info size={14} /> },
   "Artifacts":        { icon: <FileText size={14} /> },
   "Sprints":          { icon: <Zap size={14} /> },
@@ -4772,8 +5026,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   draft:     { label: "Draft",     color: "#5b616e", bg: "#f1f3f5", border: "#d3d7de" },
   active:    { label: "Active",    color: "#158a5a", bg: "#e3f3ea", border: "#a3d9bc" },
   closing:   { label: "Closing",   color: "#c17d12", bg: "#fbf0da", border: "#f0cc80" },
-  closed:    { label: "Closed",    color: "#4f5bd5", bg: "#eef0fc", border: "#cfd4f5" },
-  completed: { label: "Completed", color: "#4f5bd5", bg: "#eef0fc", border: "#cfd4f5" },
+  closed:    { label: "Closed",    color: "#006E74", bg: "rgba(0,110,116,.08)", border: "rgba(0,110,116,.25)" },
+  completed: { label: "Completed", color: "#006E74", bg: "rgba(0,110,116,.08)", border: "rgba(0,110,116,.25)" },
   archived:  { label: "Archived",  color: "#8a909c", bg: "#f7f8fa", border: "#e2e5ea" },
 };
 
@@ -4786,9 +5040,9 @@ const STATUS_NEXT: Record<string, string[]> = {
 
 export function WorkspaceClient({ project, catalog }: { project: any; catalog: any[] }) {
   const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
-  const TABS = isAgile ? AGILE_TABS : PREDICTIVE_TABS;
+  const NAV_GROUPS = isAgile ? AGILE_NAV_GROUPS : PREDICTIVE_NAV_GROUPS;
 
-  const [tab, setTab] = useState("Project Info");
+  const [tab, setTab] = useState("Overview");
   const [currentPhase, setCurrentPhase] = useState<string>(project.currentPhase || "initiation");
   const [badges, setBadges] = useState<Record<string, number>>({});
   const [dataCounts, setDataCounts] = useState<Record<string, number>>({});
@@ -4990,71 +5244,76 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
         onPhaseAdvanced={setCurrentPhase}
       />
 
-      {/* Tabs — segmented control */}
-      <div style={{
-        display: "flex", gap: 3, flexWrap: "wrap",
-        background: C.surface2, border: `1px solid ${C.border}`,
-        borderRadius: 10, padding: "5px 6px", marginBottom: 20,
-      }}>
-        {TABS.map(t => {
-          const k = t.toLowerCase().replace(/ /g, "_") === "scope_control" ? "scope" : t.toLowerCase().replace(/ /g, "_");
-          const advisoryCount = badges[k] ?? 0;
-          const dataCount = dataCounts[k] ?? 0;
-          const isActive = tab === t;
-          return (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                padding: "6px 13px", cursor: "pointer",
-                background: isActive ? C.surface : "transparent",
-                border: isActive ? `1px solid ${C.border}` : "1px solid transparent",
-                borderRadius: 7,
-                boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.07)" : "none",
-                fontFamily: "'IBM Plex Sans',sans-serif", fontSize: "13px",
-                fontWeight: isActive ? 600 : 500,
-                color: isActive ? C.primary : C.text3,
-                transition: "all .12s",
-                display: "flex", alignItems: "center", gap: 6,
-              }}
-            >
-              <span style={{ color: isActive ? C.primary : C.text3, display: "flex", alignItems: "center" }}>
-                {TAB_META[t]?.icon}
-              </span>
-              {t}
-              {dataCount > 0 && (
-                <span style={{
-                  fontSize: 11, fontWeight: 700, background: C.primary, color: "#fff",
-                  borderRadius: 99, padding: "1px 5px", lineHeight: "16px", minWidth: 16, textAlign: "center",
-                }}>{dataCount}</span>
-              )}
-              {advisoryCount > 0 && (
-                <span title={`${advisoryCount} AI suggestion${advisoryCount !== 1 ? "s" : ""}`} style={{
-                  fontSize: 10, fontWeight: 700, background: "#f59e0b", color: "#fff",
-                  borderRadius: 99, padding: "1px 4px", lineHeight: "16px", minWidth: 14, textAlign: "center",
-                }}>⚡</span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {/* Workspace — vertical left nav + content */}
+      <div style={{ display: "flex", gap: 0, alignItems: "flex-start" }}>
 
-      {/* Tab content */}
-      {tab === "Project Info" && <ProjectInfoTab project={project} />}
-      {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} onNavigate={setTab} />}
-      {tab === "Backlog" && <BacklogTab project={project} />}
-      {tab === "Sprints" && <SprintsTab project={project} />}
-      {tab === "Risk" && <RiskTab project={project} />}
-      {tab === "Issues" && <IssuesTab project={project} />}
-      {tab === "Resources" && <ResourcesTab project={project} />}
-      {tab === "Schedule" && <ScheduleTab project={project} />}
-      {tab === "Cost" && <CostTab project={project} />}
-      {tab === "Commercial" && isAgile && <AgileCommercialTab project={project} />}
-      {tab === "Registers" && <RegistersTab project={project} />}
-      {tab === "Scope Control" && <ScopeControlTab project={project} />}
-      {tab === "Status Reporting" && isAgile && <AgileStatusTab project={project} />}
-      {tab === "Status Reporting" && !isAgile && <StatusTab project={project} />}
-      {tab === "Baseline" && <BaselineTab project={project} />}
+        {/* Left nav */}
+        <nav style={{
+          width: 192, flexShrink: 0, background: "#003C51", borderRadius: 12,
+          padding: "10px 0", marginRight: 20, position: "sticky", top: 22,
+        }}>
+          {NAV_GROUPS.map(group => (
+            <React.Fragment key={group.section}>
+              <div style={{ padding: "10px 14px 4px", fontSize: 9, fontWeight: 700, color: "rgba(255,255,255,.35)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+                {group.section}
+              </div>
+              {group.tabs.map(t => {
+                const k = t === "Scope Control" ? "scope" : t.toLowerCase().replace(/ /g, "_");
+                const dataCount = dataCounts[k] ?? 0;
+                const advisory = badges[k] ?? 0;
+                const isActive = tab === t;
+                return (
+                  <button key={t} onClick={() => setTab(t)} style={{
+                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                    padding: isActive ? "7px 14px 7px 11px" : "7px 14px",
+                    border: "none", cursor: "pointer", textAlign: "left",
+                    background: isActive ? "rgba(0,110,116,.28)" : "transparent",
+                    borderLeft: isActive ? "3px solid #0097AC" : "3px solid transparent",
+                    color: isActive ? "#fff" : "rgba(255,255,255,.62)",
+                    fontSize: 12.5, fontWeight: isActive ? 600 : 500,
+                    fontFamily: "'IBM Plex Sans',sans-serif",
+                    transition: "all .1s",
+                  }}>
+                    <span style={{ color: isActive ? "#0097AC" : "rgba(255,255,255,.4)", display: "flex", alignItems: "center", flexShrink: 0 }}>
+                      {TAB_META[t]?.icon}
+                    </span>
+                    <span style={{ flex: 1 }}>{t}</span>
+                    {dataCount > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, background: "#0097AC", color: "#fff", borderRadius: 99, padding: "1px 5px", minWidth: 16, textAlign: "center" }}>
+                        {dataCount}
+                      </span>
+                    )}
+                    {advisory > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, background: "#f59e0b", color: "#fff", borderRadius: 99, padding: "1px 4px", minWidth: 14, textAlign: "center" }}>⚡</span>
+                    )}
+                  </button>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </nav>
+
+        {/* Tab content */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {tab === "Overview" && <OverviewTab project={project} />}
+          {tab === "Project Info" && <ProjectInfoTab project={project} />}
+          {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} onNavigate={setTab} />}
+          {tab === "Backlog" && <BacklogTab project={project} />}
+          {tab === "Sprints" && <SprintsTab project={project} />}
+          {tab === "Risk" && <RiskTab project={project} />}
+          {tab === "Issues" && <IssuesTab project={project} />}
+          {tab === "Resources" && <ResourcesTab project={project} />}
+          {tab === "Schedule" && <ScheduleTab project={project} />}
+          {tab === "Cost" && <CostTab project={project} />}
+          {tab === "Commercial" && isAgile && <AgileCommercialTab project={project} />}
+          {tab === "Registers" && <RegistersTab project={project} />}
+          {tab === "Scope Control" && <ScopeControlTab project={project} />}
+          {tab === "Status Reporting" && isAgile && <AgileStatusTab project={project} />}
+          {tab === "Status Reporting" && !isAgile && <StatusTab project={project} />}
+          {tab === "Baseline" && <BaselineTab project={project} />}
+        </div>
+
+      </div>
 
     </div>
   );

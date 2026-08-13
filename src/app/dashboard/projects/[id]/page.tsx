@@ -60,7 +60,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       artifactSelections: true,
       statusReports: {
         orderBy: { reportDate: "desc" },
-        take: 3,
+        take: 8,
         include: { healthScore: true },
       },
       requirementsDocs: { orderBy: { createdAt: "desc" }, take: 5 },
