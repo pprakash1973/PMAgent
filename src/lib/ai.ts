@@ -557,25 +557,33 @@ Return JSON with:
 Use deliverable-oriented decomposition: every element is a noun/noun-phrase outcome, never a verb or activity.
 Include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
 
+IMPORTANT — Role naming: ALL owner fields (phase, deliverable, and work-package level) MUST use generic numbered role names — never individual person names or team names.
+Use roles such as: "Project Manager", "Business Analyst 1", "Business Analyst 2", "Developer 1", "Developer 2", "Senior Developer 1", "QA Engineer 1", "QA Engineer 2", "Technical Lead", "Architect", "DevOps Engineer 1", "Scrum Master".
+
+IMPORTANT — Duration constraint: Use the startDate and endDate from the Project Context.
+Calibrate ALL estimatedDays values so the total WBS scope fits within this window.
+The sum of all work-package estimatedDays must not exceed the total working days (Mon–Fri) between startDate and endDate.
+Never generate estimatedDays that would cause the schedule to run beyond the project end date.
+
 Return JSON with:
 - projectName (string)
 - phases (array of phases):
   {
     id (string): "1.1", "1.2" …
     name (string): deliverable-oriented phase name
-    owner (string): team or role
+    owner (string): generic numbered role name (e.g. "Technical Lead")
     deliverables (array):
       {
         id (string): "1.1.1" …
         name (string): deliverable name
-        owner (string)
+        owner (string): generic numbered role name
         workPackages (array):
           {
             id (string): "1.1.1.1" …
             name (string): work package name
             description (string): what this deliverable contains
             estimatedDays (number)
-            owner (string)
+            owner (string): generic numbered role name (e.g. "Developer 1", "Business Analyst 1")
             acceptanceCriteria (string)
           }
       }

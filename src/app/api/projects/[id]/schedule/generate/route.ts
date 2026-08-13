@@ -4,6 +4,18 @@ import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+// Count working days (Mon–Fri) between two dates, inclusive
+function countWorkingDays(start: Date, end: Date): number {
+  let count = 0;
+  const d = new Date(start);
+  while (d <= end) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
+
 // Add N working days (Mon–Fri) to a date
 function addWorkingDays(start: Date, days: number): Date {
   const d = new Date(start);
@@ -229,6 +241,38 @@ export async function POST(
     finish[code] = addWorkingDays(taskStart, t.estimatedDays);
   }
 
+  // ── End-date scaling: compress durations proportionally if CPM overruns project end ─
+  if (project.endDate && allTasks.length > 0) {
+    const projectEnd = new Date(project.endDate);
+    const maxFinishTime = Math.max(...Object.values(finish).map((d) => d.getTime()));
+    if (maxFinishTime > projectEnd.getTime()) {
+      const availableDays = countWorkingDays(projectStart, projectEnd);
+      const totalWbsDays = allTasks.reduce((s, t) => s + t.estimatedDays, 0);
+      const scale = availableDays / Math.max(totalWbsDays, 1);
+      for (const t of allTasks) {
+        t.estimatedDays = Math.max(1, Math.round(t.estimatedDays * scale));
+      }
+      // Re-run CPM with scaled durations
+      for (const key of Object.keys(start)) delete start[key];
+      for (const key of Object.keys(finish)) delete finish[key];
+      for (const code of order) {
+        const t = taskByCode[code];
+        if (!t) continue;
+        const depFinish = t.dependencies
+          .filter((d) => d !== code && finish[d])
+          .map((d) => finish[d].getTime());
+        const taskStart = depFinish.length > 0
+          ? new Date(Math.max(...depFinish))
+          : new Date(projectStart);
+        while (taskStart.getDay() === 0 || taskStart.getDay() === 6) {
+          taskStart.setDate(taskStart.getDate() + 1);
+        }
+        start[code] = taskStart;
+        finish[code] = addWorkingDays(taskStart, t.estimatedDays);
+      }
+    }
+  }
+
   // ── Load existing tasks for merge ──────────────────────────────────────────
   const existingTasks = await prisma.scheduleTask.findMany({
     where: { projectId: id },
@@ -370,6 +414,29 @@ export async function POST(
           status: "not_started",
         },
       });
+    }
+  }
+
+  // ── Auto-create ProjectResource entries for WBS owners not already in roster ─
+  {
+    const uniqueOwners = [...new Set(allTasks.map((t) => t.owner).filter(Boolean))];
+    const existingNames = new Set(roster.map((r) => r.name.toLowerCase()));
+    const existingRoles = new Set(roster.map((r) => r.role.toLowerCase()));
+    const added = new Set<string>();
+    for (const owner of uniqueOwners) {
+      const ownerLower = owner.toLowerCase();
+      if (existingNames.has(ownerLower) || existingRoles.has(ownerLower) || added.has(ownerLower)) continue;
+      await prisma.projectResource.create({
+        data: {
+          projectId: id,
+          name: owner,
+          role: owner,
+          allocationPct: 100,
+          startDate: project.startDate ?? projectStart,
+          endDate: project.endDate ?? undefined,
+        },
+      });
+      added.add(ownerLower);
     }
   }
 
