@@ -910,7 +910,7 @@ function RiskTab({ project }: { project: any }) {
               {isEdit ? (
                 <input value={editForm.owner} onChange={e => setEditForm((f: any) => ({ ...f, owner: e.target.value }))} placeholder="Owner" style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 12, background: C.surface, color: C.text, width: "100%" }} />
               ) : (
-                <span style={{ fontSize: 12, color: C.text2 }}>{r.owner || "—"}</span>
+                <span style={{ fontSize: 12, color: r.owner ? C.text2 : C.text3, fontStyle: r.owner ? "normal" : "italic" as const }}>{r.owner || "To Be Assigned"}</span>
               )}
 
               {isEdit ? (

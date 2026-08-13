@@ -696,7 +696,7 @@ Return JSON with:
     strategy (string): for Threat: Avoid/Transfer/Mitigate/Escalate/Accept; for Opportunity: Exploit/Share/Enhance/Escalate/Accept
     responseActions (array of strings)
     contingencyPlan (string)
-    owner (string)
+    owner (string): generic project role name (e.g. "Project Manager", "Technical Lead") — NOT a personal name or org-specific title; use "To Be Assigned" if no clear owner
     trigger (string): condition that indicates risk is occurring
     status (string): Open | In Progress | Closed | Occurred | Accepted
     dueDate (string)
@@ -705,7 +705,7 @@ Return JSON with:
     id (string): A001…
     description (string)
     category (string): Technical | Business | Resource | External
-    owner (string)
+    owner (string): generic project role name or "To Be Assigned"
     validationDate (string)
     status (string): Open | Validated | Invalid
     impactIfWrong (string)
@@ -716,7 +716,7 @@ Return JSON with:
     category (string): Scope | Schedule | Cost | Quality | Resource | Technical | Vendor
     severity (string): Critical | High | Medium | Low
     rootCause (string)
-    owner (string)
+    owner (string): generic project role name or "To Be Assigned"
     resolutionPlan (string)
     targetResolutionDate (string)
     status (string): Open | In Progress | Escalated | Resolved | Closed
@@ -753,7 +753,7 @@ Return JSON with:
     responseActions (array of strings): specific, actionable steps
     contingencyPlan (string): if risk occurs
     contingencyReserve (string): budget reserve allocated
-    owner (string): single named owner
+    owner (string): generic project role name (e.g. "Project Manager", "Technical Lead", "Business Analyst 1") — use a role from the project team, NOT a personal name or organisation-specific title; use "To Be Assigned" if no clear owner can be determined
     trigger (string): observable event that indicates risk is materializing
     residualRiskScore (number): P×I after response
     status (string): Open | In Progress | Closed | Occurred | Accepted
