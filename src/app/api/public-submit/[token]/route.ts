@@ -148,7 +148,7 @@ textarea{resize:none}
   </div>
 
   <div class="intro">
-    Hi <strong>${escHtml(record.resource.name)}</strong> (${escHtml(record.resource.role)}). Please review your assigned tasks below and submit your actuals.
+    Hi <strong>${escHtml(record.resource.name)}</strong>, please review your assigned tasks below and submit your actuals.
     Fields marked * are required.
   </div>
 
@@ -163,7 +163,7 @@ textarea{resize:none}
     </div>
     <h2 style="font-size:22px;font-weight:700;color:#14532d;margin-bottom:10px">Thank you, ${escHtml(record.resource.name)}!</h2>
     <p style="font-size:15px;color:#166534;line-height:1.6;margin-bottom:8px">Your actuals for <strong>${escHtml(record.project.name)}</strong> have been recorded successfully.</p>
-    <p style="font-size:13px;color:#4ade80;color:#15803d">The project manager will be notified. You can close this window.</p>
+    <p style="font-size:13px;color:#15803d">Your project manager will be notified. You can close this window.</p>
   </div>
 </div>
 
