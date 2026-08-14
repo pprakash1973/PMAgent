@@ -116,32 +116,30 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Action Items */}
-      {actionItems.length > 0 && (
-        <>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: "#94a3b8", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-            Action items
-            <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#fbe4e2", color: "#7a1f1d" }}>
-              {actionItems.length}
-            </span>
-          </div>
-          <div style={{ marginBottom: 28 }}>
-            <ActionItemsClient
-              items={actionItems.map(a => ({
-                id: a.id,
-                reference: a.reference,
-                title: a.title,
-                priority: a.priority,
-                status: a.status,
-                dueDate: a.dueDate ? a.dueDate.toISOString() : null,
-                project: a.project,
-                raisedBy: { fullName: a.raisedBy.fullName },
-              }))}
-              overdueCount={actionItems.filter(a => a.dueDate && a.dueDate < new Date()).length}
-            />
-          </div>
-        </>
-      )}
+      {/* Action Items — always visible */}
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: "#94a3b8", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+        Action items
+        {actionItems.length > 0 && (
+          <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#fbe4e2", color: "#7a1f1d" }}>
+            {actionItems.length}
+          </span>
+        )}
+      </div>
+      <div style={{ marginBottom: 28 }}>
+        <ActionItemsClient
+          items={actionItems.map(a => ({
+            id: a.id,
+            reference: a.reference,
+            title: a.title,
+            priority: a.priority,
+            status: a.status,
+            dueDate: a.dueDate ? a.dueDate.toISOString() : null,
+            project: a.project,
+            raisedBy: { fullName: a.raisedBy.fullName },
+          }))}
+          overdueCount={actionItems.filter(a => a.dueDate && a.dueDate < new Date()).length}
+        />
+      </div>
 
       {/* Section label */}
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: "#94a3b8", marginBottom: 12 }}>
