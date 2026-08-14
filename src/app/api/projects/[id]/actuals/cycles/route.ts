@@ -73,18 +73,6 @@ export async function POST(
   });
   const cycleNumber = (last?.cycleNumber ?? 0) + 1;
 
-  // Find all project resources that have an email address
-  const resources = await prisma.projectResource.findMany({
-    where: { projectId, email: { not: null } },
-  });
-
-  if (resources.length === 0) {
-    return NextResponse.json(
-      { error: "No resources with email addresses found. Add resource emails first." },
-      { status: 400 }
-    );
-  }
-
   // Resolve tasks — specific selection or all tasks
   const selectedIds: string[] = Array.isArray(taskIds) && taskIds.length > 0 ? taskIds : [];
   const tasks = await prisma.scheduleTask.findMany({
@@ -94,6 +82,36 @@ export async function POST(
     },
     orderBy: { sortOrder: "asc" },
   });
+
+  // Determine which resource IDs are relevant to the selected tasks.
+  // When tasks are explicitly selected, only email resources assigned to those tasks.
+  // When no tasks are selected (send to all), fall back to all project resources.
+  let relevantResourceIds: Set<string> | null = null;
+  if (selectedIds.length > 0) {
+    const assignments = await prisma.taskAssignment.findMany({
+      where: { taskId: { in: selectedIds }, projectId },
+      select: { resourceId: true },
+    });
+    relevantResourceIds = new Set([
+      ...assignments.map((a) => a.resourceId),
+      ...tasks.filter((t) => t.resourceId).map((t) => t.resourceId as string),
+    ]);
+  }
+
+  const resources = await prisma.projectResource.findMany({
+    where: {
+      projectId,
+      email: { not: null },
+      ...(relevantResourceIds ? { id: { in: Array.from(relevantResourceIds) } } : {}),
+    },
+  });
+
+  if (resources.length === 0) {
+    return NextResponse.json(
+      { error: "No resources with email addresses found for the selected tasks. Add resource emails or check task assignments." },
+      { status: 400 }
+    );
+  }
 
   // Fetch project info
   const project = await prisma.project.findUnique({
