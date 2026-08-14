@@ -8,7 +8,7 @@ import { encryptValue, decryptValue, testSmtpConnection } from "@/lib/email-smtp
 const CONFIG_KEYS = ["smtp.host", "smtp.port", "smtp.secure", "smtp.service",
                      "smtp.user", "smtp.password", "smtp.fromName", "smtp.fromAddress"];
 
-// GET — return current config (password is masked)
+// GET — return current config (DB values take precedence over env vars; password is masked)
 export async function GET(_req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
@@ -17,8 +17,17 @@ export async function GET(_req: NextRequest) {
   const settings = await prisma.systemSetting.findMany({ where: { key: { in: CONFIG_KEYS } } });
   const map = Object.fromEntries(settings.map((s) => [s.key, s.value]));
 
-  // Mask password
-  if (map["smtp.password"]) {
+  // Fall back to env vars for pre-population when nothing is saved yet
+  if (!map["smtp.user"] && process.env.GMAIL_USER) {
+    map["smtp.user"]    = process.env.GMAIL_USER;
+    map["smtp.service"] = map["smtp.service"] || "gmail";
+  }
+  if (!map["smtp.fromName"]) map["smtp.fromName"] = "PM Agent";
+
+  // Mask password — show indicator if one exists (DB or env)
+  const hasDbPassword  = !!settings.find((s) => s.key === "smtp.password")?.value;
+  const hasEnvPassword = !!process.env.GMAIL_APP_PASSWORD;
+  if (hasDbPassword || hasEnvPassword) {
     map["smtp.password"] = "••••••••";
   }
 
@@ -60,7 +69,8 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-// POST /api/admin/email-config/test — test SMTP connection
+// POST /api/admin/email-config — test SMTP with form values (no save required)
+// Accepts the form values directly so admin can test before saving.
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
@@ -68,16 +78,43 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const { action } = body;
-
   if (action !== "test") return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 
-  // Build config from submitted values (for real-time test before saving)
-  const { getSmtpConfig } = await import("@/lib/email-smtp");
+  // Use form-submitted values directly — do NOT read from DB.
+  // This lets the admin test credentials before saving.
+  const service  = body["smtp.service"] as string | undefined;
+  const host     = body["smtp.host"] as string | undefined;
+  const port     = body["smtp.port"] ? parseInt(body["smtp.port"] as string) : 587;
+  const secure   = body["smtp.secure"] === "true";
+  const user     = (body["smtp.user"] as string | undefined) || "";
+  const password = (body["smtp.password"] as string | undefined) || "";
+  const fromName = (body["smtp.fromName"] as string | undefined) || "PM Agent";
+
+  // If password is the masked placeholder, try env var or DB fallback
+  let resolvedPassword = password;
+  if (!resolvedPassword || resolvedPassword === "••••••••") {
+    resolvedPassword = process.env.GMAIL_APP_PASSWORD || "";
+    // Try DB if still empty
+    if (!resolvedPassword) {
+      const dbPass = await prisma.systemSetting.findUnique({ where: { key: "smtp.password" } });
+      if (dbPass?.value) {
+        try { resolvedPassword = decryptValue(dbPass.value); } catch { resolvedPassword = dbPass.value; }
+      }
+    }
+  }
+
+  if (!user || !resolvedPassword) {
+    return NextResponse.json({
+      ok: false,
+      error: "Enter a Gmail address and App Password above, then click Test Connection.",
+    });
+  }
+  const password2 = resolvedPassword;
+
   try {
-    const cfg = await getSmtpConfig();
-    const result = await testSmtpConnection(cfg);
+    const result = await testSmtpConnection({ service, host, port, secure, user, password: password2, fromName, fromAddress: user });
     return NextResponse.json(result);
   } catch (err) {
-    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Config error" });
+    return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Connection failed" });
   }
 }

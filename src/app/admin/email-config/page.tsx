@@ -93,10 +93,11 @@ export default function EmailConfigPage() {
     setTesting(true);
     setTestResult(null);
     try {
+      // Send current form values so the test uses what the admin typed, not what's in DB.
       const res = await fetch("/api/admin/email-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "test" }),
+        body: JSON.stringify({ action: "test", ...form }),
       });
       const data = await res.json();
       setTestResult(data);
