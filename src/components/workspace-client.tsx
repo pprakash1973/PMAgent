@@ -1438,7 +1438,7 @@ function ScheduleTab({ project }: { project: any }) {
           label: cycleLabel || undefined,
           startDate: cycleStartDate,
           endDate: cycleEndDate,
-          dispatch: cycleDispatch,
+          dispatch: true,
           taskIds: selectedTaskIds.size > 0 ? Array.from(selectedTaskIds) : [],
         }),
       });
@@ -1842,80 +1842,92 @@ function ScheduleTab({ project }: { project: any }) {
             {actualsTab === "new" && (
               <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
 
-                {/* How it works */}
-                <div style={{ background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 8, padding: "10px 12px", fontSize: 12, color: C.primary, lineHeight: 1.55 }}>
-                  <span style={{ fontWeight: 700 }}>ⓘ How it works — </span>
-                  Once you click <strong>Send Emails</strong>, each resource will receive a notification in their email inbox with a secure personal link. Clicking that link opens a public page where they can submit hours worked, % complete, and ETC for the tasks shown — no login required.
-                </div>
+                {/* ── RESULT STATE — shown after send attempt ── */}
+                {cycleResult ? (
+                  <>
+                    {cycleResult.error ? (
+                      <div style={{ background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 8, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.red, marginBottom: 4 }}>Failed to send</div>
+                        <div style={{ fontSize: 12, color: C.red }}>{cycleResult.error}</div>
+                      </div>
+                    ) : (
+                      <div style={{ background: C.greenLight, border: `1px solid ${C.green}`, borderRadius: 8, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: C.green, marginBottom: 4 }}>✓ Emails sent successfully</div>
+                        <div style={{ fontSize: 12, color: C.text2 }}>
+                          {cycleResult.emailResults?.filter((r: any) => r.status === "sent").length ?? 0} of {cycleResult.tokensCreated} emails delivered.
+                          {cycleResult.emailResults?.some((r: any) => r.status === "failed") && (
+                            <span style={{ color: C.red }}> {cycleResult.emailResults.filter((r: any) => r.status === "failed").length} failed — check Admin → Email Config.</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", justifyContent: "flex-end", paddingTop: 4 }}>
+                      <button onClick={() => { setActualsModal(false); setCycleResult(null); }}
+                        style={{ padding: "7px 20px", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 700, background: C.primary, color: "#fff", cursor: "pointer" }}>
+                        Done
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* How it works */}
+                    <div style={{ background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 8, padding: "10px 12px", fontSize: 12, color: C.primary, lineHeight: 1.55 }}>
+                      <span style={{ fontWeight: 700 }}>ⓘ How it works — </span>
+                      Once you click <strong>Send Emails</strong>, each resource will receive a notification in their email inbox with a secure personal link. Clicking that link opens a public page where they can submit hours worked, % complete, and ETC for the tasks shown — no login required.
+                    </div>
 
-                {/* Result banner */}
-                {cycleResult?.error && (
-                  <div style={{ background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 8, padding: "9px 12px", fontSize: 13, color: C.red }}>
-                    {cycleResult.error}
-                  </div>
-                )}
-                {cycleResult && !cycleResult.error && (
-                  <div style={{ background: C.greenLight, border: `1px solid ${C.green}`, borderRadius: 8, padding: "9px 12px" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: C.green }}>✓ Emails sent</div>
-                    <div style={{ fontSize: 12, color: C.text2, marginTop: 2 }}>
-                      {cycleResult.emailResults?.filter((r: any) => r.status === "sent").length ?? 0} of {cycleResult.tokensCreated} emails delivered successfully
-                      {cycleResult.emailResults?.some((r: any) => r.status === "failed") && (
-                        <span style={{ color: C.red }}> · {cycleResult.emailResults.filter((r: any) => r.status === "failed").length} failed — check Admin → Email Config</span>
+                    {/* Tasks */}
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 6 }}>
+                        Tasks in this request
+                      </div>
+                      <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", maxHeight: 160, overflowY: "auto" as const }}>
+                        {(selectedTaskIds.size > 0 ? tasks.filter((t: any) => selectedTaskIds.has(t.id)) : tasks).map((t: any, i: number, arr: any[]) => (
+                          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : "none", background: C.surface }}>
+                            <span style={{ fontFamily: "monospace", fontSize: 10, color: C.text3, flexShrink: 0 }}>{t.wbsCode}</span>
+                            <span style={{ fontSize: 12, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{t.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedTaskIds.size === 0 && (
+                        <div style={{ fontSize: 11, color: C.text3, marginTop: 4 }}>All {tasks.length} tasks included. Select tasks in the schedule to send a subset.</div>
                       )}
                     </div>
-                  </div>
-                )}
 
-                {/* Tasks */}
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", marginBottom: 6 }}>
-                    Tasks in this request
-                  </div>
-                  <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", maxHeight: 160, overflowY: "auto" as const }}>
-                    {(selectedTaskIds.size > 0 ? tasks.filter((t: any) => selectedTaskIds.has(t.id)) : tasks).map((t: any, i: number, arr: any[]) => (
-                      <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderBottom: i < arr.length - 1 ? `1px solid ${C.borderLight}` : "none", background: C.surface }}>
-                        <span style={{ fontFamily: "monospace", fontSize: 10, color: C.text3, flexShrink: 0 }}>{t.wbsCode}</span>
-                        <span style={{ fontSize: 12, color: C.text, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{t.name}</span>
+                    {/* Period */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 3 }}>Period Start</label>
+                        <input type="date" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)}
+                          style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 9px", fontSize: 13, background: C.surface2, color: C.text, outline: "none", boxSizing: "border-box" as const }} />
                       </div>
-                    ))}
-                  </div>
-                  {selectedTaskIds.size === 0 && (
-                    <div style={{ fontSize: 11, color: C.text3, marginTop: 4 }}>All {tasks.length} tasks included. Select tasks in the schedule to send a subset.</div>
-                  )}
-                </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 3 }}>Period End</label>
+                        <input type="date" value={cycleEndDate} onChange={e => setCycleEndDate(e.target.value)}
+                          style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 9px", fontSize: 13, background: C.surface2, color: C.text, outline: "none", boxSizing: "border-box" as const }} />
+                      </div>
+                    </div>
 
-                {/* Period */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 3 }}>Period Start</label>
-                    <input type="date" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)}
-                      style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 9px", fontSize: 13, background: C.surface2, color: C.text, outline: "none", boxSizing: "border-box" as const }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 3 }}>Period End</label>
-                    <input type="date" value={cycleEndDate} onChange={e => setCycleEndDate(e.target.value)}
-                      style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 7, padding: "6px 9px", fontSize: 13, background: C.surface2, color: C.text, outline: "none", boxSizing: "border-box" as const }} />
-                  </div>
-                </div>
+                    {/* Email config note */}
+                    <div style={{ fontSize: 11, color: C.text3, display: "flex", alignItems: "center", gap: 5 }}>
+                      <span>⚙</span>
+                      Email sender must be configured in <strong style={{ color: C.text2 }}>Admin → Email Configuration</strong> before emails can be dispatched.
+                    </div>
 
-                {/* Email config note */}
-                <div style={{ fontSize: 11, color: C.text3, display: "flex", alignItems: "center", gap: 5 }}>
-                  <span>⚙</span>
-                  Email sender must be configured in <strong style={{ color: C.text2 }}>Admin → Email Configuration</strong> before emails can be dispatched.
-                </div>
-
-                {/* Actions */}
-                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 2 }}>
-                  <button onClick={() => { setActualsModal(false); setCycleResult(null); }}
-                    style={{ padding: "7px 14px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text2, cursor: "pointer" }}>
-                    Cancel
-                  </button>
-                  <button onClick={createCycle} disabled={cycleCreating || !cycleStartDate || !cycleEndDate}
-                    style={{ padding: "7px 18px", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 700, background: cycleCreating ? C.surface2 : C.primary, color: cycleCreating ? C.text3 : "#fff", cursor: cycleCreating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                    {cycleCreating && <span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />}
-                    {cycleCreating ? "Sending…" : "Send Emails"}
-                  </button>
-                </div>
+                    {/* Actions */}
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 2 }}>
+                      <button onClick={() => { setActualsModal(false); setCycleResult(null); }}
+                        style={{ padding: "7px 14px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text2, cursor: "pointer" }}>
+                        Cancel
+                      </button>
+                      <button onClick={createCycle} disabled={cycleCreating || !cycleStartDate || !cycleEndDate}
+                        style={{ padding: "7px 18px", border: "none", borderRadius: 7, fontSize: 13, fontWeight: 700, background: cycleCreating ? C.surface2 : C.primary, color: cycleCreating ? C.text3 : "#fff", cursor: cycleCreating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                        {cycleCreating && <span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />}
+                        {cycleCreating ? "Sending…" : "Send Emails"}
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
