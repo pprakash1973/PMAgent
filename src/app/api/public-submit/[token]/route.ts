@@ -117,12 +117,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 label{display:block;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
 input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:8px 11px;font-size:13px;color:#0f172a;background:#fff;outline:none;font-family:inherit}
 input:focus,select:focus,textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
-textarea{resize:none}
 .pct-wrap{position:relative}
 .pct-suffix{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;pointer-events:none}
 .bar-track{margin-top:6px;height:4px;background:#e2e8f0;border-radius:999px;overflow:hidden}
 .bar-fill{height:100%;background:#3b82f6;border-radius:999px;transition:width .2s}
-.notes-row{margin-top:14px}
 .submit-btn{display:block;width:100%;padding:14px;background:#1e3a8a;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-top:20px;transition:background .15s}
 .submit-btn:hover{background:#1e40af}
 .submit-btn:disabled{background:#94a3b8;cursor:not-allowed}
@@ -184,30 +182,19 @@ textarea{resize:none}
     };
   });
 
-  var dispositions = [
-    {value:"confirmed_as_planned", label:"Confirmed as planned"},
-    {value:"actual",               label:"Actual (revised estimate)"},
-    {value:"forecast",             label:"Forecast"},
-    {value:"estimated",            label:"Estimated"},
-    {value:"unknown",              label:"Not sure / Unknown"}
-  ];
-
   function h(str){ return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
   function renderForm(){
     var html = "";
     TASKS.forEach(function(t){
-      var disp = dispositions.map(function(d){
-        return '<option value="'+d.value+'"'+(d.value==="actual"?" selected":"")+'>'+d.label+'</option>';
-      }).join("");
-      html += '<div class="task-card" id="card-'+t.id+'">'
+      html += '<div class="task-card">'
         +'<div class="task-header">'
           +'<span class="wbs">'+h(t.wbsCode)+'</span>'
           +'<div><div class="task-name">'+h(t.name)+'</div>'
-          +'<div class="task-meta">'+h(t.phase)+' &middot; Baseline: '+h(t.baselineStart)+' &ndash; '+h(t.baselineFinish)+(t.estimatedHours!=null?' &middot; '+t.estimatedHours+'h estimated':'')+'</div></div>'
+          +'<div class="task-meta">'+h(t.phase)+(t.estimatedHours!=null?' &middot; '+t.estimatedHours+'h estimated':'')+'</div></div>'
         +'</div>'
         +'<div class="grid2">'
-          +'<div><label>Hours worked this period *</label>'
+          +'<div><label>Hours worked *</label>'
             +'<input type="number" min="0" step="0.5" required data-id="'+t.id+'" data-field="hoursWorked" value="0"></div>'
           +'<div><label>% Complete *</label>'
             +'<div class="pct-wrap">'
@@ -216,18 +203,11 @@ textarea{resize:none}
             +'</div>'
             +'<div class="bar-track"><div class="bar-fill" id="bar-'+t.id+'" style="width:'+h(t.percentComplete)+'%"></div></div>'
           +'</div>'
-          +'<div><label>Estimate to complete (hrs remaining)</label>'
-            +'<input type="number" min="0" step="0.5" placeholder="Optional" data-id="'+t.id+'" data-field="etcHours"></div>'
-          +'<div><label>Confidence *</label>'
-            +'<select data-id="'+t.id+'" data-field="disposition">'+disp+'</select></div>'
-        +'</div>'
-        +'<div class="notes-row"><label>Notes / blockers</label>'
-          +'<textarea rows="2" placeholder="Any blockers, risks, or context for the PM…" data-id="'+t.id+'" data-field="notes"></textarea>'
         +'</div>'
       +'</div>';
     });
-    html += '<button class="submit-btn" id="submit-btn" type="button">Submit actuals for '+TASKS.length+' task'+(TASKS.length!==1?"s":"")+'</button>'
-           +'<p class="notice">This link is single-use. Once submitted you cannot revise — contact your PM for corrections.</p>';
+    html += '<button class="submit-btn" id="submit-btn" type="button">Submit</button>'
+           +'<p class="notice">This link is single-use — contact your PM if you need to make corrections.</p>';
     document.getElementById("form-area").innerHTML = html;
 
     // Wire up events
@@ -236,13 +216,10 @@ textarea{resize:none}
       var id = el.getAttribute("data-id");
       var field = el.getAttribute("data-field");
       if(!id||!field) return;
-      var val = el.value;
-      if(field==="hoursWorked"||field==="percentComplete") val = parseFloat(val)||0;
-      else if(field==="etcHours") val = val===""?null:(parseFloat(val)||0);
-      submissions[id][field] = val;
+      submissions[id][field] = parseFloat(el.value)||0;
       if(field==="percentComplete"){
         var bar = document.getElementById("bar-"+id);
-        if(bar) bar.style.width = Math.min(100, parseFloat(val)||0)+"%";
+        if(bar) bar.style.width = Math.min(100, parseFloat(el.value)||0)+"%";
       }
     });
 
