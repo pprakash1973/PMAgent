@@ -59,7 +59,7 @@ export async function GET(
     }
   }
 
-  const [latestReport, allReports, risks, issues, milestones, artifacts, costEntries] = await Promise.all([
+  const [latestReport, allReports, risks, issues, milestones, artifacts, costEntries, scheduleTasks] = await Promise.all([
     prisma.statusReport.findFirst({
       where: { projectId: id },
       orderBy: { reportDate: "desc" },
@@ -92,6 +92,13 @@ export async function GET(
     prisma.costEntry.findMany({
       where: { projectId: id },
       select: { amount: true },
+    }),
+    prisma.scheduleTask.findMany({
+      where: { projectId: id },
+      select: {
+        plannedCost: true, estimatedHours: true, baselineDays: true,
+        baselineStart: true, baselineFinish: true, percentComplete: true, status: true,
+      },
     }),
   ]);
 
@@ -128,12 +135,61 @@ export async function GET(
     ? Math.round((totalSpent / project.budget) * 100)
     : null;
 
+  // Live EVM from schedule tasks (burndown formula: dollar-weighted)
+  const bac = project.budget ?? 0;
+  const totalBaseHours = scheduleTasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
+  const taskPC = (t: typeof scheduleTasks[0]) => {
+    const pc = t.plannedCost ? Number(t.plannedCost) : 0;
+    if (pc > 0) return pc;
+    const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
+    return bac > 0 && totalBaseHours > 0 ? (bac * th) / totalBaseHours : 0;
+  };
+  const nowMs = Date.now();
+  const pvNow = scheduleTasks.reduce((s, t) => {
+    const start = new Date(t.baselineStart).getTime();
+    const end = new Date(t.baselineFinish).getTime();
+    if (nowMs <= start) return s;
+    if (nowMs >= end) return s + taskPC(t);
+    return s + taskPC(t) * ((nowMs - start) / (end - start || 1));
+  }, 0);
+  const evNow = scheduleTasks.reduce((s, t) => s + (t.percentComplete === 100 ? taskPC(t) : 0), 0);
+  const liveSpi = pvNow > 0 ? evNow / pvNow : null;
+  const liveCpi = totalSpent > 0 ? evNow / totalSpent : null;
+  const eac = liveCpi && liveCpi > 0 ? bac / liveCpi : null;
+  const completedTasks = scheduleTasks.filter(t => t.status === "complete").length;
+  const schedCompletionPct = scheduleTasks.length > 0
+    ? Math.round((completedTasks / scheduleTasks.length) * 100) : null;
+  // Hour-based EVM for display (pv/ev in hours, days * 8)
+  const pvHours = scheduleTasks.reduce((s, t) => {
+    const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
+    const start = new Date(t.baselineStart).getTime();
+    const end = new Date(t.baselineFinish).getTime();
+    if (nowMs <= start) return s;
+    if (nowMs >= end) return s + th;
+    return s + th * ((nowMs - start) / (end - start || 1));
+  }, 0);
+  const evHours = scheduleTasks.reduce((s, t) => {
+    const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
+    return s + th * (t.percentComplete / 100);
+  }, 0);
+
+  const svHours = evHours - pvHours;
+  const ragStatus = (() => {
+    if (liveSpi !== null && liveCpi !== null) {
+      if (liveSpi < 0.8 || liveCpi < 0.8) return "red";
+      if (liveSpi < 0.9 || liveCpi < 0.9) return "amber";
+      return "green";
+    }
+    return latestReport?.healthScore?.ragStatus ?? project.healthStatus ?? "green";
+  })();
+
   return NextResponse.json({
     project: {
       id: project.id,
       name: project.name,
       currentPhase: project.currentPhase,
       healthStatus: project.healthStatus,
+      ragStatus,
       accountName: project.account?.name ?? null,
       programName: project.program?.name ?? null,
       pmName: project.pmOwner.fullName,
@@ -143,6 +199,17 @@ export async function GET(
       endDate: project.endDate?.toISOString() ?? null,
     },
     burnPct,
+    totalSpent,
+    evm: {
+      spi: liveSpi !== null ? Math.round(liveSpi * 100) / 100 : null,
+      cpi: liveCpi !== null ? Math.round(liveCpi * 100) / 100 : null,
+      pvHours: Math.round(pvHours),
+      evHours: Math.round(evHours),
+      svHours: Math.round(svHours),
+      eac: eac !== null ? Math.round(eac) : null,
+      schedCompletionPct,
+      taskCount: scheduleTasks.length,
+    },
     health: latestReport?.healthScore
       ? {
           compositeScore: latestReport.healthScore.compositeScore,
@@ -158,6 +225,7 @@ export async function GET(
       impact: r.impact,
       status: r.status,
       owner: r.owner,
+      dueDate: (r as any).dueDate ? new Date((r as any).dueDate).toISOString() : null,
     })),
     issues: issues.map((i) => ({
       id: i.id,
@@ -171,12 +239,6 @@ export async function GET(
       name: m.name,
       dueDate: m.dueDate.toISOString(),
       status: m.status,
-    })),
-    artifacts: artifacts.map((a) => ({
-      artifactType: a.artifactType,
-      phase: a.phase,
-      status: a.status,
-      updatedAt: a.updatedAt.toISOString(),
     })),
     actionItems: actionItems.map((ai) => ({
       id: ai.id,

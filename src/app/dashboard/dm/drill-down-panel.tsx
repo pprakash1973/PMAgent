@@ -6,54 +6,59 @@ const UST_TEAL = "#006E74";
 const UST_BORDER = "#D7E0E3";
 const UST_WASH = "#F2F7F8";
 
+type Evm = {
+  spi: number | null; cpi: number | null;
+  pvHours: number; evHours: number; svHours: number;
+  eac: number | null; schedCompletionPct: number | null; taskCount: number;
+};
+
 type ReviewData = {
   project: {
-    id: string; name: string; currentPhase: string; healthStatus: string;
+    id: string; name: string; currentPhase: string; healthStatus: string; ragStatus: string;
     accountName: string | null; programName: string | null; pmName: string;
     budget: number | null; currency: string; startDate: string | null; endDate: string | null;
   };
   burnPct: number | null;
+  totalSpent: number;
+  evm: Evm | null;
   health: { compositeScore: number | null; spi: number | null; cpi: number | null; ragStatus: string | null } | null;
-  risks: { id: string; description: string; probability: string; impact: string; status: string; owner: string | null }[];
+  risks: { id: string; description: string; probability: string; impact: string; status: string; owner: string | null; dueDate: string | null }[];
   issues: { id: string; description: string; severity: string; status: string; owner: string | null }[];
   milestones: { id: string; name: string; dueDate: string; status: string }[];
-  artifacts: { artifactType: string; phase: string; status: string; updatedAt: string }[];
   actionItems: { id: string; reference: string; title: string; priority: string; status: string; dueDate: string | null; raisedByName: string }[];
   reviewNotes: { id: string; reviewType: string; body: string; visibility: string; createdAt: string; authorName: string }[];
 };
 
-type AiSummary = {
-  healthBullets: string[];
-  pmProductivityScore: number | null;
-  pmProductivityRationale: string | null;
-  areasToImprove: string[];
-};
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
-function badge(text: string, color: string) {
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6,
-      background: `${color}18`, color, border: `1px solid ${color}40`,
-      textTransform: "uppercase", letterSpacing: "0.04em",
-    }}>{text}</span>
-  );
-}
-
-function healthColor(status: string | null) {
-  if (status === "red") return "#cf3f3a";
-  if (status === "amber") return "#c17d12";
+function healthColor(rag: string | null) {
+  if (rag === "red") return "#cf3f3a";
+  if (rag === "amber") return "#c17d12";
   return "#158a5a";
 }
+function healthLabel(rag: string | null) {
+  if (rag === "red") return "Critical";
+  if (rag === "amber") return "At Risk";
+  return "On Track";
+}
 
-function daysLabel(dueDateStr: string): { text: string; color: string } {
-  const now = Date.now();
-  const due = new Date(dueDateStr).getTime();
-  const days = Math.ceil((due - now) / 86400000);
-  if (days < 0) return { text: `${Math.abs(days)}d overdue`, color: "#cf3f3a" };
-  if (days === 0) return { text: "Due today", color: "#cf3f3a" };
-  if (days <= 7) return { text: `${days}d`, color: "#c17d12" };
-  if (days <= 14) return { text: `${days}d`, color: "#c17d12" };
-  return { text: `${days}d`, color: "#64748b" };
+function spiColor(v: number | null) {
+  if (v === null) return "#94a3b8";
+  if (v >= 1) return "#158a5a";
+  if (v >= 0.9) return "#c17d12";
+  return "#cf3f3a";
+}
+
+function daysFromNow(iso: string) {
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+}
+
+function dueBadge(iso: string) {
+  const d = daysFromNow(iso);
+  if (d < 0) return { text: `${Math.abs(d)}d overdue`, color: "#cf3f3a" };
+  if (d === 0) return { text: "Due today", color: "#cf3f3a" };
+  if (d <= 14) return { text: `${d}d`, color: "#c17d12" };
+  return { text: `${d}d`, color: "#64748b" };
 }
 
 function fmtDate(iso: string | null | undefined) {
@@ -68,19 +73,32 @@ function fmtMoney(v: number | null, currency = "USD") {
   return `${currency} ${v.toFixed(0)}`;
 }
 
-// ── Section header ──────────────────────────────────────────────────────────
+function fmtHours(h: number) {
+  return `${h.toFixed(0)}h`;
+}
 
-function Section({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
+// ── Shared UI primitives ─────────────────────────────────────────────────────
+
+function Section({ title, children, accent, count }: {
+  title: string; children: React.ReactNode; accent?: string; count?: number;
+}) {
   return (
     <div>
-      <h3 style={{
-        fontSize: 12, fontWeight: 700, color: accent ?? UST_PETROL,
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        fontSize: 11, fontWeight: 700, color: accent ?? UST_PETROL,
         marginBottom: 10, paddingBottom: 6,
         borderBottom: `2px solid ${accent ?? UST_BORDER}`,
         textTransform: "uppercase", letterSpacing: "0.06em",
       }}>
         {title}
-      </h3>
+        {count !== undefined && count > 0 && (
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 99,
+            background: `${accent ?? UST_TEAL}18`, color: accent ?? UST_TEAL,
+          }}>{count}</span>
+        )}
+      </div>
       {children}
     </div>
   );
@@ -90,206 +108,41 @@ function Empty({ text }: { text: string }) {
   return <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, fontStyle: "italic" }}>{text}</p>;
 }
 
-function Stat({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
+function KpiCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
   return (
-    <div style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 8, padding: "10px 16px", textAlign: "center", flex: 1 }}>
-      <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
-      <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, marginTop: 2 }}>{label}</div>
-      {sub && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>{sub}</div>}
+    <div style={{
+      flex: 1, background: UST_WASH, border: `1px solid ${UST_BORDER}`,
+      borderRadius: 8, padding: "10px 14px", textAlign: "center" as const,
+    }}>
+      <div style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, marginTop: 3 }}>{label}</div>
+      {sub && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
 
-// ── 0. Overview ─────────────────────────────────────────────────────────────
-
-function OverviewSection({ data }: { data: ReviewData }) {
-  const proj = data.project;
-  const rag = data.health?.ragStatus ?? proj.healthStatus;
-  const ragColor = healthColor(rag);
-  const ragLabel = rag === "red" ? "RED" : rag === "amber" ? "AMBER" : "GREEN";
-  const health = data.health;
-
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <Section title="Overview">
-      {/* RAG + phase strip */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 8,
-          padding: "6px 14px", borderRadius: 20,
-          background: `${ragColor}15`, border: `1.5px solid ${ragColor}50`,
-        }}>
-          <div style={{ width: 9, height: 9, borderRadius: "50%", background: ragColor }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: ragColor }}>{ragLabel}</span>
-        </div>
-        <span style={{ fontSize: 12, color: "#64748b" }}>
-          {proj.currentPhase.replace(/_/g, " ")} · PM: <strong>{proj.pmName}</strong>
-        </span>
-      </div>
-
-      {/* Key dates + budget */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-        {[
-          { label: "Start date", value: fmtDate(proj.startDate) },
-          { label: "End date", value: fmtDate(proj.endDate) },
-          { label: "Budget", value: fmtMoney(proj.budget, proj.currency) },
-          { label: "Burn to date", value: data.burnPct !== null ? `${data.burnPct}%` : "—" },
-        ].map(r => (
-          <div key={r.label} style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 7, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>{r.label}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{r.value}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* EVM stats */}
-      {health ? (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Stat
-            label="Composite"
-            value={health.compositeScore !== null ? `${health.compositeScore.toFixed(0)}` : "—"}
-            color={ragColor}
-            sub="out of 100"
-          />
-          <Stat
-            label="Schedule (SPI)"
-            value={health.spi !== null ? health.spi.toFixed(2) : "—"}
-            color={health.spi !== null ? (health.spi < 0.85 ? "#cf3f3a" : health.spi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
-            sub={health.spi !== null ? (health.spi < 1 ? "behind" : "on track") : "no data"}
-          />
-          <Stat
-            label="Cost (CPI)"
-            value={health.cpi !== null ? health.cpi.toFixed(2) : "—"}
-            color={health.cpi !== null ? (health.cpi < 0.85 ? "#cf3f3a" : health.cpi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
-            sub={health.cpi !== null ? (health.cpi < 1 ? "over budget" : "within budget") : "no data"}
-          />
-        </div>
-      ) : (
-        <p style={{ fontSize: 13, color: "#94a3b8", fontStyle: "italic", margin: 0 }}>
-          No status report submitted — EVM data unavailable.
-        </p>
-      )}
-    </Section>
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      background: UST_WASH, border: `1px solid ${UST_BORDER}`,
+      borderRadius: 7, padding: "8px 12px",
+    }}>
+      <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{value}</span>
+    </div>
   );
 }
 
-// ── 1. Upcoming Milestones ─────────────────────────────────────────────────
-
-function MilestonesSection({ milestones }: { milestones: ReviewData["milestones"] }) {
-  const upcoming = milestones
-    .filter(m => m.status !== "complete")
-    .slice(0, 3);
-
-  return (
-    <Section title="Upcoming Milestones">
-      {upcoming.length === 0 ? (
-        <Empty text="No pending milestones" />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {upcoming.map((m) => {
-            const dl = daysLabel(m.dueDate);
-            const dueStr = new Date(m.dueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
-            const milestoneColor = m.status === "at_risk" ? "#cf3f3a" : dl.color === "#cf3f3a" ? "#cf3f3a" : UST_TEAL;
-            return (
-              <div key={m.id} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "10px 12px", borderRadius: 8,
-                background: m.status === "at_risk" ? "#fef2f2" : UST_WASH,
-                border: `1px solid ${m.status === "at_risk" ? "#fca5a5" : UST_BORDER}`,
-              }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: milestoneColor }} />
-                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{m.name}</span>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: dl.color, background: `${dl.color}12`, padding: "1px 7px", borderRadius: 5 }}>{dl.text}</span>
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>{dueStr}</span>
-                </div>
-                {m.status !== "pending" && badge(m.status.replace(/_/g, " "), milestoneColor)}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Section>
-  );
-}
-
-// ── 2. Critical / High Issues ───────────────────────────────────────────────
-
-function CriticalIssuesSection({ issues }: { issues: ReviewData["issues"] }) {
-  const critical = issues.filter(i => i.status === "open" && i.severity === "critical");
-  const high = issues.filter(i => i.status === "open" && i.severity === "high");
-  const total = critical.length + high.length;
-
-  return (
-    <Section title={`Critical & High Issues${total > 0 ? ` (${total})` : ""}`} accent={total > 0 ? "#cf3f3a" : undefined}>
-      {total === 0 ? (
-        <Empty text="No critical or high-severity open issues" />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {critical.map(i => (
-            <IssueRiskRow key={i.id} description={i.description} owner={i.owner} label="Critical" labelColor="#cf3f3a" />
-          ))}
-          {high.map(i => (
-            <IssueRiskRow key={i.id} description={i.description} owner={i.owner} label="High" labelColor="#c17d12" />
-          ))}
-        </div>
-      )}
-    </Section>
-  );
-}
-
-// ── 3. Critical / High Risks ────────────────────────────────────────────────
-
-function CriticalRisksSection({ risks }: { risks: ReviewData["risks"] }) {
-  const criticalRisks = risks.filter(r =>
-    r.status === "open" &&
-    (r.probability === "very_high" || r.impact === "very_high" ||
-     (r.probability === "high" && r.impact === "high"))
-  );
-  const highRisks = risks.filter(r =>
-    r.status === "open" &&
-    !criticalRisks.includes(r) &&
-    (r.probability === "high" || r.impact === "high")
-  );
-  const total = criticalRisks.length + highRisks.length;
-
-  return (
-    <Section title={`Critical & High Risks${total > 0 ? ` (${total})` : ""}`} accent={total > 0 ? "#c17d12" : undefined}>
-      {total === 0 ? (
-        <Empty text="No critical or high open risks" />
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {criticalRisks.map(r => (
-            <IssueRiskRow
-              key={r.id}
-              description={r.description}
-              owner={r.owner}
-              label={`${r.probability.replace("_", " ")} prob / ${r.impact.replace("_", " ")} impact`}
-              labelColor="#cf3f3a"
-            />
-          ))}
-          {highRisks.map(r => (
-            <IssueRiskRow
-              key={r.id}
-              description={r.description}
-              owner={r.owner}
-              label={`${r.probability.replace("_", " ")} prob / ${r.impact.replace("_", " ")} impact`}
-              labelColor="#c17d12"
-            />
-          ))}
-        </div>
-      )}
-    </Section>
-  );
-}
-
-function IssueRiskRow({ description, owner, label, labelColor }: {
-  description: string; owner: string | null; label: string; labelColor: string;
+function RiskIssueRow({ description, owner, label, labelColor, pastDue }: {
+  description: string; owner: string | null; label: string; labelColor: string; pastDue?: boolean;
 }) {
   return (
     <div style={{
       display: "flex", alignItems: "flex-start", gap: 10,
       padding: "9px 12px", borderRadius: 8,
-      background: `${labelColor}08`, border: `1px solid ${labelColor}30`,
+      background: pastDue ? "#fff7f7" : `${labelColor}08`,
+      border: `1px solid ${pastDue ? "#fca5a5" : labelColor + "30"}`,
     }}>
       <div style={{ width: 3, alignSelf: "stretch", background: labelColor, borderRadius: 2, flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
@@ -299,130 +152,247 @@ function IssueRiskRow({ description, owner, label, labelColor }: {
       <span style={{
         fontSize: 10, fontWeight: 700, color: labelColor,
         background: `${labelColor}18`, border: `1px solid ${labelColor}40`,
-        padding: "2px 7px", borderRadius: 5, flexShrink: 0, textTransform: "capitalize",
+        padding: "2px 7px", borderRadius: 5, flexShrink: 0, textTransform: "capitalize" as const,
       }}>{label}</span>
     </div>
   );
 }
 
-// ── 4. AI Generated Summary ─────────────────────────────────────────────────
+// ── Tab 1: Overview (PM-style EVM view) ─────────────────────────────────────
 
-function AiSummarySection({ projectId }: { projectId: string }) {
-  const [summary, setSummary] = useState<AiSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(false);
-    fetch(`/api/projects/${projectId}/ai-summary`)
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(d => { if (!cancelled) { setSummary(d); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setError(true); setLoading(false); } });
-    return () => { cancelled = true; };
-  }, [projectId]);
+function OverviewTab({ data }: { data: ReviewData }) {
+  const proj = data.project;
+  const rag = data.project.ragStatus ?? proj.healthStatus;
+  const ragColor = healthColor(rag);
+  const evm = data.evm;
+  const spi = evm?.spi ?? null;
+  const cpi = evm?.cpi ?? null;
+  const sv = evm ? evm.svHours : null;
 
   return (
-    <Section title="AI Generated Summary" accent={UST_TEAL}>
-      {loading && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 0", color: "#64748b", fontSize: 13 }}>
-          <div style={{
-            width: 16, height: 16, border: `2px solid ${UST_TEAL}`, borderTopColor: "transparent",
-            borderRadius: "50%", animation: "spin 0.8s linear infinite",
-          }} />
-          Generating DM insights…
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* RAG + phase */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          padding: "6px 14px", borderRadius: 20,
+          background: `${ragColor}15`, border: `1.5px solid ${ragColor}50`,
+        }}>
+          <div style={{ width: 9, height: 9, borderRadius: "50%", background: ragColor }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: ragColor }}>{healthLabel(rag)}</span>
         </div>
-      )}
+        <span style={{ fontSize: 12, color: "#64748b" }}>
+          {proj.currentPhase.replace(/_/g, " ")} · PM: <strong>{proj.pmName}</strong>
+        </span>
+        {proj.accountName && (
+          <span style={{ fontSize: 12, color: "#94a3b8" }}>{proj.accountName}</span>
+        )}
+      </div>
 
-      {error && (
-        <p style={{ fontSize: 13, color: "#94a3b8", fontStyle: "italic", margin: 0 }}>
-          AI summary unavailable — check API connection.
-        </p>
-      )}
+      {/* Project info grid */}
+      <Section title="Project Info">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <InfoRow label="Start date" value={fmtDate(proj.startDate)} />
+          <InfoRow label="End date" value={fmtDate(proj.endDate)} />
+          <InfoRow label="Budget" value={fmtMoney(proj.budget, proj.currency)} />
+          <InfoRow label="Burn to date" value={data.burnPct !== null ? `${data.burnPct}%` : "—"} />
+          <InfoRow label="Spent" value={fmtMoney(data.totalSpent, proj.currency)} />
+          {evm?.eac !== null && evm?.eac !== undefined && (
+            <InfoRow label="EAC" value={fmtMoney(evm.eac, proj.currency)} />
+          )}
+        </div>
+      </Section>
 
-      {summary && !loading && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Project Health bullets */}
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-              Project Health
+      {/* Schedule EVM */}
+      <Section title="Schedule Performance">
+        {evm && evm.taskCount > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const }}>
+              <KpiCard
+                label="SPI"
+                value={spi !== null ? spi.toFixed(2) : "—"}
+                color={spiColor(spi)}
+                sub={spi !== null ? (spi >= 1 ? "On schedule" : spi >= 0.9 ? "Slight delay" : "Behind schedule") : "no data"}
+              />
+              <KpiCard
+                label="CPI"
+                value={cpi !== null ? cpi.toFixed(2) : "—"}
+                color={spiColor(cpi)}
+                sub={cpi !== null ? (cpi >= 1 ? "Within budget" : cpi >= 0.9 ? "Slight overrun" : "Over budget") : "no data"}
+              />
+              {evm.schedCompletionPct !== null && (
+                <KpiCard
+                  label="Tasks Done"
+                  value={`${evm.schedCompletionPct}%`}
+                  color={UST_TEAL}
+                  sub={`of ${evm.taskCount} tasks`}
+                />
+              )}
             </div>
-            <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 5 }}>
-              {summary.healthBullets.map((b, i) => (
-                <li key={i} style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.5 }}>{b}</li>
+
+            {/* PV / EV / SV row */}
+            <div style={{ display: "flex", gap: 10 }}>
+              {[
+                { label: "PV", value: fmtHours(evm.pvHours), sub: "Planned value" },
+                { label: "EV", value: fmtHours(evm.evHours), sub: "Earned value" },
+                {
+                  label: "SV", sub: "Schedule variance",
+                  value: sv !== null ? `${sv >= 0 ? "+" : ""}${fmtHours(sv)}` : "—",
+                },
+              ].map(k => (
+                <div key={k.label} style={{
+                  flex: 1, background: UST_WASH, border: `1px solid ${UST_BORDER}`,
+                  borderRadius: 8, padding: "10px 14px",
+                }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: UST_PETROL }}>{k.value}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginTop: 2 }}>{k.label}</div>
+                  <div style={{ fontSize: 11, color: "#64748b" }}>{k.sub}</div>
+                </div>
               ))}
-            </ul>
-          </div>
-
-          {/* PM Productivity Score */}
-          {summary.pmProductivityScore !== null && (
-            <div style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 10, padding: "12px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
-              <div style={{ textAlign: "center", flexShrink: 0 }}>
-                <div style={{
-                  fontSize: 28, fontWeight: 700, lineHeight: 1,
-                  color: summary.pmProductivityScore >= 7 ? "#158a5a" : summary.pmProductivityScore >= 5 ? "#c17d12" : "#cf3f3a",
-                }}>{summary.pmProductivityScore}</div>
-                <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>/ 10</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>PM Productivity Score</div>
-                <p style={{ margin: 0, fontSize: 13, color: "#1e293b", lineHeight: 1.45 }}>
-                  {summary.pmProductivityRationale}
-                </p>
-              </div>
             </div>
-          )}
-
-          {/* Areas to improve */}
-          {summary.areasToImprove.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-                Areas to Improve
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {summary.areasToImprove.map((area, i) => (
-                  <div key={i} style={{
-                    display: "flex", gap: 10, padding: "8px 12px", borderRadius: 7,
-                    background: "#fffbeb", border: "1px solid #fde68a",
-                  }}>
-                    <span style={{ color: "#c17d12", fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>
-                    <span style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.45 }}>{area}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Disclaimer */}
-          <div style={{
-            fontSize: 11, color: "#94a3b8", fontStyle: "italic",
-            borderTop: `1px dashed ${UST_BORDER}`, paddingTop: 10,
-          }}>
-            ⚠ This summary is generated by AI using current project data. Review with professional judgment before acting. AI analysis does not replace formal project review processes.
           </div>
-        </div>
-      )}
-    </Section>
+        ) : (
+          <Empty text="No schedule tasks — EVM data unavailable." />
+        )}
+      </Section>
+    </div>
   );
 }
 
-// ── ReviewTab (main layout) ─────────────────────────────────────────────────
+// ── Tab 2: Project Data ──────────────────────────────────────────────────────
 
-function ReviewTab({ data }: { data: ReviewData }) {
+function ProjectDataTab({ data }: { data: ReviewData }) {
+  const now = Date.now();
+  const completed = data.milestones.filter(m => m.status === "complete");
+  const upcoming = data.milestones
+    .filter(m => m.status !== "complete")
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+  // Critical/High risks past their end date
+  const pastDueRisks = data.risks.filter(r => {
+    const isCritOrHigh =
+      r.probability === "very_high" || r.impact === "very_high" ||
+      r.probability === "high" || r.impact === "high";
+    const pastDue = r.dueDate ? new Date(r.dueDate).getTime() < now : false;
+    return r.status === "open" && isCritOrHigh && pastDue;
+  });
+
+  const inProgressIssues = data.issues.filter(i => i.status === "in_progress");
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <OverviewSection data={data} />
-      <MilestonesSection milestones={data.milestones} />
-      <CriticalIssuesSection issues={data.issues} />
-      <CriticalRisksSection risks={data.risks} />
-      <AiSummarySection projectId={data.project.id} />
+
+      {/* Completed Milestones */}
+      <Section title="Completed Milestones" count={completed.length}>
+        {completed.length === 0 ? (
+          <Empty text="No milestones completed yet" />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {completed.slice(0, 10).map(m => (
+              <div key={m.id} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 12px", borderRadius: 8,
+                background: "#f0fdf4", border: "1px solid #86efac",
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#158a5a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span style={{ flex: 1, fontSize: 13, color: "#166534", fontWeight: 500 }}>{m.name}</span>
+                <span style={{ fontSize: 11, color: "#64748b" }}>{fmtDate(m.dueDate)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Upcoming Milestones */}
+      <Section title="Upcoming Milestones" count={upcoming.length}>
+        {upcoming.length === 0 ? (
+          <Empty text="No pending milestones" />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {upcoming.slice(0, 8).map(m => {
+              const db = dueBadge(m.dueDate);
+              return (
+                <div key={m.id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 12px", borderRadius: 8,
+                  background: m.status === "at_risk" ? "#fff7f7" : UST_WASH,
+                  border: `1px solid ${m.status === "at_risk" ? "#fca5a5" : UST_BORDER}`,
+                }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: db.color, flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{m.name}</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: db.color, background: `${db.color}12`, padding: "1px 7px", borderRadius: 5 }}>{db.text}</span>
+                    <span style={{ fontSize: 10, color: "#94a3b8" }}>{fmtDate(m.dueDate)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      {/* Critical & High Risks Past End Date */}
+      <Section
+        title="Critical & High Risks — Past End Date"
+        accent={pastDueRisks.length > 0 ? "#cf3f3a" : undefined}
+        count={pastDueRisks.length}
+      >
+        {pastDueRisks.length === 0 ? (
+          <Empty text="No critical or high risks past their end date" />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {pastDueRisks.map(r => {
+              const isCritical = r.probability === "very_high" || r.impact === "very_high" ||
+                (r.probability === "high" && r.impact === "high");
+              return (
+                <RiskIssueRow
+                  key={r.id}
+                  description={r.description}
+                  owner={r.owner}
+                  label={`${r.probability.replace("_", " ")} / ${r.impact.replace("_", " ")} — due ${fmtDate(r.dueDate)}`}
+                  labelColor={isCritical ? "#cf3f3a" : "#c17d12"}
+                  pastDue
+                />
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      {/* Issues In Progress */}
+      <Section
+        title="Issues In Progress"
+        accent={inProgressIssues.length > 0 ? "#c17d12" : undefined}
+        count={inProgressIssues.length}
+      >
+        {inProgressIssues.length === 0 ? (
+          <Empty text="No issues currently in progress" />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {inProgressIssues.map(i => {
+              const color = i.severity === "critical" ? "#cf3f3a" : i.severity === "high" ? "#c17d12" : "#64748b";
+              return (
+                <RiskIssueRow
+                  key={i.id}
+                  description={i.description}
+                  owner={i.owner}
+                  label={i.severity}
+                  labelColor={color}
+                />
+              );
+            })}
+          </div>
+        )}
+      </Section>
     </div>
   );
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
+
+type Tab = "overview" | "project_data";
 
 export function DrillDownPanel({ projectId, onClose }: {
   projectId: string;
@@ -430,6 +400,7 @@ export function DrillDownPanel({ projectId, onClose }: {
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>("overview");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -449,6 +420,11 @@ export function DrillDownPanel({ projectId, onClose }: {
 
   const project = data?.project;
 
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "overview",     label: "Overview" },
+    { id: "project_data", label: "Project Data" },
+  ];
+
   return (
     <>
       {/* Backdrop */}
@@ -459,7 +435,7 @@ export function DrillDownPanel({ projectId, onClose }: {
 
       {/* Panel */}
       <div style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(680px, 95vw)",
+        position: "fixed", top: 0, right: 0, bottom: 0, width: "min(700px, 95vw)",
         background: "#fff", boxShadow: "-4px 0 24px rgba(0,0,0,0.12)", zIndex: 50,
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
@@ -475,7 +451,7 @@ export function DrillDownPanel({ projectId, onClose }: {
               </h2>
               {project && (
                 <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
-                  PM: {project.pmName} · {project.currentPhase.replace(/_/g, " ")} · {project.healthStatus.toUpperCase()}
+                  PM: {project.pmName} · {project.currentPhase.replace(/_/g, " ")}
                 </div>
               )}
             </div>
@@ -487,9 +463,23 @@ export function DrillDownPanel({ projectId, onClose }: {
           </div>
         </div>
 
-        {/* Title bar */}
-        <div style={{ padding: "10px 20px", borderBottom: `1px solid ${UST_BORDER}`, background: "#fff" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: UST_PETROL }}>Project Review</span>
+        {/* Tab bar */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${UST_BORDER}`, background: "#fff", padding: "0 20px" }}>
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{
+                padding: "10px 16px", fontSize: 13, fontWeight: tab === t.id ? 700 : 500,
+                color: tab === t.id ? UST_TEAL : "#64748b",
+                background: "none", border: "none", cursor: "pointer",
+                borderBottom: `2px solid ${tab === t.id ? UST_TEAL : "transparent"}`,
+                marginBottom: -1, transition: "color .15s",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         {/* Body */}
@@ -497,7 +487,9 @@ export function DrillDownPanel({ projectId, onClose }: {
           {loading ? (
             <div style={{ textAlign: "center", paddingTop: 60, color: "#94a3b8" }}>Loading project data…</div>
           ) : data ? (
-            <ReviewTab data={data} />
+            tab === "overview"
+              ? <OverviewTab data={data} />
+              : <ProjectDataTab data={data} />
           ) : (
             <div style={{ textAlign: "center", paddingTop: 60, color: "#cf3f3a" }}>Failed to load project data</div>
           )}

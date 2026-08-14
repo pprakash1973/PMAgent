@@ -170,10 +170,19 @@ export default async function ExecutivePage() {
       const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
       const budPct = p.budget && p.budget > 0 ? Math.round((totalSpent / p.budget) * 100) : 0;
 
-      let rag: "red" | "amber" | "green" = (p.healthStatus as any) ?? "green";
-      if (spi !== null) {
+      // Live metrics govern RAG — both SPI and CPI available: derive health from them.
+      // Stored healthStatus only applies when there are no live schedule tasks.
+      let rag: "red" | "amber" | "green";
+      if (spi !== null && cpi !== null) {
+        if (spi < 0.8 || cpi < 0.8) rag = "red";
+        else if (spi < 0.9 || cpi < 0.9) rag = "amber";
+        else rag = "green";
+      } else if (spi !== null) {
         if (spi < 0.8) rag = "red";
-        else if (spi < 0.9 && rag === "green") rag = "amber";
+        else if (spi < 0.9) rag = "amber";
+        else rag = "green";
+      } else {
+        rag = (p.healthStatus as any) ?? "green";
       }
 
       const latestReport = p.statusReports[0] ?? null;

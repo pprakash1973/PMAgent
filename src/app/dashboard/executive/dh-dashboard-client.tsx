@@ -563,6 +563,204 @@ function MetricsSection({ trends, projects, clusterHealth }: { trends: TrendPoin
   );
 }
 
+// ── Health tab ────────────────────────────────────────────────────────────────────
+function HealthSection({ projects }: { projects: DhProject[] }) {
+  const [clusterFilter, setClusterFilter] = useState("__all__");
+  const [clientFilter, setClientFilter] = useState("__all__");
+
+  const clusters = Array.from(new Map(projects.map(p => [p.clusterId || "__none__", p.clusterName || "Unassigned"])).entries());
+  const clients  = Array.from(new Map(projects.map(p => [p.clientId || "__none__", p.clientName || "Unassigned"])).entries());
+
+  const filtered = projects.filter(p => {
+    const clusterMatch = clusterFilter === "__all__" || (p.clusterId || "__none__") === clusterFilter;
+    const clientMatch  = clientFilter  === "__all__" || (p.clientId  || "__none__") === clientFilter;
+    return clusterMatch && clientMatch;
+  });
+
+  const reds   = filtered.filter(p => p.rag === "red");
+  const ambers = filtered.filter(p => p.rag === "amber");
+  const greens = filtered.filter(p => p.rag === "green");
+
+  const selStyle: React.CSSProperties = {
+    padding: "6px 10px", borderRadius: 7, border: `1px solid rgba(255,255,255,.2)`,
+    background: "rgba(255,255,255,.1)", color: "#fff", fontSize: 12.5,
+    fontFamily: C.FF, cursor: "pointer", outline: "none",
+  };
+
+  const band = (label: string, color: string, bg: string, border: string, rows: DhProject[]) => (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <div style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color, textTransform: "uppercase" as const, letterSpacing: ".06em", fontFamily: C.FF }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 99, background: bg, color, border: `1px solid ${border}`, fontFamily: C.FF }}>{rows.length}</span>
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 13, color: C.inkFaint, fontStyle: "italic", padding: "8px 0 4px", fontFamily: C.FF }}>None in this band</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {rows.map(p => <RedRow key={p.id} p={p} />)}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Filter bar */}
+      <div style={{ background: "rgba(0,0,0,.15)", borderBottom: "1px solid rgba(255,255,255,.08)", padding: "10px 22px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontFamily: C.FF }}>Filter:</span>
+        <select value={clusterFilter} onChange={e => setClusterFilter(e.target.value)} style={selStyle}>
+          <option value="__all__">All clusters</option>
+          {clusters.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} style={selStyle}>
+          <option value="__all__">All clients</option>
+          {clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+        <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.35)", fontFamily: C.FF, marginLeft: "auto" }}>
+          {filtered.length} project{filtered.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {/* Sections */}
+      <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
+        <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 28 }}>
+          {band("Critical", C.red, C.redBg, C.redLine, reds)}
+          <div style={{ borderTop: `1px solid ${C.borderSoft}` }} />
+          {band("At Risk", C.amber, C.amberBg, C.amberLine, ambers)}
+          <div style={{ borderTop: `1px solid ${C.borderSoft}` }} />
+          {band("On Track", C.green, C.greenBg, C.greenLine, greens)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Metrics tiles tab ─────────────────────────────────────────────────────────────
+function MetricsTilesSection({ projects, clusterHealth }: { projects: DhProject[]; clusterHealth: ClusterHealth[] }) {
+  const [accountFilter, setAccountFilter] = useState("__all__");
+
+  const clients = Array.from(new Map(projects.map(p => [p.clientId || "__none__", p.clientName || "Unassigned"])).entries());
+
+  const filtered = accountFilter === "__all__"
+    ? projects
+    : projects.filter(p => (p.clientId || "__none__") === accountFilter);
+
+  const total   = filtered.length;
+  const reds    = filtered.filter(p => p.rag === "red").length;
+  const ambers  = filtered.filter(p => p.rag === "amber").length;
+  const greens  = filtered.filter(p => p.rag === "green").length;
+
+  const spiVals = filtered.map(p => p.spi).filter((v): v is number => v !== null);
+  const cpiVals = filtered.map(p => p.cpi).filter((v): v is number => v !== null);
+  const avgSpi  = spiVals.length ? spiVals.reduce((a, b) => a + b, 0) / spiVals.length : null;
+  const avgCpi  = cpiVals.length ? cpiVals.reduce((a, b) => a + b, 0) / cpiVals.length : null;
+
+  const totalBudget = filtered.reduce((s, p) => s + (p.budget ?? 0), 0);
+  const onTimePct   = total > 0 ? Math.round(filtered.filter(p => p.spi !== null && p.spi >= 0.85).length / total * 100) : null;
+
+  const revenueAtRisk = filtered.filter(p => p.rag !== "green").reduce((s, p) => s + (p.budget ?? 0), 0);
+
+  const fmtM = (v: number) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${(v / 1_000).toFixed(0)}K` : `$${v.toFixed(0)}`;
+
+  type Tile = { label: string; value: string | null; sub: string; color: string; bg: string; border: string };
+  const tiles: Tile[] = [
+    { label: "Active Projects", value: String(total), sub: "In scope", color: C.teal, bg: "#e8f5f6", border: "#b2dde0" },
+    { label: "Critical", value: String(reds), sub: "Red health", color: C.red, bg: C.redBg, border: C.redLine },
+    { label: "At Risk", value: String(ambers), sub: "Amber health", color: C.amber, bg: C.amberBg, border: C.amberLine },
+    { label: "On Track", value: String(greens), sub: "Green health", color: C.green, bg: C.greenBg, border: C.greenLine },
+    { label: "Avg SPI", value: avgSpi !== null ? fmt2(avgSpi) : "—", sub: "Schedule performance", color: avgSpi === null ? C.inkFaint : avgSpi < 0.85 ? C.red : avgSpi < 0.95 ? C.amber : C.green, bg: C.surface, border: C.border },
+    { label: "Avg CPI", value: avgCpi !== null ? fmt2(avgCpi) : "—", sub: "Cost performance", color: avgCpi === null ? C.inkFaint : avgCpi < 0.85 ? C.red : avgCpi < 0.95 ? C.amber : C.green, bg: C.surface, border: C.border },
+    { label: "On-Time Delivery", value: onTimePct !== null ? `${onTimePct}%` : "—", sub: "SPI ≥ 0.85", color: onTimePct === null ? C.inkFaint : onTimePct < 60 ? C.red : onTimePct < 75 ? C.amber : C.green, bg: C.surface, border: C.border },
+    { label: "Revenue at Risk", value: revenueAtRisk > 0 ? fmtM(revenueAtRisk) : "$0", sub: "Critical + At Risk budget", color: revenueAtRisk > 0 ? C.red : C.green, bg: revenueAtRisk > 0 ? C.redBg : C.greenBg, border: revenueAtRisk > 0 ? C.redLine : C.greenLine },
+    { label: "Total Portfolio Budget", value: totalBudget > 0 ? fmtM(totalBudget) : "—", sub: "Across filtered projects", color: C.ink, bg: C.surface, border: C.border },
+  ];
+
+  // Per-cluster breakdown
+  const clusterTiles = clusterHealth.filter(c => {
+    if (accountFilter === "__all__") return true;
+    return projects.some(p => p.clusterId === c.id && (p.clientId || "__none__") === accountFilter);
+  }).map(c => {
+    const cp = filtered.filter(p => p.clusterId === c.id);
+    const cr = cp.filter(p => p.rag === "red").length;
+    const ca = cp.filter(p => p.rag === "amber").length;
+    const cg = cp.filter(p => p.rag === "green").length;
+    const cspi = cp.map(p => p.spi).filter((v): v is number => v !== null);
+    const avgCSpi = cspi.length ? cspi.reduce((a, b) => a + b, 0) / cspi.length : null;
+    return { ...c, filtered: cp.length, cr, ca, cg, avgCSpi };
+  });
+
+  const selStyle: React.CSSProperties = {
+    padding: "6px 10px", borderRadius: 7, border: `1px solid rgba(255,255,255,.2)`,
+    background: "rgba(255,255,255,.1)", color: "#fff", fontSize: 12.5,
+    fontFamily: C.FF, cursor: "pointer", outline: "none",
+  };
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Filter bar */}
+      <div style={{ background: "rgba(0,0,0,.15)", borderBottom: "1px solid rgba(255,255,255,.08)", padding: "10px 22px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <span style={{ fontSize: 12, color: "rgba(255,255,255,.5)", fontFamily: C.FF }}>Filter by account:</span>
+        <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} style={selStyle}>
+          <option value="__all__">All accounts</option>
+          {clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+        <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.35)", fontFamily: C.FF, marginLeft: "auto" }}>
+          {filtered.length} of {projects.length} projects
+        </span>
+      </div>
+
+      {/* Tiles */}
+      <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
+        {/* Portfolio KPI tiles */}
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
+          Portfolio Overview
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginBottom: 28 }}>
+          {tiles.map(t => (
+            <div key={t.label} style={{ background: t.bg, border: `1px solid ${t.border}`, borderRadius: 12, padding: "14px 16px" }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: t.color, opacity: .75, marginBottom: 8, fontFamily: C.FF }}>{t.label}</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: t.color, fontFamily: C.FM, lineHeight: 1, marginBottom: 4 }}>{t.value ?? "—"}</div>
+              <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{t.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Cluster breakdown tiles */}
+        {clusterTiles.length > 0 && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
+              By Cluster
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+              {clusterTiles.map(c => (
+                <div key={c.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.ink, fontFamily: C.FF, marginBottom: 10 }}>{c.name}</div>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                    {[{ v: c.cr, l: "Critical", col: C.red, bg: C.redBg }, { v: c.ca, l: "At Risk", col: C.amber, bg: C.amberBg }, { v: c.cg, l: "On Track", col: C.green, bg: C.greenBg }].map(k => (
+                      <div key={k.l} style={{ flex: 1, textAlign: "center" as const, background: k.bg, borderRadius: 6, padding: "5px 4px" }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: k.col, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
+                        <div style={{ fontSize: 9, color: k.col, fontFamily: C.FF, marginTop: 2 }}>{k.l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {c.avgCSpi !== null && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>Avg SPI</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: c.avgCSpi < 0.85 ? C.red : c.avgCSpi < 0.95 ? C.amber : C.green, fontFamily: C.FM }}>{fmt2(c.avgCSpi)}</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF, marginTop: 4 }}>{c.filtered} project{c.filtered !== 1 ? "s" : ""}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────────
 export default function DhDashboardClient({
   projects, trends, userName, escalations, clusterHealth,
@@ -573,7 +771,7 @@ export default function DhDashboardClient({
   escalations: DhEscalation[];
   clusterHealth: ClusterHealth[];
 }) {
-  const [tab, setTab] = useState<"overview" | "escalations" | "red" | "clusters" | "metrics">("overview");
+  const [tab, setTab] = useState<"escalations" | "health" | "metrics">("escalations");
   const [resolveTarget, setResolveTarget] = useState<DhEscalation | null>(null);
   const [ackedIds, setAckedIds] = useState<Set<string>>(new Set());
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
@@ -583,11 +781,9 @@ export default function DhDashboardClient({
     ["open", "acknowledged", "in_progress"].includes(e.status)
   );
 
-  const redProjects = projects.filter(p => p.rag === "red" || p.rag === "amber");
   const totalProjects = projects.length;
   const redCount = projects.filter(p => p.rag === "red").length;
   const amberCount = projects.filter(p => p.rag === "amber").length;
-  const greenCount = projects.filter(p => p.rag === "green").length;
 
   async function ackEsc(id: string) {
     try {
@@ -619,11 +815,9 @@ export default function DhDashboardClient({
 
       {/* Tab bar */}
       <div style={{ background: C.tabBar, borderBottom: "1px solid rgba(255,255,255,.1)", padding: "0 22px", display: "flex", alignItems: "center", flexShrink: 0 }}>
-        {tabBtn("overview", "Overview")}
-        {tabBtn("escalations", "Escalation inbox", openEscs.length)}
-        {tabBtn("red", "Red projects", redProjects.length)}
-        {tabBtn("clusters", "Cluster health")}
-        {tabBtn("metrics", "Delivery metrics")}
+        {tabBtn("escalations", "Escalation Inbox", openEscs.length)}
+        {tabBtn("health", "Health")}
+        {tabBtn("metrics", "Metrics")}
         <div style={{ flex: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingRight: 4 }}>
           {redCount > 0 && <span style={{ fontSize: 11.5, fontWeight: 600, color: C.red, background: C.redBg, borderRadius: 4, padding: "2px 8px", fontFamily: C.FF }}>{redCount} critical</span>}
@@ -631,16 +825,6 @@ export default function DhDashboardClient({
           <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.4)", fontFamily: C.FF }}>{totalProjects} projects · {clusterHealth.length} cluster{clusterHealth.length !== 1 ? "s" : ""}</span>
         </div>
       </div>
-
-      {/* ── Delivery overview ── */}
-      {tab === "overview" && (
-        <OverviewSection projects={projects} escalations={escalations} />
-      )}
-
-      {/* ── Delivery metrics ── */}
-      {tab === "metrics" && (
-        <MetricsSection trends={trends} projects={projects} clusterHealth={clusterHealth} />
-      )}
 
       {/* ── Escalation inbox ── */}
       {tab === "escalations" && (
@@ -670,68 +854,11 @@ export default function DhDashboardClient({
         </div>
       )}
 
-      {/* ── Red digest ── */}
-      {tab === "red" && (
-        <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
-          {redProjects.length === 0 ? (
-            <div style={{ textAlign: "center" as const, padding: "80px 24px" }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: C.green, fontFamily: C.FF }}>No projects in red or amber</div>
-              <div style={{ fontSize: 13.5, color: C.inkFaint, marginTop: 6, fontFamily: C.FF }}>All {totalProjects} projects are on track.</div>
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 820, margin: "0 auto" }}>
-              <div style={{ fontSize: 13, color: C.ink2, marginBottom: 4, fontFamily: C.FF }}>
-                {redCount} critical · {amberCount} at risk · why each project is flagged
-              </div>
-              {/* Critical first, then amber */}
-              {[...redProjects.filter(p => p.rag === "red"), ...redProjects.filter(p => p.rag === "amber")].map(p => (
-                <RedRow key={p.id} p={p} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* ── Health ── */}
+      {tab === "health" && <HealthSection projects={projects} />}
 
-      {/* ── Cluster health ── */}
-      {tab === "clusters" && (
-        <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
-          <div style={{ maxWidth: 700, margin: "0 auto" }}>
-            {/* Portfolio summary strip */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 22 }}>
-              {[
-                { v: totalProjects, l: "Total projects", c: C.ink, bg: C.surface, border: C.border },
-                { v: redCount, l: "Critical", c: C.red, bg: C.redBg, border: C.redLine },
-                { v: amberCount, l: "At risk", c: C.amber, bg: C.amberBg, border: C.amberLine },
-                { v: greenCount, l: "On track", c: C.green, bg: C.greenBg, border: C.greenLine },
-              ].map(k => (
-                <div key={k.l} style={{ background: k.bg, border: `1px solid ${k.border}`, borderRadius: 12, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: k.c, opacity: .7, marginBottom: 6, fontFamily: C.FF }}>{k.l}</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: k.c, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Cluster bars */}
-            <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "18px 20px" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 16, fontFamily: C.FF }}>Health by cluster</div>
-              {clusterHealth.length === 0 && (
-                <div style={{ fontSize: 13, color: C.inkFaint, fontFamily: C.FF }}>No clusters assigned to your scope.</div>
-              )}
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {clusterHealth.map(c => <ClusterBar key={c.id} c={c} />)}
-              </div>
-              <div style={{ display: "flex", gap: 16, marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.borderSoft}` }}>
-                {[{ c: C.red, l: "Critical" }, { c: C.amber, l: "At risk" }, { c: C.green, l: "On track" }].map(k => (
-                  <span key={k.l} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: k.c, fontFamily: C.FF }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: k.c, display: "inline-block" }} />{k.l}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Metrics ── */}
+      {tab === "metrics" && <MetricsTilesSection projects={projects} clusterHealth={clusterHealth} />}
 
       {/* Resolve modal */}
       {resolveTarget && (
