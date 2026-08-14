@@ -158,10 +158,10 @@ export async function sendTaskActualsEmail(opts: TaskActualsEmailOptions) {
 
         <tr>
           <td style="padding:24px 32px 16px">
-            <p style="margin:0;color:#374151;font-size:14px;line-height:1.6">Hi <strong>${opts.resourceName}</strong>,</p>
+            <p style="margin:0;color:#374151;font-size:14px;line-height:1.6">Hi Team,</p>
             <p style="margin:12px 0 0;color:#374151;font-size:14px;line-height:1.6">
-              The project manager for <strong>${opts.projectName}</strong> has opened a collection cycle for the period <strong>${opts.cyclePeriod}</strong>.
-              Please review the tasks assigned to you below and submit your actuals using the secure link.
+              Your Project Manager for <strong>${opts.projectName}</strong> has requested task actuals for the period <strong>${opts.cyclePeriod}</strong>.
+              Please review the tasks assigned to you below and submit your hours using the secure link.
             </p>
           </td>
         </tr>
@@ -214,7 +214,7 @@ export async function sendTaskActualsEmail(opts: TaskActualsEmailOptions) {
     to: opts.to,
     subject: `PM Agent generated Tasks. Status update awaited`,
     html,
-    text: `Hi ${opts.resourceName},\n\nPlease submit your task actuals for ${opts.projectName} (${opts.cyclePeriod}).\n\nSubmit here: ${opts.submitUrl}\n\nThis link expires: ${opts.expiresAt}`,
+    text: `Hi Team,\n\nYour Project Manager for ${opts.projectName} has requested task actuals for the period ${opts.cyclePeriod}.\n\nSubmit your hours here: ${opts.submitUrl}\n\nThis link is personal and single-use. It expires: ${opts.expiresAt}`,
   });
 
   return info;
