@@ -2175,6 +2175,7 @@ function ScheduleTab({ project }: { project: any }) {
                           const isCrit = showCritical && criticalIds.has(t.id);
                           const isHover = hoverRowId === t.id;
                           const isSelected = selectedTaskIds.has(t.id);
+                          const isDone = t.status === "complete" || t.status === "completed" || t.percentComplete === 100;
                           const isEditName = editCell?.taskId === t.id && editCell?.field === "name";
                           const isEditDays = editCell?.taskId === t.id && editCell?.field === "baselineDays";
                           const isEditPct  = editCell?.taskId === t.id && editCell?.field === "percentComplete";
@@ -2185,9 +2186,11 @@ function ScheduleTab({ project }: { project: any }) {
                             <div key={t.id} onMouseEnter={() => setHoverRowId(t.id)} onMouseLeave={() => setHoverRowId(null)}
                               style={{ display: "grid", gridTemplateColumns: "52px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : isSelected ? C.primary : "transparent"}`, background: isSelected ? C.primaryLight : isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                                <input type="checkbox" checked={isSelected} onChange={() => toggleTaskSelect(t.id)}
+                                <input type="checkbox" checked={isSelected} onChange={() => !isDone && toggleTaskSelect(t.id)}
                                   onClick={e => e.stopPropagation()}
-                                  style={{ width: 13, height: 13, cursor: "pointer", accentColor: C.primary }} />
+                                  disabled={isDone}
+                                  title={isDone ? "Task completed" : undefined}
+                                  style={{ width: 13, height: 13, cursor: isDone ? "not-allowed" : "pointer", accentColor: C.primary, opacity: isDone ? 0.35 : 1 }} />
                                 <div style={{ width: 10, height: 10, borderRadius: "50%", border: `1.5px solid ${chip.color}`, background: chip.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                                   {(t.status === "complete" || t.percentComplete === 100) && <span style={{ fontSize: 6, color: C.green, fontWeight: 700 }}>✓</span>}
                                   {t.status === "in_progress" && t.percentComplete < 100 && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#0097AC" }} />}
