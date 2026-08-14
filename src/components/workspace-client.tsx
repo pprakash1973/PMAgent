@@ -2100,10 +2100,11 @@ function ScheduleTab({ project }: { project: any }) {
               const sv = kpi?.ev != null && kpi?.pv != null ? kpi.ev - kpi.pv : null;
               const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
+              const toHrs = (d: number) => `${(d * 8).toFixed(0)}h`;
               return [
-                { label: "PV",  value: kpi?.pv  != null ? `${kpi.pv.toFixed(1)}d`  : "—", sub: "Planned value",   color: C.text2, bg: C.surface2 },
-                { label: "EV",  value: kpi?.ev  != null ? `${kpi.ev.toFixed(1)}d`  : "—", sub: "Earned value",    color: C.primary, bg: C.primaryLight },
-                { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${sv.toFixed(1)}d` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead ✓" : "Behind", color: svColor, bg: svBg },
+                { label: "PV",  value: kpi?.pv  != null ? toHrs(kpi.pv)  : "—", sub: "Planned value",   color: C.text2, bg: C.surface2 },
+                { label: "EV",  value: kpi?.ev  != null ? toHrs(kpi.ev)  : "—", sub: "Earned value",    color: C.primary, bg: C.primaryLight },
+                { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${toHrs(sv)}` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead ✓" : "Behind", color: svColor, bg: svBg },
                 { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "On track ✓" : kpi.spi >= 0.9 ? "Slightly behind" : "Behind", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.9 ? C.amberLight : C.redLight },
               ];
             })().map(k => (
