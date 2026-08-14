@@ -1229,6 +1229,7 @@ model CollectionCycle {
   startDate   DateTime
   endDate     DateTime
   status      String    @default("open") // open | closed | processing | complete
+  taskIds     Json      @default("[]")   // specific task IDs included; empty = all tasks
   dispatchedAt DateTime?
   closedAt    DateTime?
   createdAt   DateTime  @default(now())

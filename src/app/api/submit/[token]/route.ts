@@ -17,7 +17,7 @@ export async function GET(
     include: {
       resource: { select: { id: true, name: true, role: true } },
       project: { select: { id: true, name: true } },
-      cycle: { select: { id: true, cycleNumber: true, label: true, startDate: true, endDate: true, status: true } },
+      cycle: { select: { id: true, cycleNumber: true, label: true, startDate: true, endDate: true, status: true, taskIds: true } },
     },
   });
 
@@ -33,34 +33,41 @@ export async function GET(
     return NextResponse.json({ error: "Collection cycle is closed", cycleClosed: true }, { status: 403 });
   }
 
-  // Get tasks for this resource
+  // Cycle-level task filter (PM selected specific tasks when creating the cycle)
+  const cycleTaskIds: string[] = Array.isArray(record.cycle.taskIds) ? record.cycle.taskIds as string[] : [];
+
+  // Resource-level task filter (explicit assignments + direct resource link)
   const assignments = await prisma.taskAssignment.findMany({
     where: { resourceId: record.resourceId, projectId: record.projectId },
     select: { taskId: true },
   });
-  const assignedTaskIds = new Set(assignments.map((a) => a.taskId));
-
   const directTasks = await prisma.scheduleTask.findMany({
     where: { resourceId: record.resourceId, projectId: record.projectId },
     select: { id: true },
   });
-  const directTaskIds = new Set(directTasks.map((t) => t.id));
+  const resourceTaskIds = new Set([
+    ...assignments.map((a) => a.taskId),
+    ...directTasks.map((t) => t.id),
+  ]);
 
-  const combinedTaskIds = new Set([...assignedTaskIds, ...directTaskIds]);
-
-  let tasks;
-  if (combinedTaskIds.size > 0) {
-    tasks = await prisma.scheduleTask.findMany({
-      where: { id: { in: Array.from(combinedTaskIds) }, projectId: record.projectId },
-      orderBy: { sortOrder: "asc" },
-    });
-  } else {
-    // If no explicit assignment, show all project tasks
-    tasks = await prisma.scheduleTask.findMany({
-      where: { projectId: record.projectId },
-      orderBy: { sortOrder: "asc" },
-    });
+  // Intersect: cycle selection ∩ resource assignments (or union if no assignments)
+  let taskFilter: string[] | undefined;
+  if (cycleTaskIds.length > 0 && resourceTaskIds.size > 0) {
+    taskFilter = cycleTaskIds.filter((id) => resourceTaskIds.has(id));
+    if (taskFilter.length === 0) taskFilter = cycleTaskIds; // fall back to cycle selection
+  } else if (cycleTaskIds.length > 0) {
+    taskFilter = cycleTaskIds;
+  } else if (resourceTaskIds.size > 0) {
+    taskFilter = Array.from(resourceTaskIds);
   }
+
+  const tasks = await prisma.scheduleTask.findMany({
+    where: {
+      projectId: record.projectId,
+      ...(taskFilter ? { id: { in: taskFilter } } : {}),
+    },
+    orderBy: { sortOrder: "asc" },
+  });
 
   return NextResponse.json({
     tokenId: record.id,

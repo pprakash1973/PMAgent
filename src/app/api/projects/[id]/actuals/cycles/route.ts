@@ -59,7 +59,7 @@ export async function POST(
 
   const { id: projectId } = await params;
   const body = await req.json();
-  const { label, startDate, endDate, dispatch = false } = body;
+  const { label, startDate, endDate, dispatch = false, taskIds = [] } = body;
 
   if (!startDate || !endDate) {
     return NextResponse.json({ error: "startDate and endDate required" }, { status: 400 });
@@ -85,9 +85,13 @@ export async function POST(
     );
   }
 
-  // Find all tasks for the project
+  // Resolve tasks — specific selection or all tasks
+  const selectedIds: string[] = Array.isArray(taskIds) && taskIds.length > 0 ? taskIds : [];
   const tasks = await prisma.scheduleTask.findMany({
-    where: { projectId },
+    where: {
+      projectId,
+      ...(selectedIds.length > 0 ? { id: { in: selectedIds } } : {}),
+    },
     orderBy: { sortOrder: "asc" },
   });
 
@@ -110,6 +114,7 @@ export async function POST(
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       status: "open",
+      taskIds: selectedIds.length > 0 ? selectedIds : [],
       createdBy: session.user.id,
       ...(dispatch ? { dispatchedAt: new Date() } : {}),
     },

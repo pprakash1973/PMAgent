@@ -1397,6 +1397,31 @@ function ScheduleTab({ project }: { project: any }) {
   const [cycleResult, setCycleResult] = useState<any>(null);
   const [actualsTab, setActualsTab] = useState<"new" | "history">("new");
 
+  // Task selection for actuals
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [actualsStatus, setActualsStatus] = useState<{ cycle: any; taskStatus: Record<string, any> } | null>(null);
+
+  async function loadActualsStatus() {
+    const res = await fetch(`/api/projects/${project.id}/actuals/status`);
+    if (res.ok) setActualsStatus(await res.json());
+  }
+
+  function toggleTaskSelect(taskId: string) {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  }
+
+  function selectAllTasks() {
+    setSelectedTaskIds(new Set(filteredTasks.map((t: any) => t.id)));
+  }
+
+  function clearTaskSelection() {
+    setSelectedTaskIds(new Set());
+  }
+
   async function loadCycles() {
     const res = await fetch(`/api/projects/${project.id}/actuals/cycles`);
     if (res.ok) setCycles(await res.json());
@@ -1414,12 +1439,15 @@ function ScheduleTab({ project }: { project: any }) {
           startDate: cycleStartDate,
           endDate: cycleEndDate,
           dispatch: cycleDispatch,
+          taskIds: selectedTaskIds.size > 0 ? Array.from(selectedTaskIds) : [],
         }),
       });
       const data = await res.json();
       if (res.ok) {
         setCycleResult(data);
         loadCycles();
+        loadActualsStatus();
+        clearTaskSelection();
       } else {
         setCycleResult({ error: data.error });
       }
@@ -1465,9 +1493,10 @@ function ScheduleTab({ project }: { project: any }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadSchedule = useCallback(async () => {
-    const [schedRes, resRes] = await Promise.all([
+    const [schedRes, resRes, statusRes] = await Promise.all([
       fetch(`/api/projects/${project.id}/schedule`),
       fetch(`/api/projects/${project.id}/resources`),
+      fetch(`/api/projects/${project.id}/actuals/status`),
     ]);
     if (schedRes.ok) {
       const data = await schedRes.json();
@@ -1475,6 +1504,7 @@ function ScheduleTab({ project }: { project: any }) {
       setKpi(data.kpi ?? null);
     }
     if (resRes.ok) setResources(await resRes.json());
+    if (statusRes.ok) setActualsStatus(await statusRes.json());
     setLoading(false);
   }, [project.id]);
 
@@ -1840,6 +1870,25 @@ function ScheduleTab({ project }: { project: any }) {
                   </div>
                 )}
 
+                {/* Tasks in scope */}
+                <div style={{ background: C.surface2, borderRadius: 8, padding: "10px 12px", fontSize: 12, border: `1px solid ${selectedTaskIds.size > 0 ? C.primaryBorder : C.border}` }}>
+                  <div style={{ fontWeight: 600, color: selectedTaskIds.size > 0 ? C.primary : C.text2, marginBottom: selectedTaskIds.size > 0 ? 6 : 0 }}>
+                    {selectedTaskIds.size > 0
+                      ? `${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""} selected — only these will be in the email`
+                      : `All ${tasks.length} tasks will be included (no selection)`}
+                  </div>
+                  {selectedTaskIds.size > 0 && (
+                    <div style={{ maxHeight: 80, overflowY: "auto" as const }}>
+                      {tasks.filter((t: any) => selectedTaskIds.has(t.id)).map((t: any) => (
+                        <div key={t.id} style={{ display: "flex", gap: 6, marginBottom: 2 }}>
+                          <span style={{ fontFamily: "monospace", color: C.text3, fontSize: 10 }}>{t.wbsCode}</span>
+                          <span style={{ color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{t.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 4 }}>Cycle Label (optional)</label>
                   <input value={cycleLabel} onChange={e => setCycleLabel(e.target.value)} placeholder="e.g. Sprint 5 actuals"
@@ -1972,8 +2021,8 @@ function ScheduleTab({ project }: { project: any }) {
         </button>
         {tasks.length > 0 && (
           <button onClick={() => { setActualsModal(true); setActualsTab("new"); loadCycles(); }}
-            style={{ height: 30, padding: "0 12px", background: C.surface, color: C.primary, border: `1px solid ${C.primaryBorder}`, borderRadius: 8, font: `500 12px var(--font-inter),'Inter'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-            ⟳ Collect Actuals
+            style={{ height: 30, padding: "0 12px", background: selectedTaskIds.size > 0 ? C.primary : C.surface, color: selectedTaskIds.size > 0 ? "#fff" : C.primary, border: `1px solid ${C.primaryBorder}`, borderRadius: 8, font: `500 12px var(--font-inter),'Inter'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            ⟳ {selectedTaskIds.size > 0 ? `Collect Actuals (${selectedTaskIds.size} task${selectedTaskIds.size !== 1 ? "s" : ""})` : "Collect Actuals"}
           </button>
         )}
       </div>
@@ -1993,6 +2042,36 @@ function ScheduleTab({ project }: { project: any }) {
 
       {tasks.length > 0 && (
         <>
+          {/* ── Task selection strip ── */}
+          {viewMode === "list" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "7px 12px", background: selectedTaskIds.size > 0 ? C.primaryLight : C.surface2, border: `1px solid ${selectedTaskIds.size > 0 ? C.primaryBorder : C.border}`, borderRadius: 8 }}>
+              <input type="checkbox"
+                checked={filteredTasks.length > 0 && filteredTasks.every((t: any) => selectedTaskIds.has(t.id))}
+                ref={(el) => { if (el) el.indeterminate = selectedTaskIds.size > 0 && selectedTaskIds.size < filteredTasks.length; }}
+                onChange={(e) => e.target.checked ? selectAllTasks() : clearTaskSelection()}
+                style={{ width: 14, height: 14, cursor: "pointer", accentColor: C.primary }} />
+              {selectedTaskIds.size === 0 ? (
+                <span style={{ fontSize: 12, color: C.text3 }}>Select tasks to collect actuals for specific tasks, or click &quot;Collect Actuals&quot; to include all</span>
+              ) : (
+                <>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: C.primary }}>{selectedTaskIds.size} task{selectedTaskIds.size !== 1 ? "s" : ""} selected</span>
+                  <button onClick={clearTaskSelection} style={{ fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: "0 4px" }}>✕ Clear</button>
+                </>
+              )}
+              {actualsStatus?.cycle && (
+                <div style={{ marginLeft: "auto", fontSize: 11, color: C.text3, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: actualsStatus.cycle.status === "open" ? C.green : C.text3, display: "inline-block" }} />
+                  {actualsStatus.cycle.status === "open" ? "Active" : "Closed"} cycle #{actualsStatus.cycle.cycleNumber}
+                  {actualsStatus.cycle.totalResources > 0 && (
+                    <span style={{ fontWeight: 600, color: actualsStatus.cycle.submittedResources === actualsStatus.cycle.totalResources ? C.green : C.amber }}>
+                      · {actualsStatus.cycle.submittedResources}/{actualsStatus.cycle.totalResources} submitted
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── EVM KPI strip ── */}
           <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
             {(() => {
@@ -2104,18 +2183,23 @@ function ScheduleTab({ project }: { project: any }) {
                           const chip = statusChipProps(t.status, t.percentComplete);
                           const isCrit = showCritical && criticalIds.has(t.id);
                           const isHover = hoverRowId === t.id;
+                          const isSelected = selectedTaskIds.has(t.id);
                           const isEditName = editCell?.taskId === t.id && editCell?.field === "name";
                           const isEditDays = editCell?.taskId === t.id && editCell?.field === "baselineDays";
                           const isEditPct  = editCell?.taskId === t.id && editCell?.field === "percentComplete";
                           const avc = t.resource ? resAvatarColor(t.resource.name) : C.text3;
                           const avatarInitial = t.resource?.name?.charAt(0).toUpperCase() ?? "?";
+                          const actualsInfo = actualsStatus?.taskStatus?.[t.id];
                           return (
                             <div key={t.id} onMouseEnter={() => setHoverRowId(t.id)} onMouseLeave={() => setHoverRowId(null)}
-                              style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : "transparent"}`, background: isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                <div style={{ width: 13, height: 13, borderRadius: "50%", border: `1.5px solid ${chip.color}`, background: chip.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                  {(t.status === "complete" || t.percentComplete === 100) && <span style={{ fontSize: 8, color: C.green, fontWeight: 700 }}>✓</span>}
-                                  {t.status === "in_progress" && t.percentComplete < 100 && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#0097AC" }} />}
+                              style={{ display: "grid", gridTemplateColumns: "52px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : isSelected ? C.primary : "transparent"}`, background: isSelected ? C.primaryLight : isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                                <input type="checkbox" checked={isSelected} onChange={() => toggleTaskSelect(t.id)}
+                                  onClick={e => e.stopPropagation()}
+                                  style={{ width: 13, height: 13, cursor: "pointer", accentColor: C.primary }} />
+                                <div style={{ width: 10, height: 10, borderRadius: "50%", border: `1.5px solid ${chip.color}`, background: chip.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                  {(t.status === "complete" || t.percentComplete === 100) && <span style={{ fontSize: 6, color: C.green, fontWeight: 700 }}>✓</span>}
+                                  {t.status === "in_progress" && t.percentComplete < 100 && <div style={{ width: 4, height: 4, borderRadius: "50%", background: "#0097AC" }} />}
                                 </div>
                               </div>
                               <div style={{ minWidth: 0, padding: "8px 8px 8px 0" }}>
@@ -2124,9 +2208,21 @@ function ScheduleTab({ project }: { project: any }) {
                                     onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
                                     style={{ width: "100%", fontSize: 14, border: `1px solid ${C.primary}`, borderRadius: 5, padding: "2px 5px", fontFamily: "var(--font-inter),'Inter',sans-serif", color: C.text }} />
                                 ) : (
-                                  <div onClick={() => { setEditCell({ taskId: t.id, field: "name" }); setEditVal(t.name); }}
-                                    style={{ fontSize: 14, fontWeight: 500, color: isCrit ? C.red : C.text, cursor: "text", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }} title={t.name}>
-                                    {t.name}
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
+                                    <div onClick={() => { setEditCell({ taskId: t.id, field: "name" }); setEditVal(t.name); }}
+                                      style={{ fontSize: 14, fontWeight: 500, color: isCrit ? C.red : C.text, cursor: "text", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }} title={t.name}>
+                                      {t.name}
+                                    </div>
+                                    {actualsInfo?.collected && (
+                                      <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, background: C.greenLight, color: C.green, flexShrink: 0, whiteSpace: "nowrap" as const }}>
+                                        ✓ Actuals
+                                      </span>
+                                    )}
+                                    {!actualsInfo?.collected && actualsInfo?.pendingCount > 0 && (
+                                      <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, background: C.amberLight, color: C.amber, flexShrink: 0, whiteSpace: "nowrap" as const }}>
+                                        ⏳ Awaiting
+                                      </span>
+                                    )}
                                   </div>
                                 )}
                                 <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5 }}>
