@@ -1367,7 +1367,7 @@ function computeCriticalIds(tasks: any[]): Set<string> {
 function ScheduleTab({ project }: { project: any }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [resources, setResources] = useState<any[]>([]);
-  const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number } | null>(null);
+  const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number; completionPct?: number | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [milestones, setMilestones] = useState<any[]>(
     [...(project.milestones ?? [])].sort((a: any, b: any) => new Date(a.dueDate ?? 0).getTime() - new Date(b.dueDate ?? 0).getTime())
@@ -1463,9 +1463,32 @@ function ScheduleTab({ project }: { project: any }) {
     }
   }
 
-  // Critical path
+  // Critical path — heuristic highlight (existing) + CPM panel (new)
   const [showCritical, setShowCritical] = useState(false);
   const criticalIds = useMemo(() => computeCriticalIds(tasks), [tasks]);
+  const [cpPanelOpen, setCpPanelOpen] = useState(false);
+  const [cpLoading, setCpLoading] = useState(false);
+  const [cpData, setCpData] = useState<{
+    criticalIds: string[];
+    nearCriticalIds: string[];
+    floatTable: { id: string; name: string; phase: string; duration: number; tf: number; ff: number; critical: boolean; nearCritical: boolean; percentComplete: number }[];
+    projectedEnd: string;
+    cpDuration: number;
+    narrative: string;
+  } | null>(null);
+
+  async function runCriticalPath() {
+    if (cpLoading) return;
+    setCpPanelOpen(true);
+    if (cpData) return; // already loaded
+    setCpLoading(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/schedule/critical-path`, { method: "POST" });
+      if (res.ok) setCpData(await res.json());
+    } catch { /* silent */ } finally {
+      setCpLoading(false);
+    }
+  }
 
   // Schedule filters
   const [nameFilter, setNameFilter] = useState("");
@@ -1992,6 +2015,13 @@ function ScheduleTab({ project }: { project: any }) {
             ))}
           </div>
         )}
+        {tasks.length > 0 && (
+          <button onClick={runCriticalPath}
+            style={{ height: 30, padding: "0 12px", background: cpPanelOpen ? C.red : C.surface, color: cpPanelOpen ? "#fff" : C.text2, border: `1px solid ${cpPanelOpen ? C.red : C.border}`, borderRadius: 8, font: `600 12px var(--font-inter),'Inter'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            {cpPanelOpen ? "✕ Close CP" : "Critical Path"}
+          </button>
+        )}
         {tasks.length > 0 && viewMode === "gantt" && (
           <button onClick={() => setShowCritical(v => !v)}
             style={{ height: 30, padding: "0 11px", background: showCritical ? C.redLight : C.surface, color: showCritical ? C.red : C.text2, border: `1px solid ${showCritical ? C.red : C.border}`, borderRadius: 8, font: `500 12px var(--font-inter),'Inter'`, cursor: "pointer" }}>
@@ -2032,7 +2062,8 @@ function ScheduleTab({ project }: { project: any }) {
       )}
 
       {tasks.length > 0 && (
-        <>
+        <div style={{ display: "flex", gap: 0, alignItems: "flex-start" }}>
+          <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           {/* ── Task selection strip ── */}
           {viewMode === "list" && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "7px 12px", background: selectedTaskIds.size > 0 ? C.primaryLight : C.surface2, border: `1px solid ${selectedTaskIds.size > 0 ? C.primaryBorder : C.border}`, borderRadius: 8 }}>
@@ -2172,7 +2203,7 @@ function ScheduleTab({ project }: { project: any }) {
                         </div>
                         {phaseTasks.map((t, rowIdx) => {
                           const chip = statusChipProps(t.status, t.percentComplete);
-                          const isCrit = showCritical && criticalIds.has(t.id);
+                          const isCrit = (showCritical && criticalIds.has(t.id)) || (cpPanelOpen && cpData && cpData.criticalIds.includes(t.id));
                           const isHover = hoverRowId === t.id;
                           const isSelected = selectedTaskIds.has(t.id);
                           const isDone = t.status === "complete" || t.status === "completed" || t.percentComplete === 100;
@@ -2182,9 +2213,10 @@ function ScheduleTab({ project }: { project: any }) {
                           const avc = t.resource ? resAvatarColor(t.resource.name) : C.text3;
                           const avatarInitial = t.resource?.name?.charAt(0).toUpperCase() ?? "?";
                           const actualsInfo = actualsStatus?.taskStatus?.[t.id];
+                          const isNearCrit = cpPanelOpen && cpData && cpData.nearCriticalIds.includes(t.id);
                           return (
                             <div key={t.id} onMouseEnter={() => setHoverRowId(t.id)} onMouseLeave={() => setHoverRowId(null)}
-                              style={{ display: "grid", gridTemplateColumns: "52px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : isSelected ? C.primary : "transparent"}`, background: isSelected ? C.primaryLight : isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
+                              style={{ display: "grid", gridTemplateColumns: "52px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : isNearCrit ? C.amber : isSelected ? C.primary : "transparent"}`, background: isSelected ? C.primaryLight : isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
                                 <input type="checkbox" checked={isSelected} onChange={() => !isDone && toggleTaskSelect(t.id)}
                                   onClick={e => e.stopPropagation()}
@@ -2420,7 +2452,7 @@ function ScheduleTab({ project }: { project: any }) {
                       const isEditPct = editCell?.taskId === t.id && editCell?.field === "percentComplete";
                       const isEditStart = editCell?.taskId === t.id && editCell?.field === "baselineStart";
                       const pctColor = t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : C.text3;
-                      const isCrit = showCritical && criticalIds.has(t.id);
+                      const isCrit = (showCritical && criticalIds.has(t.id)) || (cpPanelOpen && cpData && cpData.criticalIds.includes(t.id));
 
                       return (
                         <div
@@ -2584,7 +2616,7 @@ function ScheduleTab({ project }: { project: any }) {
                     {filteredTasks.filter(t => t.phase === phase).map(t => {
                       const left = barLeft(t);
                       const width = barWidth(t);
-                      const isCrit = showCritical && criticalIds.has(t.id);
+                      const isCrit = (showCritical && criticalIds.has(t.id)) || (cpPanelOpen && cpData && cpData.criticalIds.includes(t.id));
                       const barColor = isCrit ? C.red : t.percentComplete === 100 ? C.green : t.percentComplete > 0 ? C.primary : "#c5cadb";
                       const milestone = isMilestone(t);
 
@@ -2783,7 +2815,109 @@ function ScheduleTab({ project }: { project: any }) {
               </div>
             )}
           </div>
-        </>
+          </div>
+
+          {/* ── Critical Path Side Panel ── */}
+          {cpPanelOpen && (
+            <div style={{ width: 340, flexShrink: 0, borderLeft: `1px solid ${C.border}`, background: C.surface, alignSelf: "stretch", overflowY: "auto", display: "flex", flexDirection: "column" as const }}>
+              {/* Panel header */}
+              <div style={{ padding: "12px 14px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky" as const, top: 0, background: C.surface, zIndex: 2 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, color: C.text }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.red} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  Critical Path Analysis
+                </div>
+                <button onClick={() => { setCpPanelOpen(false); setCpData(null); }} style={{ width: 22, height: 22, border: `1px solid ${C.border}`, borderRadius: 6, background: C.surface2, color: C.text3, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              </div>
+
+              {cpLoading ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flex: 1, color: C.text3, fontSize: 13 }}>
+                  <span style={{ display: "inline-block", width: 14, height: 14, border: `2px solid ${C.border}`, borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+                  Running CPM analysis…
+                </div>
+              ) : cpData ? (
+                <div style={{ padding: "14px 14px", display: "flex", flexDirection: "column" as const, gap: 16 }}>
+
+                  {/* Summary chips */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {[
+                      { label: "CP Duration", value: `${cpData.cpDuration}d`, sub: `${cpData.criticalIds.length} tasks on path`, color: C.red },
+                      { label: "Project Float", value: "0d", sub: "No schedule buffer", color: C.amber },
+                      { label: "Near-Critical", value: String(cpData.nearCriticalIds.length), sub: "tasks ≤ 2 days float", color: C.amber },
+                      { label: "Projected End", value: new Date(cpData.projectedEnd).toLocaleDateString("en-AU", { day: "numeric", month: "short" }), sub: new Date(cpData.projectedEnd).toLocaleDateString("en-AU", { year: "numeric" }), color: C.primary },
+                    ].map(chip => (
+                      <div key={chip.label} style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, padding: "9px 11px" }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: C.text3, marginBottom: 3 }}>{chip.label}</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: chip.color, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{chip.value}</div>
+                        <div style={{ fontSize: 10.5, color: C.text3, marginTop: 3 }}>{chip.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Legend */}
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" as const }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: C.text3 }}>
+                      <div style={{ width: 3, height: 14, borderRadius: 2, background: C.red }} />Critical path
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: C.text3 }}>
+                      <div style={{ width: 3, height: 14, borderRadius: 2, background: C.amber }} />Near-critical (≤2d)
+                    </div>
+                  </div>
+
+                  {/* Critical chain */}
+                  <div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: C.text3, marginBottom: 7 }}>Critical chain</div>
+                    <div style={{ display: "flex", flexDirection: "column" as const, gap: 4 }}>
+                      {cpData.floatTable.filter(r => r.critical).map(r => (
+                        <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", background: C.redLight, border: `1px solid rgba(197,57,43,.18)`, borderRadius: 8 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, flexShrink: 0 }} />
+                          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{r.name}</span>
+                          <span style={{ fontSize: 11, color: C.text3, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{r.duration}d</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Float table */}
+                  {cpData.floatTable.filter(r => r.nearCritical).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: C.text3, marginBottom: 7 }}>Near-critical watch list</div>
+                      <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 40px 48px", padding: "6px 9px", background: C.surface2, fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".05em", color: C.text3 }}>
+                          <span>Task</span><span>TF</span><span>Risk</span>
+                        </div>
+                        {cpData.floatTable.filter(r => r.nearCritical).map(r => (
+                          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 40px 48px", padding: "7px 9px", borderTop: `1px solid ${C.border}`, fontSize: 11.5 }}>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, color: C.text }}>{r.name}</span>
+                            <span style={{ fontWeight: 700, color: C.amber, fontVariantNumeric: "tabular-nums" }}>{r.tf}d</span>
+                            <span style={{ fontWeight: 700, fontSize: 10, color: C.amber }}>HIGH</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI narrative */}
+                  {cpData.narrative && (
+                    <div>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: C.text3, marginBottom: 7 }}>AI insight</div>
+                      <div style={{ background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 10, padding: "11px 13px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.primary} strokeWidth="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                          <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".07em", padding: "2px 6px", borderRadius: 4, background: C.primaryLight, color: C.primary, border: `1px solid ${C.primaryBorder}` }}>PMI CPM Analysis</span>
+                        </div>
+                        <div style={{ fontSize: 12, lineHeight: 1.6, color: C.text2, whiteSpace: "pre-wrap" as const }}>{cpData.narrative}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 11, color: C.text3, textAlign: "center" as const }}>CPM via forward/backward pass · Just now</div>
+                </div>
+              ) : (
+                <div style={{ padding: "24px 16px", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>Analysis failed. Check server logs.</div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } } @keyframes blink-cursor { 0%,100%{opacity:1} 50%{opacity:0} }`}</style>

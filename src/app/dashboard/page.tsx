@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ActionItemsClient } from "./action-items-client";
 
 function fmtDate(d: Date | string | null | undefined) {
   if (!d) return "—";
@@ -45,7 +46,8 @@ export default async function DashboardPage() {
   const greeting = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
   const today = now.toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-  const projects = await prisma.project.findMany({
+  const [projects, actionItems] = await Promise.all([
+   prisma.project.findMany({
     where: {
       orgId:     user.orgId,
       deletedAt: null,
@@ -59,7 +61,20 @@ export default async function DashboardPage() {
     },
     orderBy: { updatedAt: "desc" },
     take: 50,
-  });
+  }),
+  prisma.actionItem.findMany({
+    where: {
+      assignedToId: user.id,
+      status: { notIn: ["closed", "cancelled"] },
+    },
+    include: {
+      project: { select: { id: true, name: true } },
+      raisedBy: { select: { fullName: true } },
+    },
+    orderBy: [{ priority: "asc" }, { dueDate: "asc" }],
+    take: 20,
+  }),
+ ]);
 
   // Sort: red → amber → green, then by name within each group
   const rows = [...projects].sort((a, b) => {
@@ -100,6 +115,33 @@ export default async function DashboardPage() {
           </Link>
         )}
       </div>
+
+      {/* Action Items */}
+      {actionItems.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: "#94a3b8", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            Action items
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#fbe4e2", color: "#7a1f1d" }}>
+              {actionItems.length}
+            </span>
+          </div>
+          <div style={{ marginBottom: 28 }}>
+            <ActionItemsClient
+              items={actionItems.map(a => ({
+                id: a.id,
+                reference: a.reference,
+                title: a.title,
+                priority: a.priority,
+                status: a.status,
+                dueDate: a.dueDate ? a.dueDate.toISOString() : null,
+                project: a.project,
+                raisedBy: { fullName: a.raisedBy.fullName },
+              }))}
+              overdueCount={actionItems.filter(a => a.dueDate && a.dueDate < new Date()).length}
+            />
+          </div>
+        </>
+      )}
 
       {/* Section label */}
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".06em", color: "#94a3b8", marginBottom: 12 }}>
