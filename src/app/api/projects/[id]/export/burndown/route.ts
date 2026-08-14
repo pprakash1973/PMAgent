@@ -399,19 +399,21 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   let evmSummary = null;
   if (project.budget && (costEntries.length > 0 || scheduleTasks.length > 0)) {
     const bac = project.budget;
-    const totalBaseDays = scheduleTasks.reduce((s, t) => s + (t.baselineDays || 1), 0);
+    const totalBaseHours = scheduleTasks.reduce((s, t) => s + ((t as any).estimatedHours != null ? (t as any).estimatedHours : (t.baselineDays || 1) * 8), 0);
     const now = Date.now();
     let pv = 0;
     for (const t of scheduleTasks) {
+      const taskHours = (t as any).estimatedHours != null ? (t as any).estimatedHours : (t.baselineDays || 1) * 8;
       const s2 = new Date(t.baselineStart).getTime();
       const f2 = new Date(t.baselineFinish).getTime();
       const dur = f2 - s2;
       const pct = now <= s2 ? 0 : now >= f2 ? 1 : dur > 0 ? (now - s2) / dur : 0;
-      pv += (t.plannedCost ?? (bac * (t.baselineDays || 1) / (totalBaseDays || 1))) * pct;
+      pv += (t.plannedCost ?? (bac * taskHours / (totalBaseHours || 1))) * pct;
     }
     const totalAC = costEntries.reduce((s, e) => s + e.amount, 0);
     const totalEV = scheduleTasks.reduce((s, t) => {
-      const pc = (t as any).plannedCost ?? (bac * (t.baselineDays || 1) / (totalBaseDays || 1));
+      const taskHours = (t as any).estimatedHours != null ? (t as any).estimatedHours : (t.baselineDays || 1) * 8;
+      const pc = (t as any).plannedCost ?? (bac * taskHours / (totalBaseHours || 1));
       return s + pc * (t.percentComplete / 100);
     }, 0);
     const cpi = totalAC > 0 ? totalEV / totalAC : 1;

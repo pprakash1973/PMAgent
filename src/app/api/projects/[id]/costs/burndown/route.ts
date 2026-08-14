@@ -23,11 +23,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // ── Planned Value curve ─────────────────────────────────────────────────────
   // Distribute each task's planned cost linearly across its baseline duration.
   // If no plannedCost on tasks, distribute BAC proportionally by baselineDays.
-  const totalBaseDays = tasks.reduce((s, t) => s + (t.baselineDays || 1), 0);
+  const totalBaseHours = tasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
 
   function taskPlannedCost(t: (typeof tasks)[0]): number {
     if (t.plannedCost != null && t.plannedCost > 0) return t.plannedCost;
-    if (bac > 0 && totalBaseDays > 0) return (bac * (t.baselineDays || 1)) / totalBaseDays;
+    const taskHours = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
+    if (bac > 0 && totalBaseHours > 0) return (bac * taskHours) / totalBaseHours;
     return 0;
   }
 

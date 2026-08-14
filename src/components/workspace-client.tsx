@@ -35,6 +35,13 @@ const C = {
   FF: "var(--font-inter),'Inter',system-ui,sans-serif",
 };
 
+function resAvatarColor(name: string) {
+  const palette = [C.primary, "#006E74", "#0097AC", "#003C51", "#01B27C", "#881E87"];
+  if (!name) return C.text3;
+  let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return palette[Math.abs(h) % palette.length];
+}
+
 function ragColor(s: string) {
   if (!s) return C.text3;
   const v = s.toLowerCase();
@@ -1733,13 +1740,6 @@ function ScheduleTab({ project }: { project: any }) {
     if (status === "on_hold") return { label: "On hold", color: C.amber, bg: C.amberLight };
     return { label: "Not started", color: C.text3, bg: C.surface2 };
   }
-  function resAvatarColor(name: string) {
-    const palette = [C.primary, "#006E74", "#0097AC", "#003C51", "#01B27C", "#881E87"];
-    if (!name) return C.text3;
-    let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-    return palette[Math.abs(h) % palette.length];
-  }
-
   // Gantt geometry
   const minStart = tasks.length ? new Date(Math.min(...tasks.map(t => new Date(t.baselineStart).getTime()))) : new Date();
   const maxFinish = tasks.length ? new Date(Math.max(...tasks.map(t => new Date(t.baselineFinish).getTime()))) : new Date();
@@ -2933,9 +2933,14 @@ function ResourcesTab({ project }: { project: any }) {
           </div>
           {resources.map((r, idx) => (
             <div key={r.id} style={{ display: "grid", gridTemplateColumns: "2fr 1.5fr 2fr 80px 80px 80px 80px", padding: "11px 16px", gap: 8, borderTop: idx === 0 ? "none" : `1px solid ${C.borderLight}`, alignItems: "center", background: idx % 2 === 0 ? C.surface : C.surface2 }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{r.name}</div>
-                {r.skills && <div style={{ fontSize: 11.5, color: C.text3, marginTop: 1 }}>{r.skills}</div>}
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: resAvatarColor(r.name), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                  {r.name?.charAt(0).toUpperCase() ?? "?"}
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{r.name}</div>
+                  {r.skills && <div style={{ fontSize: 11.5, color: C.text3, marginTop: 1 }}>{r.skills}</div>}
+                </div>
               </div>
               <div style={{ fontSize: 13, color: C.text2 }}>{r.role}</div>
               <div style={{ fontSize: 12.5, color: C.text3, fontFamily: "'IBM Plex Mono',monospace" }}>{r.email || "—"}</div>
@@ -5215,13 +5220,29 @@ function OverviewTab({ project }: { project: any }) {
   const hs = latest?.healthScore ?? null;
 
   const compositeScore: number | null = hs?.compositeScore ?? null;
-  const spi: number | null = hs?.spi ?? (latest?.scheduleVariance != null ? 1 + latest.scheduleVariance / 100 : null);
-  const cpi: number | null = hs?.cpi ?? (latest?.budgetVariance != null ? 1 + latest.budgetVariance / 100 : null);
-  const ev: number | null = hs?.ev ?? null;
-  const ac: number | null = hs?.ac ?? null;
-  const pv: number | null = hs?.pv ?? null;
-  const eac: number | null = hs?.eac ?? null;
   const bac: number | null = project.budget ?? null;
+
+  // Fetch live EVM so Overview always matches Cost tab and Schedule tab
+  const [liveEvm, setLiveEvm] = React.useState<any>(null);
+  const [liveKpi, setLiveKpi] = React.useState<any>(null);
+  React.useEffect(() => {
+    fetch(`/api/projects/${project.id}/costs/burndown`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setLiveEvm(d.summary))
+      .catch(() => {});
+    fetch(`/api/projects/${project.id}/schedule`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => d && setLiveKpi(d.kpi))
+      .catch(() => {});
+  }, [project.id]);
+
+  // Live values take precedence over stale healthScore snapshot
+  const cpi: number | null = liveEvm?.cpi ?? hs?.cpi ?? (latest?.budgetVariance != null ? 1 + latest.budgetVariance / 100 : null);
+  const spi: number | null = liveKpi?.spi ?? liveEvm?.spi ?? hs?.spi ?? (latest?.scheduleVariance != null ? 1 + latest.scheduleVariance / 100 : null);
+  const ev: number | null = liveEvm?.totalEV ?? hs?.ev ?? null;
+  const ac: number | null = liveEvm?.totalAC ?? hs?.ac ?? null;
+  const pv: number | null = liveEvm?.pvNow ?? hs?.pv ?? null;
+  const eac: number | null = liveEvm?.eac ?? hs?.eac ?? null;
 
   const risks = (project.risks ?? []) as any[];
   const issues = (project.issues ?? []) as any[];
@@ -5244,7 +5265,9 @@ function OverviewTab({ project }: { project: any }) {
   const fmt2 = (v: number | null) => v === null ? "—" : v.toFixed(2);
   const fmtK = (v: number | null) => v === null ? "—" : `$${Math.round(v / 1000)}K`;
   const budgetPct = bac && ac && ac > 0 ? Math.round((ac / bac) * 100) : null;
-  const evPct = pv && ev ? Math.round((ev / pv) * 100) : null;
+  // Schedule %: weighted avg task % complete (most intuitive); fall back to EV/BAC then milestone
+  const evPct = liveKpi?.completionPct ?? (bac && bac > 0 && ev != null && ev >= 0 ? Math.min(100, Math.round((ev / bac) * 100))
+    : pv && ev ? Math.min(100, Math.round((ev / pv) * 100)) : null);
   const highRisks = risks.filter((r: any) => ["high", "very_high"].includes(r.probability ?? "")).length;
   const critIssues = issues.filter((i: any) => ["critical", "high"].includes(i.severity ?? "")).length;
 

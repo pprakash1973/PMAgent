@@ -120,22 +120,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const now = Date.now();
     const todayDate = new Date();
     const bac = project.budget ?? 0;
-    const totalBaseDays = scheduleTasks.reduce((s, t) => s + (t.baselineDays || 1), 0);
+    const totalBaseHours = scheduleTasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
     let pv = 0, ev = 0;
     let overdueCount = 0;
     for (const t of scheduleTasks) {
+      const taskHours = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 0) * 8;
       const s = new Date(t.baselineStart).getTime();
       const f = new Date(t.baselineFinish).getTime();
       const dur = f - s;
       const plannedPct = now <= s ? 0 : now >= f ? 1 : dur > 0 ? (now - s) / dur : 0;
-      pv += t.baselineDays * plannedPct;
-      ev += t.baselineDays * (t.percentComplete / 100);
+      pv += taskHours * plannedPct;
+      ev += taskHours * (t.percentComplete / 100);
       if (t.percentComplete < 100 && new Date(t.baselineFinish) < todayDate) overdueCount++;
     }
     // Guard: only report SPI once at least 3% of baseline has elapsed.
     // Near-zero pv (project just started) produces inflated ratios (e.g. 7.22) that
     // mislead dashboards. Cap at 3.00 as a hard ceiling.
-    const minPvThreshold = totalBaseDays * 0.03;
+    const minPvThreshold = totalBaseHours * 0.03;
     const spi =
       pv > 0 && pv >= minPvThreshold
         ? Math.min(3.0, Math.round((ev / pv) * 100) / 100)
@@ -144,9 +145,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     computedSpi = spi;
     // Live cost CPI from cost entries if available
     const totalAC = costEntries.reduce((s, e) => s + e.amount, 0);
-    if (totalAC > 0 && bac > 0 && totalBaseDays > 0) {
+    if (totalAC > 0 && bac > 0 && totalBaseHours > 0) {
       const evCost = scheduleTasks.reduce((s, t) => {
-        const pc = t.plannedCost ?? (bac * (t.baselineDays || 1) / totalBaseDays);
+        const taskHours = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
+        const pc = t.plannedCost ?? (bac * taskHours / totalBaseHours);
         return s + pc * (t.percentComplete / 100);
       }, 0);
       computedCpi = evCost > 0 ? Math.round((evCost / totalAC) * 1000) / 1000 : null;

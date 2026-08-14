@@ -47,7 +47,12 @@ export async function POST(
   });
 
   const version = prevBaseline ? prevBaseline.version + 1 : 1;
-  const baselineLabel = label ?? `BL v${version}`;
+  let baselineLabel = label;
+  if (!baselineLabel) {
+    const proj = await prisma.project.findUnique({ where: { id }, select: { name: true } });
+    const safeName = (proj?.name ?? "PROJ").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase();
+    baselineLabel = `${safeName}_BL_V${version}`;
+  }
 
   const snapshot = activeReqs.map(r => ({
     requirementId: r.id,
