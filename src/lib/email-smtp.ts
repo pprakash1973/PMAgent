@@ -212,7 +212,7 @@ export async function sendTaskActualsEmail(opts: TaskActualsEmailOptions) {
   const info = await transport.sendMail({
     from: `"${cfg.fromName}" <${cfg.fromAddress}>`,
     to: opts.to,
-    subject: `[Action Required] Submit task actuals – ${opts.projectName} (${opts.cyclePeriod})`,
+    subject: `PM Agent generated Tasks. Status update awaited`,
     html,
     text: `Hi ${opts.resourceName},\n\nPlease submit your task actuals for ${opts.projectName} (${opts.cyclePeriod}).\n\nSubmit here: ${opts.submitUrl}\n\nThis link expires: ${opts.expiresAt}`,
   });
