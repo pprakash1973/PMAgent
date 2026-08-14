@@ -32,10 +32,11 @@ export async function POST(
   const { id } = await params;
 
   const body = await req.json();
-  const { delta, reason, crReference } = body as {
+  const { delta, reason, crReference, newEndDate } = body as {
     delta?: number;
     reason?: string;
     crReference?: string;
+    newEndDate?: string;
   };
 
   if (!delta || delta === 0) {
@@ -45,8 +46,16 @@ export async function POST(
     return NextResponse.json({ error: "reason is required" }, { status: 400 });
   }
 
-  const project = await prisma.project.findUnique({ where: { id }, select: { budget: true } });
+  const project = await prisma.project.findUnique({ where: { id }, select: { budget: true, endDate: true, startDate: true } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
+  if (newEndDate) {
+    const newEnd = new Date(newEndDate);
+    const barrier = project.endDate ?? project.startDate;
+    if (barrier && newEnd <= barrier) {
+      return NextResponse.json({ error: "New end date must be after the current project end date" }, { status: 400 });
+    }
+  }
 
   const previousBudget = Number(project.budget ?? 0);
   const newBudget = previousBudget + delta;
@@ -69,7 +78,13 @@ export async function POST(
     INSERT INTO budget_revisions (id, "projectId", "changeRequestId", "previousBudget", "newBudget", delta, reason, "approvedById", "createdAt")
     VALUES (${revId}, ${id}, ${changeRequestId}, ${previousBudget}, ${newBudget}, ${delta}, ${reason.trim()}, ${user.id}, ${now})
   `;
-  await prisma.project.update({ where: { id }, data: { budget: newBudget } });
+  await prisma.project.update({
+    where: { id },
+    data: {
+      budget: newBudget,
+      ...(newEndDate ? { endDate: new Date(newEndDate) } : {}),
+    },
+  });
 
   const [revision] = await prisma.$queryRaw<any[]>`SELECT * FROM budget_revisions WHERE id = ${revId}`;
   const serialized = {
@@ -79,5 +94,5 @@ export async function POST(
     delta: Number(revision.delta),
   };
 
-  return NextResponse.json({ revision: serialized, newBudget }, { status: 201 });
+  return NextResponse.json({ revision: serialized, newBudget, newEndDate: newEndDate ?? null }, { status: 201 });
 }

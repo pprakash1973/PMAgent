@@ -331,12 +331,16 @@ function ProjectInfoTab({ project }: { project: any }) {
 
   const [localRevisions, setLocalRevisions] = React.useState<any[]>([]);
   const [localBudget, setLocalBudget] = React.useState<number | null>(project.budget ? Number(project.budget) : null);
+  const [localEndDate, setLocalEndDate] = React.useState<string | null>(project.endDate ?? null);
   const originalBudget = localRevisions.length > 0 ? Number(localRevisions[0].previousBudget) : null;
   const [showRevForm, setShowRevForm] = React.useState(false);
   const [revDelta, setRevDelta] = React.useState("");
   const [revReason, setRevReason] = React.useState("");
   const [revCr, setRevCr] = React.useState("");
+  const [revNewEndDate, setRevNewEndDate] = React.useState("");
   const [revLoading, setRevLoading] = React.useState(false);
+  const [showScheduleRegen, setShowScheduleRegen] = React.useState(false);
+  const [regenLoading, setRegenLoading] = React.useState(false);
 
   React.useEffect(() => {
     fetch(`/api/projects/${project.id}/budget-revisions`)
@@ -351,15 +355,31 @@ function ProjectInfoTab({ project }: { project: any }) {
     setRevLoading(true);
     const res = await fetch(`/api/projects/${project.id}/budget-revisions`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delta, reason: revReason.trim(), crReference: revCr.trim() || undefined }),
+      body: JSON.stringify({
+        delta,
+        reason: revReason.trim(),
+        crReference: revCr.trim() || undefined,
+        newEndDate: revNewEndDate || undefined,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
       setLocalRevisions(prev => [...prev, data.revision]);
       setLocalBudget(data.newBudget);
-      setRevDelta(""); setRevReason(""); setRevCr(""); setShowRevForm(false);
+      if (data.newEndDate) {
+        setLocalEndDate(data.newEndDate);
+        setShowScheduleRegen(true);
+      }
+      setRevDelta(""); setRevReason(""); setRevCr(""); setRevNewEndDate(""); setShowRevForm(false);
     }
     setRevLoading(false);
+  }
+
+  async function handleRegenSchedule() {
+    setRegenLoading(true);
+    await fetch(`/api/projects/${project.id}/schedule/generate`, { method: "POST" });
+    setRegenLoading(false);
+    setShowScheduleRegen(false);
   }
 
   return (
@@ -390,7 +410,7 @@ function ProjectInfoTab({ project }: { project: any }) {
         {/* Row 3 — Dates & commercial */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "20px 28px", marginBottom: 24 }}>
           <InfoField label="Start Date" value={project.startDate ? formatDate(project.startDate) : null} />
-          <InfoField label="End Date" value={project.endDate ? formatDate(project.endDate) : null} />
+          <InfoField label="End Date" value={localEndDate ? formatDate(localEndDate) : null} />
           <InfoField label="Billing Type" value={PROJECT_TYPE_LABELS[project.projectType] ?? project.projectType} />
         </div>
 
@@ -448,6 +468,30 @@ function ProjectInfoTab({ project }: { project: any }) {
           </div>
         </div>
 
+        {/* Schedule regen banner — shown after a CR extends the end date */}
+        {showScheduleRegen && (
+          <div style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", marginBottom: 2 }}>
+                End date updated to {localEndDate ? formatDate(localEndDate) : "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "#3b82f6" }}>
+                Regenerate WBS &amp; Schedule to align tasks with the new project timeline.
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <button
+                onClick={handleRegenSchedule}
+                disabled={regenLoading}
+                style={{ fontSize: 12, fontWeight: 600, background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 7, padding: "6px 14px", cursor: "pointer", opacity: regenLoading ? 0.7 : 1 }}
+              >
+                {regenLoading ? "Regenerating…" : "Regenerate Schedule"}
+              </button>
+              <button onClick={() => setShowScheduleRegen(false)} style={{ fontSize: 12, padding: "6px 10px", borderRadius: 7, border: "1px solid #93c5fd", background: "#fff", color: "#1d4ed8", cursor: "pointer" }}>Dismiss</button>
+            </div>
+          </div>
+        )}
+
         {/* Add revision form */}
         {showRevForm && (
           <div style={{ background: "#f8f9ff", border: `1px solid ${C.primaryBorder}`, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
@@ -465,16 +509,28 @@ function ProjectInfoTab({ project }: { project: any }) {
                   style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", boxSizing: "border-box" as const }} />
               </div>
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>Reason / Description *</div>
-              <input value={revReason} onChange={e => setRevReason(e.target.value)} placeholder="Brief description of what the CR adds..."
-                style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", boxSizing: "border-box" as const }} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>Reason / Description *</div>
+                <input value={revReason} onChange={e => setRevReason(e.target.value)} placeholder="Brief description of what the CR adds..."
+                  style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", boxSizing: "border-box" as const }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>New End Date <span style={{ color: C.text3, fontWeight: 400 }}>(optional — if CR extends timeline)</span></div>
+                <input
+                  type="date"
+                  value={revNewEndDate}
+                  onChange={e => setRevNewEndDate(e.target.value)}
+                  min={localEndDate ? new Date(new Date(localEndDate).getTime() + 86400000).toISOString().slice(0, 10) : undefined}
+                  style={{ width: "100%", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 10px", boxSizing: "border-box" as const }}
+                />
+              </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={submitRevision} disabled={revLoading || !revDelta || !revReason.trim()} style={{ padding: "6px 16px", borderRadius: 7, background: C.primary, color: "#fff", border: "none", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: revLoading ? 0.7 : 1 }}>
                 {revLoading ? "Saving…" : "Apply CR Budget Change"}
               </button>
-              <button onClick={() => setShowRevForm(false)} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+              <button onClick={() => { setShowRevForm(false); setRevNewEndDate(""); }} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, fontSize: 12, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         )}
