@@ -22,12 +22,12 @@ type ReviewData = {
   reviewNotes: { id: string; reviewType: string; body: string; visibility: string; createdAt: string; authorName: string }[];
 };
 
-type Tab = "review" | "action-item";
-
-const CATEGORIES = [
-  "schedule", "cost", "scope_change", "risk", "issue",
-  "quality", "stakeholder", "resource", "governance", "artifact", "data_hygiene",
-];
+type AiSummary = {
+  healthBullets: string[];
+  pmProductivityScore: number | null;
+  pmProductivityRationale: string | null;
+  areasToImprove: string[];
+};
 
 function badge(text: string, color: string) {
   return (
@@ -56,6 +56,18 @@ function daysLabel(dueDateStr: string): { text: string; color: string } {
   return { text: `${days}d`, color: "#64748b" };
 }
 
+function fmtDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtMoney(v: number | null, currency = "USD") {
+  if (v === null) return "—";
+  if (v >= 1_000_000) return `${currency} ${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${currency} ${(v / 1_000).toFixed(0)}K`;
+  return `${currency} ${v.toFixed(0)}`;
+}
+
 // ── Section header ──────────────────────────────────────────────────────────
 
 function Section({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
@@ -78,18 +90,6 @@ function Empty({ text }: { text: string }) {
   return <p style={{ fontSize: 13, color: "#94a3b8", margin: 0, fontStyle: "italic" }}>{text}</p>;
 }
 
-function Row({ left, right, badge: b, badge2 }: { left: string; right: string; badge?: React.ReactNode; badge2?: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8, padding: "6px 0", borderBottom: `1px solid #f1f5f9` }}>
-      <span style={{ flex: 1, fontSize: 13, color: "#1e293b", lineHeight: 1.4 }}>{left}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-        {b}{badge2}
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>{right}</span>
-      </div>
-    </div>
-  );
-}
-
 function Stat({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
   return (
     <div style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 8, padding: "10px 16px", textAlign: "center", flex: 1 }}>
@@ -97,6 +97,78 @@ function Stat({ label, value, color, sub }: { label: string; value: string; colo
       <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, marginTop: 2 }}>{label}</div>
       {sub && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 1 }}>{sub}</div>}
     </div>
+  );
+}
+
+// ── 0. Overview ─────────────────────────────────────────────────────────────
+
+function OverviewSection({ data }: { data: ReviewData }) {
+  const proj = data.project;
+  const rag = data.health?.ragStatus ?? proj.healthStatus;
+  const ragColor = healthColor(rag);
+  const ragLabel = rag === "red" ? "RED" : rag === "amber" ? "AMBER" : "GREEN";
+  const health = data.health;
+
+  return (
+    <Section title="Overview">
+      {/* RAG + phase strip */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          padding: "6px 14px", borderRadius: 20,
+          background: `${ragColor}15`, border: `1.5px solid ${ragColor}50`,
+        }}>
+          <div style={{ width: 9, height: 9, borderRadius: "50%", background: ragColor }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: ragColor }}>{ragLabel}</span>
+        </div>
+        <span style={{ fontSize: 12, color: "#64748b" }}>
+          {proj.currentPhase.replace(/_/g, " ")} · PM: <strong>{proj.pmName}</strong>
+        </span>
+      </div>
+
+      {/* Key dates + budget */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+        {[
+          { label: "Start date", value: fmtDate(proj.startDate) },
+          { label: "End date", value: fmtDate(proj.endDate) },
+          { label: "Budget", value: fmtMoney(proj.budget, proj.currency) },
+          { label: "Burn to date", value: data.burnPct !== null ? `${data.burnPct}%` : "—" },
+        ].map(r => (
+          <div key={r.label} style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 7, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>{r.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* EVM stats */}
+      {health ? (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Stat
+            label="Composite"
+            value={health.compositeScore !== null ? `${health.compositeScore.toFixed(0)}` : "—"}
+            color={ragColor}
+            sub="out of 100"
+          />
+          <Stat
+            label="Schedule (SPI)"
+            value={health.spi !== null ? health.spi.toFixed(2) : "—"}
+            color={health.spi !== null ? (health.spi < 0.85 ? "#cf3f3a" : health.spi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
+            sub={health.spi !== null ? (health.spi < 1 ? "behind" : "on track") : "no data"}
+          />
+          <Stat
+            label="Cost (CPI)"
+            value={health.cpi !== null ? health.cpi.toFixed(2) : "—"}
+            color={health.cpi !== null ? (health.cpi < 0.85 ? "#cf3f3a" : health.cpi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
+            sub={health.cpi !== null ? (health.cpi < 1 ? "over budget" : "within budget") : "no data"}
+          />
+        </div>
+      ) : (
+        <p style={{ fontSize: 13, color: "#94a3b8", fontStyle: "italic", margin: 0 }}>
+          No status report submitted — EVM data unavailable.
+        </p>
+      )}
+    </Section>
   );
 }
 
@@ -124,16 +196,10 @@ function MilestonesSection({ milestones }: { milestones: ReviewData["milestones"
                 background: m.status === "at_risk" ? "#fef2f2" : UST_WASH,
                 border: `1px solid ${m.status === "at_risk" ? "#fca5a5" : UST_BORDER}`,
               }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                  background: milestoneColor,
-                }} />
+                <div style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: milestoneColor }} />
                 <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "#1e293b" }}>{m.name}</span>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                  <span style={{
-                    fontSize: 12, fontWeight: 700, color: dl.color,
-                    background: `${dl.color}12`, padding: "1px 7px", borderRadius: 5,
-                  }}>{dl.text}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: dl.color, background: `${dl.color}12`, padding: "1px 7px", borderRadius: 5 }}>{dl.text}</span>
                   <span style={{ fontSize: 11, color: "#94a3b8" }}>{dueStr}</span>
                 </div>
                 {m.status !== "pending" && badge(m.status.replace(/_/g, " "), milestoneColor)}
@@ -146,82 +212,7 @@ function MilestonesSection({ milestones }: { milestones: ReviewData["milestones"
   );
 }
 
-// ── 2. Health & Metrics ─────────────────────────────────────────────────────
-
-function HealthSection({ health, burnPct, healthStatus }: {
-  health: ReviewData["health"];
-  burnPct: number | null;
-  healthStatus: string;
-}) {
-  const rag = health?.ragStatus ?? healthStatus;
-  const ragColor = healthColor(rag);
-  const ragLabel = rag === "red" ? "RED" : rag === "amber" ? "AMBER" : "GREEN";
-
-  return (
-    <Section title="Project Health & Metrics">
-      {/* RAG pill */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 8,
-          padding: "6px 16px", borderRadius: 20,
-          background: `${ragColor}15`, border: `1.5px solid ${ragColor}50`,
-        }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: ragColor }} />
-          <span style={{ fontSize: 14, fontWeight: 700, color: ragColor }}>{ragLabel}</span>
-        </div>
-        {!health && (
-          <span style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
-            No status report submitted yet
-          </span>
-        )}
-      </div>
-
-      {health ? (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Stat
-            label="Composite Score"
-            value={health.compositeScore !== null ? `${health.compositeScore.toFixed(0)}` : "—"}
-            color={ragColor}
-            sub="out of 100"
-          />
-          <Stat
-            label="Schedule (SPI)"
-            value={health.spi !== null ? health.spi.toFixed(2) : "—"}
-            color={health.spi !== null ? (health.spi < 0.85 ? "#cf3f3a" : health.spi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
-            sub={health.spi !== null && health.spi < 1 ? "behind" : health.spi !== null ? "on track" : undefined}
-          />
-          <Stat
-            label="Cost (CPI)"
-            value={health.cpi !== null ? health.cpi.toFixed(2) : "—"}
-            color={health.cpi !== null ? (health.cpi < 0.85 ? "#cf3f3a" : health.cpi < 0.95 ? "#c17d12" : "#158a5a") : "#64748b"}
-            sub={health.cpi !== null && health.cpi < 1 ? "over budget" : health.cpi !== null ? "within budget" : undefined}
-          />
-          {burnPct !== null && (
-            <Stat
-              label="Budget Burned"
-              value={`${burnPct}%`}
-              color={burnPct > 90 ? "#cf3f3a" : burnPct > 75 ? "#c17d12" : "#158a5a"}
-              sub="of total budget"
-            />
-          )}
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {burnPct !== null && (
-            <Stat
-              label="Budget Burned"
-              value={`${burnPct}%`}
-              color={burnPct > 90 ? "#cf3f3a" : burnPct > 75 ? "#c17d12" : "#158a5a"}
-              sub="of total budget"
-            />
-          )}
-        </div>
-      )}
-    </Section>
-  );
-}
-
-// ── 3. Critical / High Issues ───────────────────────────────────────────────
+// ── 2. Critical / High Issues ───────────────────────────────────────────────
 
 function CriticalIssuesSection({ issues }: { issues: ReviewData["issues"] }) {
   const critical = issues.filter(i => i.status === "open" && i.severity === "critical");
@@ -235,22 +226,10 @@ function CriticalIssuesSection({ issues }: { issues: ReviewData["issues"] }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {critical.map(i => (
-            <IssueRiskRow
-              key={i.id}
-              description={i.description}
-              owner={i.owner}
-              label="Critical"
-              labelColor="#cf3f3a"
-            />
+            <IssueRiskRow key={i.id} description={i.description} owner={i.owner} label="Critical" labelColor="#cf3f3a" />
           ))}
           {high.map(i => (
-            <IssueRiskRow
-              key={i.id}
-              description={i.description}
-              owner={i.owner}
-              label="High"
-              labelColor="#c17d12"
-            />
+            <IssueRiskRow key={i.id} description={i.description} owner={i.owner} label="High" labelColor="#c17d12" />
           ))}
         </div>
       )}
@@ -258,7 +237,7 @@ function CriticalIssuesSection({ issues }: { issues: ReviewData["issues"] }) {
   );
 }
 
-// ── 4. Critical / High Risks ────────────────────────────────────────────────
+// ── 3. Critical / High Risks ────────────────────────────────────────────────
 
 function CriticalRisksSection({ risks }: { risks: ReviewData["risks"] }) {
   const criticalRisks = risks.filter(r =>
@@ -326,188 +305,131 @@ function IssueRiskRow({ description, owner, label, labelColor }: {
   );
 }
 
+// ── 4. AI Generated Summary ─────────────────────────────────────────────────
+
+function AiSummarySection({ projectId }: { projectId: string }) {
+  const [summary, setSummary] = useState<AiSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    fetch(`/api/projects/${projectId}/ai-summary`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { if (!cancelled) { setSummary(d); setLoading(false); } })
+      .catch(() => { if (!cancelled) { setError(true); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  return (
+    <Section title="AI Generated Summary" accent={UST_TEAL}>
+      {loading && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 0", color: "#64748b", fontSize: 13 }}>
+          <div style={{
+            width: 16, height: 16, border: `2px solid ${UST_TEAL}`, borderTopColor: "transparent",
+            borderRadius: "50%", animation: "spin 0.8s linear infinite",
+          }} />
+          Generating DM insights…
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {error && (
+        <p style={{ fontSize: 13, color: "#94a3b8", fontStyle: "italic", margin: 0 }}>
+          AI summary unavailable — check API connection.
+        </p>
+      )}
+
+      {summary && !loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Project Health bullets */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+              Project Health
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 5 }}>
+              {summary.healthBullets.map((b, i) => (
+                <li key={i} style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.5 }}>{b}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* PM Productivity Score */}
+          {summary.pmProductivityScore !== null && (
+            <div style={{ background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 10, padding: "12px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
+              <div style={{ textAlign: "center", flexShrink: 0 }}>
+                <div style={{
+                  fontSize: 28, fontWeight: 700, lineHeight: 1,
+                  color: summary.pmProductivityScore >= 7 ? "#158a5a" : summary.pmProductivityScore >= 5 ? "#c17d12" : "#cf3f3a",
+                }}>{summary.pmProductivityScore}</div>
+                <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}>/ 10</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>PM Productivity Score</div>
+                <p style={{ margin: 0, fontSize: 13, color: "#1e293b", lineHeight: 1.45 }}>
+                  {summary.pmProductivityRationale}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Areas to improve */}
+          {summary.areasToImprove.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
+                Areas to Improve
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {summary.areasToImprove.map((area, i) => (
+                  <div key={i} style={{
+                    display: "flex", gap: 10, padding: "8px 12px", borderRadius: 7,
+                    background: "#fffbeb", border: "1px solid #fde68a",
+                  }}>
+                    <span style={{ color: "#c17d12", fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>
+                    <span style={{ fontSize: 13, color: "#1e293b", lineHeight: 1.45 }}>{area}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Disclaimer */}
+          <div style={{
+            fontSize: 11, color: "#94a3b8", fontStyle: "italic",
+            borderTop: `1px dashed ${UST_BORDER}`, paddingTop: 10,
+          }}>
+            ⚠ This summary is generated by AI using current project data. Review with professional judgment before acting. AI analysis does not replace formal project review processes.
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 // ── ReviewTab (main layout) ─────────────────────────────────────────────────
 
 function ReviewTab({ data }: { data: ReviewData }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-
-      {/* 1. Upcoming Milestones */}
+      <OverviewSection data={data} />
       <MilestonesSection milestones={data.milestones} />
-
-      {/* 2. Health & Metrics */}
-      <HealthSection health={data.health} burnPct={data.burnPct} healthStatus={data.project.healthStatus} />
-
-      {/* 3. Critical / High Issues */}
       <CriticalIssuesSection issues={data.issues} />
-
-      {/* 4. Critical / High Risks */}
       <CriticalRisksSection risks={data.risks} />
-
-      {/* Artifacts */}
-      <Section title="Artifacts">
-        {data.artifacts.length === 0
-          ? <Empty text="No artifacts generated yet" />
-          : data.artifacts.map((a) => (
-            <Row key={a.artifactType}
-              left={a.artifactType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
-              right={new Date(a.updatedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
-              badge={badge(a.status, a.status === "final" ? "#158a5a" : "#c17d12")}
-            />
-          ))}
-      </Section>
-
-      {/* Review Notes */}
-      <Section title={`Review Notes (${data.reviewNotes.length})`}>
-        {data.reviewNotes.length === 0
-          ? <Empty text="No review notes" />
-          : data.reviewNotes.map((n) => (
-            <div key={n.id} style={{ borderLeft: "3px solid #e2e8f0", paddingLeft: 12, marginBottom: 10 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: UST_TEAL }}>{n.reviewType.replace(/_/g, " ")}</span>
-                <span style={{ fontSize: 11, color: "#94a3b8" }}>{new Date(n.createdAt).toLocaleDateString("en-AU")}</span>
-                {n.visibility === "dm_only" && badge("DM only", "#6b7280")}
-              </div>
-              <p style={{ fontSize: 13, color: "#1e293b", margin: 0, whiteSpace: "pre-wrap" }}>{n.body}</p>
-            </div>
-          ))}
-      </Section>
-    </div>
-  );
-}
-
-// ── Action Item Tab ─────────────────────────────────────────────────────────
-
-function ActionItemTab({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
-  const [form, setForm] = useState({
-    title: "", description: "", category: "schedule", priority: "p2",
-    dueDate: "", expectedOutcome: "",
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    if (!form.title.trim()) { setError("Title is required"); return; }
-    if (form.priority === "p1" && form.description.trim().length < 40) {
-      setError("P1 items require a description of at least 40 characters"); return;
-    }
-    setSaving(true); setError(null);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/action-items`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, dueDate: form.dueDate || null }),
-      });
-      if (!res.ok) { const d = await res.json(); setError(d.error ?? "Failed to create action item"); }
-      else { onCreated(); }
-    } catch { setError("Network error"); }
-    finally { setSaving(false); }
-  }
-
-  const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 4, display: "block" };
-  const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "8px 10px", border: `1.5px solid ${UST_BORDER}`,
-    borderRadius: 8, fontSize: 13, color: "#1e293b", background: "#fff",
-    boxSizing: "border-box" as const,
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
-        Create a formal action item for the project PM. They will be notified immediately.
-      </p>
-
-      {error && <div style={{ background: "#fbe4e2", color: "#cf3f3a", fontSize: 13, padding: "8px 12px", borderRadius: 8 }}>{error}</div>}
-
-      <div>
-        <label style={labelStyle}>Title *</label>
-        <input style={inputStyle} maxLength={140} value={form.title}
-          onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-          placeholder="e.g. Produce a recovery plan for the SIT slip with revised dates" />
-        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>{form.title.length}/140</div>
-      </div>
-
-      <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}>
-          <label style={labelStyle}>Category</label>
-          <select style={inputStyle} value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, " ").replace(/\b\w/g, x => x.toUpperCase())}</option>)}
-          </select>
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={labelStyle}>Priority</label>
-          <select style={inputStyle} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>
-            <option value="p1">P1 — Immediate (≤2 days)</option>
-            <option value="p2">P2 — This week (≤5 days)</option>
-            <option value="p3">P3 — This cycle (≤15 days)</option>
-          </select>
-        </div>
-        <div style={{ flex: 1 }}>
-          <label style={labelStyle}>Due Date</label>
-          <input type="date" style={inputStyle} value={form.dueDate}
-            onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
-        </div>
-      </div>
-
-      <div>
-        <label style={labelStyle}>
-          Description{form.priority === "p1" ? " * (min 40 chars for P1)" : ""}
-        </label>
-        <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" as const }}
-          value={form.description}
-          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-          placeholder="Describe specifically what the PM needs to do and why..." />
-        {form.priority === "p1" && (
-          <div style={{ fontSize: 11, color: form.description.length < 40 ? "#cf3f3a" : "#158a5a", marginTop: 3 }}>
-            {form.description.length}/40 minimum
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label style={labelStyle}>Expected Outcome (optional)</label>
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" as const }}
-          value={form.expectedOutcome}
-          onChange={e => setForm(f => ({ ...f, expectedOutcome: e.target.value }))}
-          placeholder="What does 'done' look like?" />
-      </div>
-
-      {(() => {
-        const titleOk = form.title.trim().length > 0;
-        const descOk = form.priority !== "p1" || form.description.trim().length >= 40;
-        const canSubmit = titleOk && descOk && !saving;
-        return (
-          <button
-            onClick={submit}
-            disabled={!canSubmit}
-            style={{
-              padding: "10px 20px", background: UST_PETROL, color: "#fff", border: "none",
-              borderRadius: 8, fontSize: 14, fontWeight: 600,
-              cursor: canSubmit ? "pointer" : "not-allowed",
-              opacity: canSubmit ? 1 : 0.45, alignSelf: "flex-start",
-            }}
-          >
-            {saving ? "Creating…" : "Create Action Item"}
-          </button>
-        );
-      })()}
+      <AiSummarySection projectId={data.project.id} />
     </div>
   );
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem, hideActionItem = false }: {
+export function DrillDownPanel({ projectId, onClose }: {
   projectId: string;
   onClose: () => void;
-  initialTab: Tab;
-  openActionItem: () => void;
-  hideActionItem?: boolean;
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>(initialTab);
-  const [actionItemCreated, setActionItemCreated] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -524,24 +446,6 @@ export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem,
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
-
-  function handleActionItemCreated() {
-    setActionItemCreated(true);
-    setTab("review");
-    load();
-  }
-
-  const tabBtn = (t: Tab, label: string) => (
-    <button
-      onClick={() => setTab(t)}
-      style={{
-        fontSize: 13, fontWeight: 600, padding: "8px 16px", border: "none", cursor: "pointer",
-        background: tab === t ? UST_PETROL : "transparent",
-        color: tab === t ? "#fff" : "#64748b",
-        borderRadius: 8,
-      }}
-    >{label}</button>
-  );
 
   const project = data?.project;
 
@@ -581,18 +485,11 @@ export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem,
               aria-label="Close"
             >✕</button>
           </div>
-
-          {actionItemCreated && (
-            <div style={{ marginTop: 10, padding: "8px 12px", background: "#e3f3ea", borderRadius: 8, fontSize: 13, color: "#158a5a", fontWeight: 600 }}>
-              ✓ Action item created — PM has been notified
-            </div>
-          )}
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, padding: "10px 16px", borderBottom: `1px solid ${UST_BORDER}` }}>
-          {tabBtn("review", "Project Review")}
-          {!hideActionItem && tabBtn("action-item", "Create Action Item")}
+        {/* Title bar */}
+        <div style={{ padding: "10px 20px", borderBottom: `1px solid ${UST_BORDER}`, background: "#fff" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: UST_PETROL }}>Project Review</span>
         </div>
 
         {/* Body */}
@@ -600,9 +497,7 @@ export function DrillDownPanel({ projectId, onClose, initialTab, openActionItem,
           {loading ? (
             <div style={{ textAlign: "center", paddingTop: 60, color: "#94a3b8" }}>Loading project data…</div>
           ) : data ? (
-            tab === "review"
-              ? <ReviewTab data={data} />
-              : <ActionItemTab projectId={projectId} onCreated={handleActionItemCreated} />
+            <ReviewTab data={data} />
           ) : (
             <div style={{ textAlign: "center", paddingTop: 60, color: "#cf3f3a" }}>Failed to load project data</div>
           )}

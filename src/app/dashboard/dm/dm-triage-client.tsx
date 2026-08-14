@@ -140,7 +140,6 @@ function AttentionRow({ p, onReview, onEscalate, onAddAction, escalated, addedAc
   const [hovered, setHovered] = useState(false);
 
   const spiArr = trendArrow(p.spiTrend);
-  const cpiArr = trendArrow(p.cpiTrend);
 
   const isRed = p.band === "red" || p.band === "amber";
 
@@ -174,10 +173,6 @@ function AttentionRow({ p, onReview, onEscalate, onAddAction, escalated, addedAc
             {p.accountName ?? "Unassigned"} · {p.pmName} · {p.phase.replace(/_/g, " ")}
           </div>
         </div>
-        <div style={{ textAlign: "right" as const, flexShrink: 0 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.inkFaint, marginBottom: 2, fontFamily: C.FF }}>Attn.</div>
-          <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1, color: rc, fontFamily: C.FM }}>{p.attentionScore}</div>
-        </div>
       </div>
 
       {/* Why diagnosis */}
@@ -206,15 +201,6 @@ function AttentionRow({ p, onReview, onEscalate, onAddAction, escalated, addedAc
             <Spark data={p.spiTrend} color={spiColor(p.spi)} w={52} h={16} />
             <span style={{ fontFamily: C.FM, fontSize: 13, fontWeight: 700, color: spiColor(p.spi) }}>{fmt(p.spi)}</span>
             <span style={{ fontSize: 10.5, color: spiArr.color }}>{spiArr.arrow}</span>
-          </span>
-        )}
-        {/* CPI with sparkline */}
-        {p.cpi !== null && (
-          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>CPI</span>
-            <Spark data={p.cpiTrend} color={spiColor(p.cpi)} w={52} h={16} />
-            <span style={{ fontFamily: C.FM, fontSize: 13, fontWeight: 700, color: spiColor(p.cpi) }}>{fmt(p.cpi)}</span>
-            <span style={{ fontSize: 10.5, color: cpiArr.color }}>{cpiArr.arrow}</span>
           </span>
         )}
         {/* Burn bar */}
@@ -1020,7 +1006,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
 
       {/* Review panel */}
       {reviewId && (
-        <DrillDownPanel projectId={reviewId} onClose={() => setReviewId(null)} initialTab="review" openActionItem={() => {}} />
+        <DrillDownPanel projectId={reviewId} onClose={() => setReviewId(null)} />
       )}
 
       {/* Add action modal */}

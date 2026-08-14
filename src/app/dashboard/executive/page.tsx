@@ -109,7 +109,7 @@ export default async function ExecutivePage() {
         pmOwner:  { select: { fullName: true } },
         account:  { include: { cluster: true } },
         program:  { select: { name: true } },
-        scheduleTasks: { select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true } },
+        scheduleTasks: { select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true, estimatedHours: true, plannedCost: true } },
         costEntries:   { select: { amount: true } },
         statusReports: {
           orderBy: { reportDate: "desc" },
@@ -147,8 +147,22 @@ export default async function ExecutivePage() {
       }
       const liveSpi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
       const storedSpi = p.statusReports[0]?.healthScore?.spi ?? null;
-      const storedCpi = p.statusReports[0]?.healthScore?.cpi ?? null;
       const spi = liveSpi ?? storedSpi;
+
+      // Live CPI using burndown formula (EV_$ / AC_$)
+      const bac = p.budget ?? 0;
+      const totalBaseHours = tasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
+      const taskPC = (t: typeof tasks[0]) => {
+        const pc = t.plannedCost ? Number(t.plannedCost) : 0;
+        if (pc > 0) return pc;
+        const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
+        return bac > 0 && totalBaseHours > 0 ? (bac * th) / totalBaseHours : 0;
+      };
+      const currentEV = tasks.reduce((s, t) => s + (t.percentComplete === 100 ? taskPC(t) : 0), 0);
+      const totalAC = p.costEntries.reduce((s, e) => s + e.amount, 0);
+      const liveCpi = totalAC > 0 && tasks.length > 0 ? Math.round((currentEV / totalAC) * 100) / 100 : null;
+      const storedCpi = p.statusReports[0]?.healthScore?.cpi ?? null;
+      const cpi = liveCpi ?? storedCpi;
 
       const schedPct = tasks.length
         ? Math.round(tasks.reduce((s, t) => s + t.percentComplete, 0) / tasks.length)
@@ -171,7 +185,7 @@ export default async function ExecutivePage() {
       const criticalIssues = (p._count as any).issues ?? 0;
       const openActionItems = (p._count as any).actionItems ?? 0;
 
-      const whyDiagnosis = computeWhyDiagnosis({ rag, spi, cpi: storedCpi, burnPct: budPct, daysSinceReport, highRisks, criticalIssues, openActionItems });
+      const whyDiagnosis = computeWhyDiagnosis({ rag, spi, cpi, burnPct: budPct, daysSinceReport, highRisks, criticalIssues, openActionItems });
 
       return {
         id:          p.id,
@@ -185,7 +199,7 @@ export default async function ExecutivePage() {
         pmName:      p.pmOwner.fullName,
         rag,
         spi:         spi ?? null,
-        cpi:         storedCpi ?? null,
+        cpi:         cpi ?? null,
         schedPct,
         budPct,
         budget:      p.budget ?? null,
