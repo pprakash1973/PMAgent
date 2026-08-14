@@ -11,7 +11,9 @@ export function proxy(req: NextRequest) {
     pathname === "/login" ||
     pathname === "/register" ||
     pathname === "/accept-invite" ||   // invited users aren't logged in yet — must reach the activation page
-    pathname.startsWith("/api/auth");
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/submit/") ||      // SA8 public actuals submission — token-authenticated, no login
+    pathname.startsWith("/api/submit/");    // SA8 submit API — same
 
   // Check for Auth.js v5 session cookie (JWT strategy)
   // v5 uses "authjs.session-token"; v4 used "next-auth.session-token"
