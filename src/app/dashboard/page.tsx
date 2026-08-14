@@ -98,10 +98,58 @@ export default async function DashboardPage() {
     aiCounts.forEach(r => { aiCountMap[r.projectId] = r._count.id; });
   } catch { /* table not yet migrated */ }
 
+  // ── Live EVM per project (avoids stale healthScore CPI/SPI) ──────────────────
+  const projectIds = projects.map(p => p.id);
+  const [allTasks, allCostEntries] = await Promise.all([
+    prisma.scheduleTask.findMany({
+      where: { projectId: { in: projectIds } },
+      select: { projectId: true, baselineDays: true, estimatedHours: true, plannedCost: true,
+                baselineStart: true, baselineFinish: true, percentComplete: true },
+    }),
+    prisma.costEntry.findMany({
+      where: { projectId: { in: projectIds } },
+      select: { projectId: true, amount: true },
+    }),
+  ]);
+
+  const tasksByProject = new Map<string, typeof allTasks>();
+  for (const t of allTasks) {
+    if (!tasksByProject.has(t.projectId)) tasksByProject.set(t.projectId, []);
+    tasksByProject.get(t.projectId)!.push(t);
+  }
+  const acByProject = new Map<string, number>();
+  for (const e of allCostEntries) {
+    acByProject.set(e.projectId, (acByProject.get(e.projectId) ?? 0) + e.amount);
+  }
+
+  function computeLiveEvm(projectId: string, budget: number | null) {
+    const tasks = tasksByProject.get(projectId) ?? [];
+    const totalBaseHours = tasks.reduce((s, t) => s + (t.estimatedHours ?? (t.baselineDays || 1) * 8), 0);
+    const totalAC = acByProject.get(projectId) ?? 0;
+    if (tasks.length === 0) return { cpi: null, spi: null };
+    const todayMs = Date.now();
+    let totalPV = 0, totalEV = 0;
+    for (const t of tasks) {
+      const taskHours = t.estimatedHours ?? (t.baselineDays || 0) * 8;
+      const pc = t.plannedCost ?? (budget && totalBaseHours > 0 ? budget * taskHours / totalBaseHours : 0);
+      if (!t.baselineStart || !t.baselineFinish) continue;
+      const s = new Date(t.baselineStart).getTime();
+      const f = new Date(t.baselineFinish).getTime();
+      if (isNaN(s) || isNaN(f) || f <= s) continue;
+      const pPct = todayMs <= s ? 0 : todayMs >= f ? 1 : (todayMs - s) / (f - s);
+      totalPV += (pc || taskHours) * pPct;
+      totalEV += t.percentComplete === 100 ? (pc || taskHours) : 0;
+    }
+    const cpi = totalAC > 0 ? Math.round((totalEV / totalAC) * 1000) / 1000 : null;
+    const spi = totalPV > 0 ? Math.round((totalEV / totalPV) * 1000) / 1000 : null;
+    return { cpi, spi };
+  }
+
   const rows = projects.map(p => {
     const hs = p.statusReports[0]?.healthScore ?? null;
-    const spi = hs?.spi ?? null;
-    const cpi = hs?.cpi ?? null;
+    const { cpi: liveCpi, spi: liveSpi } = computeLiveEvm(p.id, p.budget ?? null);
+    const spi = liveSpi ?? hs?.spi ?? null;
+    const cpi = liveCpi ?? hs?.cpi ?? null;
     const compositeScore = hs?.compositeScore ?? null;
     const openAI = aiCountMap[p.id] ?? 0;
     const attentionScore = computeAttentionScore({
