@@ -29,8 +29,8 @@ export async function GET(
     },
   });
 
-  const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-  const submitApiUrl = `${baseUrl}/api/submit/${encodeURIComponent(token)}`;
+  // Use a relative path so it works regardless of NEXTAUTH_URL / domain
+  const submitApiUrl = `/api/submit/${encodeURIComponent(token)}`;
 
   // ── Error states ─────────────────────────────────────────────────────────────
   if (!record) {
@@ -153,14 +153,17 @@ textarea{resize:none}
   </div>
 
   <div id="form-area"></div>
-  <div id="success-area" style="display:none">
-    <div class="success">
-      <div class="success-icon">
-        <svg width="24" height="24" fill="none" stroke="#22c55e" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-      </div>
-      <h2>Actuals submitted</h2>
-      <p>Thank you, <strong>${escHtml(record.resource.name)}</strong>. Your actuals for <strong>${escHtml(record.project.name)}</strong> have been recorded. You can close this window.</p>
+</div>
+
+<!-- Full-screen thank-you overlay — hidden until submission succeeds -->
+<div id="success-area" style="display:none;position:fixed;inset:0;background:#f0fdf4;z-index:999;display:none;align-items:center;justify-content:center;padding:24px">
+  <div style="text-align:center;max-width:420px">
+    <div style="width:72px;height:72px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+      <svg width="36" height="36" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
     </div>
+    <h2 style="font-size:22px;font-weight:700;color:#14532d;margin-bottom:10px">Thank you, ${escHtml(record.resource.name)}!</h2>
+    <p style="font-size:15px;color:#166534;line-height:1.6;margin-bottom:8px">Your actuals for <strong>${escHtml(record.project.name)}</strong> have been recorded successfully.</p>
+    <p style="font-size:13px;color:#4ade80;color:#15803d">The project manager will be notified. You can close this window.</p>
   </div>
 </div>
 
@@ -256,16 +259,17 @@ textarea{resize:none}
       .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
       .then(function(r){
         if(r.ok){
-          document.getElementById("form-area").style.display="none";
-          document.getElementById("success-area").style.display="block";
+          document.querySelector(".wrap").style.display="none";
+          var s=document.getElementById("success-area");
+          s.style.display="flex";
         } else {
           alert(r.data.error||"Submission failed. Please try again.");
           btn.disabled=false;
           btn.innerHTML="Submit actuals for ${tasks.length} task${tasks.length !== 1 ? 's' : ''}";
         }
       })
-      .catch(function(){
-        alert("Network error. Please try again.");
+      .catch(function(err){
+        alert("Network error — please check your connection and try again.");
         btn.disabled=false;
         btn.innerHTML="Submit actuals for ${tasks.length} task${tasks.length !== 1 ? 's' : ''}";
       });

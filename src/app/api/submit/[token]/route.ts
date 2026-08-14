@@ -137,6 +137,22 @@ export async function POST(
     )
   );
 
+  // Update ScheduleTask with the reported actuals
+  await prisma.$transaction(
+    submissions.map((s) => {
+      const pct = Math.min(100, Math.max(0, Math.round(s.percentComplete)));
+      const newStatus = pct === 100 ? "completed" : pct > 0 ? "in_progress" : "not_started";
+      return prisma.scheduleTask.update({
+        where: { id: s.taskId },
+        data: {
+          percentComplete: pct,
+          status: newStatus,
+          ...(pct === 100 ? { actualFinish: new Date() } : {}),
+        },
+      });
+    })
+  );
+
   // Mark token as used (single-use)
   await prisma.collectionToken.update({
     where: { id: record.id },
