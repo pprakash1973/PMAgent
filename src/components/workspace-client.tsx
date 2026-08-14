@@ -1383,6 +1383,51 @@ function ScheduleTab({ project }: { project: any }) {
   // Regenerate confirmation modal
   const [regenConfirm, setRegenConfirm] = useState<{ tasks: any[] } | null>(null);
 
+  // Collect Actuals
+  const [actualsModal, setActualsModal] = useState(false);
+  const [cycles, setCycles] = useState<any[]>([]);
+  const [cycleStartDate, setCycleStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [cycleEndDate, setCycleEndDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  });
+  const [cycleLabel, setCycleLabel] = useState("");
+  const [cycleDispatch, setCycleDispatch] = useState(true);
+  const [cycleCreating, setCycleCreating] = useState(false);
+  const [cycleResult, setCycleResult] = useState<any>(null);
+  const [actualsTab, setActualsTab] = useState<"new" | "history">("new");
+
+  async function loadCycles() {
+    const res = await fetch(`/api/projects/${project.id}/actuals/cycles`);
+    if (res.ok) setCycles(await res.json());
+  }
+
+  async function createCycle() {
+    setCycleCreating(true);
+    setCycleResult(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/actuals/cycles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: cycleLabel || undefined,
+          startDate: cycleStartDate,
+          endDate: cycleEndDate,
+          dispatch: cycleDispatch,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCycleResult(data);
+        loadCycles();
+      } else {
+        setCycleResult({ error: data.error });
+      }
+    } finally {
+      setCycleCreating(false);
+    }
+  }
+
   // Critical path
   const [showCritical, setShowCritical] = useState(false);
   const criticalIds = useMemo(() => computeCriticalIds(tasks), [tasks]);
@@ -1742,6 +1787,141 @@ function ScheduleTab({ project }: { project: any }) {
         </div>
       )}
 
+      {/* ── Collect Actuals Modal ── */}
+      {actualsModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: C.surface, borderRadius: 16, boxShadow: "0 20px 60px rgba(0,0,0,.25)", width: "100%", maxWidth: 520, overflow: "hidden" }}>
+            {/* Modal header */}
+            <div style={{ background: C.primary, padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ color: "#fff", fontSize: 15, fontWeight: 700 }}>Collect Task Actuals</div>
+                <div style={{ color: "rgba(255,255,255,.65)", fontSize: 12, marginTop: 2 }}>Send tokenised email links to project resources</div>
+              </div>
+              <button onClick={() => { setActualsModal(false); setCycleResult(null); }}
+                style={{ background: "rgba(255,255,255,.15)", border: "none", borderRadius: 6, color: "#fff", width: 26, height: 26, cursor: "pointer", fontSize: 14 }}>✕</button>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: "flex", borderBottom: `1px solid ${C.border}` }}>
+              {(["new", "history"] as const).map(tab => (
+                <button key={tab} onClick={() => setActualsTab(tab)}
+                  style={{ flex: 1, padding: "10px 0", fontSize: 13, fontWeight: 600, background: "none", border: "none", borderBottom: actualsTab === tab ? `2px solid ${C.primary}` : "2px solid transparent", color: actualsTab === tab ? C.primary : C.text2, cursor: "pointer" }}>
+                  {tab === "new" ? "New Cycle" : `History (${cycles.length})`}
+                </button>
+              ))}
+            </div>
+
+            {actualsTab === "new" && (
+              <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+                {cycleResult?.error && (
+                  <div style={{ background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.red }}>
+                    {cycleResult.error}
+                  </div>
+                )}
+                {cycleResult && !cycleResult.error && (
+                  <div style={{ background: C.greenLight, border: `1px solid ${C.green}`, borderRadius: 8, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.green, marginBottom: 4 }}>✓ Cycle created</div>
+                    <div style={{ fontSize: 12, color: C.text2 }}>
+                      {cycleResult.tokensCreated} token{cycleResult.tokensCreated !== 1 ? "s" : ""} generated
+                      {cycleResult.emailResults?.length > 0 && (
+                        <> · {cycleResult.emailResults.filter((r: any) => r.status === "sent").length} emails sent
+                        {cycleResult.emailResults.some((r: any) => r.status === "failed") && (
+                          <span style={{ color: C.red }}> · {cycleResult.emailResults.filter((r: any) => r.status === "failed").length} failed</span>
+                        )}</>
+                      )}
+                    </div>
+                    {cycleResult.emailResults?.some((r: any) => r.status === "failed") && (
+                      <div style={{ marginTop: 8, fontSize: 11, color: C.red }}>
+                        {cycleResult.emailResults.filter((r: any) => r.status === "failed").map((r: any, i: number) => (
+                          <div key={i}>{r.email}: {r.error}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 4 }}>Cycle Label (optional)</label>
+                  <input value={cycleLabel} onChange={e => setCycleLabel(e.target.value)} placeholder="e.g. Sprint 5 actuals"
+                    style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: C.surface2, color: C.text, outline: "none", boxSizing: "border-box" as const }} />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 4 }}>Period Start *</label>
+                    <input type="date" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)}
+                      style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: C.surface2, color: C.text, outline: "none", boxSizing: "border-box" as const }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".05em", display: "block", marginBottom: 4 }}>Period End *</label>
+                    <input type="date" value={cycleEndDate} onChange={e => setCycleEndDate(e.target.value)}
+                      style={{ width: "100%", border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: C.surface2, color: C.text, outline: "none", boxSizing: "border-box" as const }} />
+                  </div>
+                </div>
+
+                {/* Resource email check */}
+                <div style={{ background: C.surface2, borderRadius: 8, padding: "10px 12px", fontSize: 12 }}>
+                  <div style={{ fontWeight: 600, color: C.text2, marginBottom: 4 }}>Resources with email ({resources.filter(r => r.email).length}/{resources.length})</div>
+                  {resources.length === 0 && <div style={{ color: C.text3 }}>No resources added yet. Add resources in the Resources section first.</div>}
+                  {resources.map(r => (
+                    <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: r.email ? C.green : C.amber, flexShrink: 0 }} />
+                      <span style={{ color: C.text, flex: 1 }}>{r.name}</span>
+                      <span style={{ color: C.text3, fontFamily: "monospace", fontSize: 11 }}>{r.email || "no email"}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: C.text }}>
+                  <input type="checkbox" checked={cycleDispatch} onChange={e => setCycleDispatch(e.target.checked)} />
+                  Dispatch emails now (requires SMTP configured in Admin)
+                </label>
+
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 4 }}>
+                  <button onClick={() => { setActualsModal(false); setCycleResult(null); }}
+                    style={{ padding: "8px 16px", border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, background: C.surface, color: C.text2, cursor: "pointer" }}>
+                    Cancel
+                  </button>
+                  <button onClick={createCycle} disabled={cycleCreating || !cycleStartDate || !cycleEndDate}
+                    style={{ padding: "8px 20px", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, background: cycleCreating ? C.surface2 : C.primary, color: cycleCreating ? C.text3 : "#fff", cursor: cycleCreating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                    {cycleCreating && <span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />}
+                    {cycleCreating ? "Creating…" : cycleDispatch ? "Create & Send Emails" : "Create Cycle (no email)"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {actualsTab === "history" && (
+              <div style={{ padding: 16, maxHeight: 380, overflowY: "auto" as const }}>
+                {cycles.length === 0 && <div style={{ color: C.text3, fontSize: 13, textAlign: "center" as const, padding: "24px 0" }}>No cycles yet. Create one in the &quot;New Cycle&quot; tab.</div>}
+                {cycles.map((c: any) => (
+                  <div key={c.id} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Cycle {c.cycleNumber}</span>
+                      {c.label && <span style={{ fontSize: 12, color: C.text2 }}>— {c.label}</span>}
+                      <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999,
+                        background: c.status === "open" ? C.greenLight : C.surface2,
+                        color: c.status === "open" ? C.green : C.text3 }}>
+                        {c.status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: C.text3 }}>
+                      {new Date(c.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} –{" "}
+                      {new Date(c.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                      <div style={{ fontSize: 12, color: C.text2 }}>Compliance: <strong style={{ color: c.compliance >= 80 ? C.green : c.compliance >= 50 ? C.amber : C.red }}>{c.compliance}%</strong></div>
+                      <div style={{ fontSize: 12, color: C.text2 }}>{c.submittedCount}/{c.totalResources} submitted</div>
+                      <div style={{ fontSize: 12, color: C.text2 }}>{c.actualsCount} entries</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" as const }}>
         <div>
@@ -1790,6 +1970,12 @@ function ScheduleTab({ project }: { project: any }) {
             ? <><span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating…</>
             : tasks.length > 0 ? "↺ Regenerate" : "✦ Generate from WBS"}
         </button>
+        {tasks.length > 0 && (
+          <button onClick={() => { setActualsModal(true); setActualsTab("new"); loadCycles(); }}
+            style={{ height: 30, padding: "0 12px", background: C.surface, color: C.primary, border: `1px solid ${C.primaryBorder}`, borderRadius: 8, font: `500 12px var(--font-inter),'Inter'`, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            ⟳ Collect Actuals
+          </button>
+        )}
       </div>
 
       {error && <div style={{ padding: "10px 14px", background: C.redLight, border: `1px solid ${C.red}`, borderRadius: 9, fontSize: 14, color: C.red, marginBottom: 14 }}>{error}</div>}

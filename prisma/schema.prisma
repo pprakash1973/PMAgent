@@ -352,6 +352,12 @@ model Project {
   impediments          Impediment[]
   commercialSnapshots  CommercialSnapshot[]
 
+  // SA8: Distributed Task Actuals
+  taskAssignments      TaskAssignment[]
+  collectionCycles     CollectionCycle[]
+  collectionTokens     CollectionToken[]
+  taskActuals          TaskActualsLedger[]
+
   @@unique([orgId, code])
   @@index([deliveryManagerId])
   @@index([clusterHeadId])
@@ -1169,8 +1175,10 @@ model ScheduleTask {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  project  Project          @relation(fields: [projectId], references: [id])
-  resource ProjectResource? @relation(fields: [resourceId], references: [id])
+  project     Project             @relation(fields: [projectId], references: [id])
+  resource    ProjectResource?    @relation(fields: [resourceId], references: [id])
+  assignments TaskAssignment[]
+  actuals     TaskActualsLedger[]
 }
 
 model ProjectResource {
@@ -1188,8 +1196,99 @@ model ProjectResource {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  project       Project        @relation(fields: [projectId], references: [id])
+  project       Project             @relation(fields: [projectId], references: [id])
   scheduleTasks ScheduleTask[]
+  assignments   TaskAssignment[]
+  tokens        CollectionToken[]
+  actuals       TaskActualsLedger[]
+}
+
+// ── SA8: Distributed Task Actuals Collection ───────────────────────────────────
+
+model TaskAssignment {
+  id         String   @id @default(cuid())
+  taskId     String
+  resourceId String
+  projectId  String
+  role       String?  // Lead | Support | Reviewer
+  createdAt  DateTime @default(now())
+
+  task     ScheduleTask    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  resource ProjectResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  project  Project         @relation(fields: [projectId], references: [id])
+
+  @@unique([taskId, resourceId])
+  @@index([projectId])
+}
+
+model CollectionCycle {
+  id          String    @id @default(cuid())
+  projectId   String
+  cycleNumber Int
+  label       String?   // e.g. "Sprint 4 actuals"
+  startDate   DateTime
+  endDate     DateTime
+  status      String    @default("open") // open | closed | processing | complete
+  dispatchedAt DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  createdBy   String?
+
+  project Project           @relation(fields: [projectId], references: [id])
+  tokens  CollectionToken[]
+  actuals TaskActualsLedger[]
+
+  @@unique([projectId, cycleNumber])
+  @@index([projectId, status])
+}
+
+model CollectionToken {
+  id         String    @id @default(cuid())
+  cycleId    String
+  resourceId String
+  projectId  String
+  tokenHash  String    @unique  // SHA-256 of raw 32-byte token; raw token is emailed, never stored
+  expiresAt  DateTime
+  usedAt     DateTime?
+  status     String    @default("pending") // pending | submitted | expired
+  emailSentAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  cycle    CollectionCycle @relation(fields: [cycleId], references: [id])
+  resource ProjectResource @relation(fields: [resourceId], references: [id])
+  project  Project         @relation(fields: [projectId], references: [id])
+  actuals  TaskActualsLedger[]
+
+  @@index([cycleId])
+  @@index([resourceId])
+}
+
+model TaskActualsLedger {
+  id              String   @id @default(cuid())
+  projectId       String
+  taskId          String
+  resourceId      String
+  cycleId         String
+  tokenId         String
+
+  hoursWorked     Float
+  percentComplete Int
+  etcHours        Float?   // Estimate To Complete
+  disposition     String   // confirmed_as_planned | actual | forecast | estimated | unknown
+  notes           String?
+
+  submittedAt     DateTime @default(now())
+  supersededById  String?  // points to a newer ledger entry that corrects this one
+
+  project  Project         @relation(fields: [projectId], references: [id])
+  task     ScheduleTask    @relation(fields: [taskId], references: [id])
+  resource ProjectResource @relation(fields: [resourceId], references: [id])
+  cycle    CollectionCycle @relation(fields: [cycleId], references: [id])
+  token    CollectionToken @relation(fields: [tokenId], references: [id])
+
+  @@index([projectId, cycleId])
+  @@index([taskId, cycleId])
+  @@index([tokenId])
 }
 
 model CostEntry {

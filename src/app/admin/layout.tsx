@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Users, Building2, Briefcase, FolderKanban, LayoutDashboard, LogOut, ChevronRight, Cpu, Wrench, FileStack } from "lucide-react";
+import { Users, Building2, Briefcase, FolderKanban, LayoutDashboard, LogOut, ChevronRight, Cpu, Wrench, FileStack, Mail } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,7 @@ const nav = [
   { href: "/admin/programs", icon: FolderKanban, label: "Programs" },
   { href: "/admin/templates", icon: FileStack, label: "Templates" },
   { href: "/admin/model-config", icon: Cpu, label: "Model Router" },
+  { href: "/admin/email-config", icon: Mail, label: "Email Config" },
   { href: "/admin/maintenance", icon: Wrench, label: "Maintenance" },
 ];
 
