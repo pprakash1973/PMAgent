@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { computeEvm } from "@/lib/evm";
 
 export const dynamic = "force-dynamic";
 
@@ -130,54 +131,22 @@ export async function GET(
     // Tables not yet migrated — return empty arrays
   }
 
-  const totalSpent = costEntries.reduce((s, e) => s + e.amount, 0);
+  // EVM via shared utility — same formula as PM burndown endpoint
+  const evm = computeEvm(scheduleTasks, costEntries, project.budget);
+  const { totalAC: totalSpent, spi: liveSpi, cpi: liveCpi } = evm;
   const burnPct = project.budget && project.budget > 0
     ? Math.round((totalSpent / project.budget) * 100)
     : null;
 
-  // Live EVM from schedule tasks (burndown formula: dollar-weighted)
-  const bac = project.budget ?? 0;
-  const totalBaseHours = scheduleTasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
-  const taskPC = (t: typeof scheduleTasks[0]) => {
-    const pc = t.plannedCost ? Number(t.plannedCost) : 0;
-    if (pc > 0) return pc;
-    const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
-    return bac > 0 && totalBaseHours > 0 ? (bac * th) / totalBaseHours : 0;
-  };
-  const nowMs = Date.now();
-  const pvNow = scheduleTasks.reduce((s, t) => {
-    const start = new Date(t.baselineStart).getTime();
-    const end = new Date(t.baselineFinish).getTime();
-    if (nowMs <= start) return s;
-    if (nowMs >= end) return s + taskPC(t);
-    return s + taskPC(t) * ((nowMs - start) / (end - start || 1));
-  }, 0);
-  const evNow = scheduleTasks.reduce((s, t) => s + (t.percentComplete === 100 ? taskPC(t) : 0), 0);
-  const liveSpi = pvNow > 0 ? evNow / pvNow : null;
-  const liveCpi = totalSpent > 0 ? evNow / totalSpent : null;
-  const eac = liveCpi && liveCpi > 0 ? bac / liveCpi : null;
-  const completedTasks = scheduleTasks.filter(t => t.status === "complete").length;
-  const schedCompletionPct = scheduleTasks.length > 0
-    ? Math.round((completedTasks / scheduleTasks.length) * 100) : null;
-  // Hour-based EVM for display (pv/ev in hours, days * 8)
-  const pvHours = scheduleTasks.reduce((s, t) => {
-    const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
-    const start = new Date(t.baselineStart).getTime();
-    const end = new Date(t.baselineFinish).getTime();
-    if (nowMs <= start) return s;
-    if (nowMs >= end) return s + th;
-    return s + th * ((nowMs - start) / (end - start || 1));
-  }, 0);
-  const evHours = scheduleTasks.reduce((s, t) => {
-    const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
-    return s + th * (t.percentComplete / 100);
-  }, 0);
-
-  const svHours = evHours - pvHours;
   const ragStatus = (() => {
     if (liveSpi !== null && liveCpi !== null) {
       if (liveSpi < 0.8 || liveCpi < 0.8) return "red";
       if (liveSpi < 0.9 || liveCpi < 0.9) return "amber";
+      return "green";
+    }
+    if (liveSpi !== null) {
+      if (liveSpi < 0.8) return "red";
+      if (liveSpi < 0.9) return "amber";
       return "green";
     }
     return latestReport?.healthScore?.ragStatus ?? project.healthStatus ?? "green";
@@ -201,13 +170,13 @@ export async function GET(
     burnPct,
     totalSpent,
     evm: {
-      spi: liveSpi !== null ? Math.round(liveSpi * 100) / 100 : null,
-      cpi: liveCpi !== null ? Math.round(liveCpi * 100) / 100 : null,
-      pvHours: Math.round(pvHours),
-      evHours: Math.round(evHours),
-      svHours: Math.round(svHours),
-      eac: eac !== null ? Math.round(eac) : null,
-      schedCompletionPct,
+      spi: evm.spi,
+      cpi: evm.cpi,
+      pvHours: evm.pvHours,
+      evHours: evm.evHours,
+      svHours: evm.svHours,
+      eac: evm.eac,
+      schedCompletionPct: evm.schedCompletionPct,
       taskCount: scheduleTasks.length,
     },
     health: latestReport?.healthScore

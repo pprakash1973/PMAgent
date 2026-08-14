@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
+import { computeEvm } from "@/lib/evm";
 import Link from "next/link";
 import { formatCurrency, methodologyLabel } from "@/lib/utils";
 import { HealthDonut, EVMScatter, SpiDistribution } from "@/components/executive-charts";
@@ -134,44 +135,17 @@ export default async function ExecutivePage() {
 
     const now = Date.now();
     const dhProjects: DhProject[] = rawProjects.map((p) => {
-      const tasks = p.scheduleTasks;
-      let pv = 0, ev = 0;
-      for (const t of tasks) {
-        if (!t.baselineStart || !t.baselineFinish) continue;
-        const s = new Date(t.baselineStart).getTime();
-        const f = new Date(t.baselineFinish).getTime();
-        const dur = f - s;
-        const plannedPct = now <= s ? 0 : now >= f ? 1 : dur > 0 ? (now - s) / dur : 0;
-        pv += t.baselineDays * plannedPct;
-        ev += t.baselineDays * (t.percentComplete / 100);
-      }
-      const liveSpi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
-      const storedSpi = p.statusReports[0]?.healthScore?.spi ?? null;
-      const spi = liveSpi ?? storedSpi;
+      // EVM via shared utility — same formula as PM burndown endpoint
+      const evm = computeEvm(p.scheduleTasks, p.costEntries, p.budget);
+      const spi = evm.spi ?? p.statusReports[0]?.healthScore?.spi ?? null;
+      const cpi = evm.cpi ?? p.statusReports[0]?.healthScore?.cpi ?? null;
 
-      // Live CPI using burndown formula (EV_$ / AC_$)
-      const bac = p.budget ?? 0;
-      const totalBaseHours = tasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
-      const taskPC = (t: typeof tasks[0]) => {
-        const pc = t.plannedCost ? Number(t.plannedCost) : 0;
-        if (pc > 0) return pc;
-        const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
-        return bac > 0 && totalBaseHours > 0 ? (bac * th) / totalBaseHours : 0;
-      };
-      const currentEV = tasks.reduce((s, t) => s + (t.percentComplete === 100 ? taskPC(t) : 0), 0);
-      const totalAC = p.costEntries.reduce((s, e) => s + e.amount, 0);
-      const liveCpi = totalAC > 0 && tasks.length > 0 ? Math.round((currentEV / totalAC) * 100) / 100 : null;
-      const storedCpi = p.statusReports[0]?.healthScore?.cpi ?? null;
-      const cpi = liveCpi ?? storedCpi;
-
-      const schedPct = tasks.length
-        ? Math.round(tasks.reduce((s, t) => s + t.percentComplete, 0) / tasks.length)
+      const schedPct = p.scheduleTasks.length
+        ? Math.round(p.scheduleTasks.reduce((s, t) => s + t.percentComplete, 0) / p.scheduleTasks.length)
         : 0;
-      const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
-      const budPct = p.budget && p.budget > 0 ? Math.round((totalSpent / p.budget) * 100) : 0;
+      const budPct = p.budget && p.budget > 0 ? Math.round((evm.totalAC / p.budget) * 100) : 0;
 
-      // Live metrics govern RAG — both SPI and CPI available: derive health from them.
-      // Stored healthStatus only applies when there are no live schedule tasks.
+      // Live metrics govern RAG — stored healthStatus only applies when no live tasks.
       let rag: "red" | "amber" | "green";
       if (spi !== null && cpi !== null) {
         if (spi < 0.8 || cpi < 0.8) rag = "red";

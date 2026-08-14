@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { computeEvm, computePvAt } from "@/lib/evm";
 
-// Returns weekly EVM series: { date, pv, ev, ac, cpi, spi, eac }[]
+// Returns weekly EVM series: { date, pv, ev, ac, cpi, spi }[]
 // plus summary: { bac, totalAC, totalEV, cpi, spi, eac, vac, etc }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -18,21 +19,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const bac = project.budget ?? 0;
+  // ── EVM summary via shared utility (canonical formula) ──────────────────────
+  const evm = computeEvm(tasks, entries, project.budget);
+  const { bac, evNow: currentEV, pvNow, totalAC } = evm;
 
-  // ── Planned Value curve ─────────────────────────────────────────────────────
-  // Distribute each task's planned cost linearly across its baseline duration.
-  // If no plannedCost on tasks, distribute BAC proportionally by baselineDays.
-  const totalBaseHours = tasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
+  // ── Weekly time-series (PM-specific; DM/DH don't need this) ─────────────────
+  const totalBaseHours = tasks.reduce(
+    (s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8),
+    0,
+  );
 
-  function taskPlannedCost(t: (typeof tasks)[0]): number {
-    if (t.plannedCost != null && t.plannedCost > 0) return t.plannedCost;
-    const taskHours = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
-    if (bac > 0 && totalBaseHours > 0) return (bac * taskHours) / totalBaseHours;
-    return 0;
-  }
-
-  // Determine date range
   const projectStart = tasks.length
     ? new Date(Math.min(...tasks.map((t) => new Date(t.baselineStart).getTime())))
     : (project.startDate ?? new Date());
@@ -40,15 +36,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     ? new Date(Math.max(...tasks.map((t) => new Date(t.baselineFinish).getTime())))
     : (project.endDate ?? new Date());
 
-  // Build weekly buckets
   const weeks: Date[] = [];
   const cur = new Date(projectStart);
-  cur.setDate(cur.getDate() - cur.getDay()); // align to Sunday
+  cur.setDate(cur.getDate() - cur.getDay());
   while (cur <= projectEnd) {
     weeks.push(new Date(cur));
     cur.setDate(cur.getDate() + 7);
   }
-  // Always include at least today
   const today = new Date();
   if (!weeks.length || weeks[weeks.length - 1] < today) {
     const extra = new Date(today);
@@ -58,73 +52,41 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
   }
 
-  // PV: cumulative planned value at each week boundary
-  function pvAt(d: Date): number {
-    return tasks.reduce((sum, t) => {
-      const start = new Date(t.baselineStart).getTime();
-      const end = new Date(t.baselineFinish).getTime();
-      const dT = d.getTime();
-      if (dT <= start) return sum;
-      if (dT >= end) return sum + taskPlannedCost(t);
-      const elapsed = dT - start;
-      const total = end - start || 1;
-      return sum + taskPlannedCost(t) * (elapsed / total);
-    }, 0);
-  }
-
-  // EV: 0/100 rule — only credit full planned cost when task is 100% complete
-  const currentEV = tasks.reduce((s, t) => s + (t.percentComplete === 100 ? taskPlannedCost(t) : 0), 0);
-
-  // AC: cumulative actual cost from entries up to each date
   function acAt(d: Date): number {
-    return entries
-      .filter((e) => new Date(e.date) <= d)
-      .reduce((s, e) => s + e.amount, 0);
+    return entries.filter(e => new Date(e.date) <= d).reduce((s, e) => s + e.amount, 0);
   }
-
-  const totalAC = entries.reduce((s, e) => s + e.amount, 0);
-  // CPI and SPI are undefined (null) when there is no actual cost or no planned value yet
-  const cpi = totalAC > 0 ? currentEV / totalAC : null;
-  const pvNow = pvAt(today);
-  const spi = pvNow > 0 ? currentEV / pvNow : null;
-  // EAC only meaningful when CPI is available; fall back to null so UI shows "—"
-  const eac = cpi != null && cpi > 0 ? bac / cpi : null;
-  const etc = eac != null ? eac - totalAC : null;
-  const vac = eac != null ? bac - eac : null;
-  const cv = currentEV - totalAC;
-  const sv = currentEV - pvNow;
 
   const series = weeks.map((w) => {
-    const pv = pvAt(w);
+    const pv = computePvAt(tasks, bac, totalBaseHours, w.getTime());
     const ac = acAt(w);
-    // EV at past weeks: use % complete * planned (we only have current %, not historical)
-    // Approximate: if w <= today, use currentEV scaled by pv/pvNow
-    const evApprox = w <= today && pvNow > 0 ? Math.min(currentEV, currentEV * (pvAt(w) / pvNow)) : 0;
-    const weekCpi = ac > 0 ? evApprox / ac : null;
-    const weekSpi = pv > 0 ? evApprox / pv : null;
+    const evApprox = w <= today && pvNow > 0 ? Math.min(currentEV, currentEV * (pv / pvNow)) : 0;
     return {
       date: w.toISOString().slice(0, 10),
-      pv: Math.round(pv * 100) / 100,
-      ev: Math.round(evApprox * 100) / 100,
-      ac: Math.round(ac * 100) / 100,
-      cpi: weekCpi != null ? Math.round(weekCpi * 100) / 100 : null,
-      spi: weekSpi != null ? Math.round(weekSpi * 100) / 100 : null,
+      pv:  Math.round(pv  * 100) / 100,
+      ev:  Math.round(evApprox * 100) / 100,
+      ac:  Math.round(ac  * 100) / 100,
+      cpi: ac > 0 ? Math.round((evApprox / ac) * 100) / 100 : null,
+      spi: pv > 0 ? Math.round((evApprox / pv) * 100) / 100 : null,
     };
   });
 
+  const eac = evm.eac;
+  const etc = eac !== null ? Math.round((eac - totalAC) * 100) / 100 : null;
+  const vac = eac !== null ? Math.round((bac - eac) * 100) / 100 : null;
+
   return NextResponse.json({
     summary: {
-      bac: Math.round(bac * 100) / 100,
-      totalAC: Math.round(totalAC * 100) / 100,
-      totalEV: Math.round(currentEV * 100) / 100,
-      pvNow: Math.round(pvNow * 100) / 100,
-      cpi: cpi != null ? Math.round(cpi * 1000) / 1000 : null,
-      spi: spi != null ? Math.round(spi * 1000) / 1000 : null,
-      eac: eac != null ? Math.round(eac * 100) / 100 : null,
-      etc: etc != null ? Math.round(etc * 100) / 100 : null,
-      vac: vac != null ? Math.round(vac * 100) / 100 : null,
-      cv: Math.round(cv * 100) / 100,
-      sv: Math.round(sv * 100) / 100,
+      bac,
+      totalAC,
+      totalEV: evm.evNow,
+      pvNow,
+      cpi: evm.cpi,
+      spi: evm.spi,
+      eac,
+      etc,
+      vac,
+      cv:  evm.cv,
+      sv:  evm.sv,
       percentSpent: bac > 0 ? Math.round((totalAC / bac) * 1000) / 10 : 0,
       currency: project.currency ?? "USD",
     },

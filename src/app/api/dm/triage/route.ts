@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { computeEvm } from "@/lib/evm";
 
 export const dynamic = "force-dynamic";
 
@@ -179,36 +180,12 @@ export async function GET(req: NextRequest) {
     const openAI = p._count.actionItems;
     const highR = p._count.risks;
     const critI = p._count.issues;
-    const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
 
-    // Live SPI/CPI from schedule tasks (same formula as burndown endpoint)
-    const tasks = p.scheduleTasks;
-    let liveSpi: number | null = null;
-    let liveCpi: number | null = null;
-    if (tasks.length > 0) {
-      const bac = p.budget ?? 0;
-      const totalBaseHours = tasks.reduce((s, t) => s + (t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8), 0);
-      const taskPlannedCost = (t: typeof tasks[0]) => {
-        const pc = t.plannedCost ? Number(t.plannedCost) : 0;
-        if (pc > 0) return pc;
-        const th = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8;
-        return bac > 0 && totalBaseHours > 0 ? (bac * th) / totalBaseHours : 0;
-      };
-      const todayMs = now;
-      const pvNow = tasks.reduce((s, t) => {
-        const start = new Date(t.baselineStart).getTime();
-        const end = new Date(t.baselineFinish).getTime();
-        if (todayMs <= start) return s;
-        if (todayMs >= end) return s + taskPlannedCost(t);
-        return s + taskPlannedCost(t) * ((todayMs - start) / (end - start || 1));
-      }, 0);
-      const currentEV = tasks.reduce((s, t) => s + (t.percentComplete === 100 ? taskPlannedCost(t) : 0), 0);
-      liveSpi = pvNow > 0 ? currentEV / pvNow : null;
-      liveCpi = totalSpent > 0 ? currentEV / totalSpent : null;
-    }
-
-    const spi = liveSpi ?? hs?.spi ?? null;
-    const cpi = liveCpi ?? hs?.cpi ?? null;
+    // Live SPI/CPI via shared computeEvm — same formula as PM burndown endpoint
+    const evm = computeEvm(p.scheduleTasks, p.costEntries, p.budget);
+    const totalSpent = evm.totalAC;
+    const spi = evm.spi ?? hs?.spi ?? null;
+    const cpi = evm.cpi ?? hs?.cpi ?? null;
     const composite = hs?.compositeScore ?? null;
 
     const band = toBand(p.healthStatus, hasRecentReport);
