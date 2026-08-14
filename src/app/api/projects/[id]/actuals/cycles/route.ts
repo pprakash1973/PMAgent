@@ -174,7 +174,7 @@ export async function POST(
       const resource = resources[i];
       const token = createdTokens[i];
       const rawToken = tokenPairs.find((p) => p.resourceId === resource.id)!.rawToken;
-      const submitUrl = `${baseUrl}/submit/${rawToken}`;
+      const submitUrl = `${baseUrl}/api/public-submit/${rawToken}`;
       const resourceTasks = resourceTaskMap.get(resource.id) ?? tasks;
 
       try {
