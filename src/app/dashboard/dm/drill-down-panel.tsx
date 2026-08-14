@@ -263,9 +263,11 @@ function OverviewTab({ data }: { data: ReviewData }) {
 
 function ProjectDataTab({ data }: { data: ReviewData }) {
   const now = Date.now();
-  const completed = data.milestones.filter(m => m.status === "complete");
+  // Mirror PM view: status can be "completed" or "complete" — match by substring
+  const isComplete = (s: string) => s.toLowerCase().includes("complet");
+  const completed = data.milestones.filter(m => isComplete(m.status));
   const upcoming = data.milestones
-    .filter(m => m.status !== "complete")
+    .filter(m => !isComplete(m.status))
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
   // Critical/High risks past their end date
