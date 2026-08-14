@@ -555,14 +555,21 @@ function ArtifactsTab({ project, catalog, onNavigate }: { project: any; catalog:
                 <div style={{ fontSize: 12, color: "#b45309" }}>
                   {staleArtifacts.filter((a: any) => WBS_SCHEDULE_TYPES.has(a.artifactType)).length > 0 && (
                     <span>
-                      <strong>WBS / Milestone Plan</strong> — apply scope changes without full regeneration.{" "}
-                      {onNavigate && (
-                        <button
-                          onClick={() => onNavigate("Scope Control")}
-                          style={{ fontSize: 12, fontWeight: 600, color: "#92400e", background: "#fde68a", border: "1px solid #f59e0b", borderRadius: 5, padding: "1px 8px", cursor: "pointer" }}
-                        >
-                          Review Delta →
-                        </button>
+                      <strong>WBS / Milestone Plan</strong>{" "}
+                      {!latestBaseline.deltaReviewed ? (
+                        <>
+                          — scope changes pending review.{" "}
+                          {onNavigate && (
+                            <button
+                              onClick={() => onNavigate("Scope Control")}
+                              style={{ fontSize: 12, fontWeight: 600, color: "#92400e", background: "#fde68a", border: "1px solid #f59e0b", borderRadius: 5, padding: "1px 8px", cursor: "pointer" }}
+                            >
+                              Review Delta →
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        "— regenerate to align with the new baseline scope."
                       )}
                     </span>
                   )}
