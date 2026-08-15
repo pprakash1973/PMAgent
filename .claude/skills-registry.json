@@ -1,0 +1,17 @@
+{
+  "pmi-budget": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-changelog": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-charter": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-close": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-critical-path": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-dashboard": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-raci": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-risk": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-schedule": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-status": { "source": "local", "updatedAt": "2026-08-15" },
+  "pmi-wbs": { "source": "local", "updatedAt": "2026-08-15" },
+  "ust-brand-guidelines": { "source": "local", "updatedAt": "2026-08-15" },
+  "wbs-mastery": { "source": "local", "updatedAt": "2026-08-15" },
+  "quality-guardrails": { "source": "local", "updatedAt": "2026-08-15" },
+  "evm-analysis": { "source": "local", "updatedAt": "2026-08-15" }
+}
