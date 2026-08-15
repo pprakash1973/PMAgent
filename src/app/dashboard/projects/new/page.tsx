@@ -729,7 +729,7 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
             <Select value={form.methodology} onValueChange={(v) => update("methodology", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="milestone_based">Waterfall (Milestone Based)</SelectItem>
+                <SelectItem value="milestone_based">Waterfall</SelectItem>
                 <SelectItem value="agile_scrum">Agile (Scrum)</SelectItem>
               </SelectContent>
             </Select>
@@ -742,7 +742,7 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
               <Select value={form.projectType} onValueChange={(v) => update("projectType", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fixed_bid">Fixed Bid</SelectItem>
+                  <SelectItem value="fixed_bid">Fixed Bid (Milestone Based)</SelectItem>
                   <SelectItem value="time_and_material">Time and Material</SelectItem>
                 </SelectContent>
               </Select>

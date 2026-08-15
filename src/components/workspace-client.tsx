@@ -306,7 +306,7 @@ function PhaseRail({ projectId, currentPhase, onPhaseAdvanced }: {
 // ── Project Info tab ────────────────────────────────────────────────────────────
 
 const PROJECT_TYPE_LABELS: Record<string, string> = {
-  fixed_bid:          "Fixed Bid",
+  fixed_bid:          "Fixed Bid (Milestone Based)",
   time_and_material:  "Time and Material",
   fixed_price:        "Fixed Price",
   time_and_materials: "Time & Materials",
