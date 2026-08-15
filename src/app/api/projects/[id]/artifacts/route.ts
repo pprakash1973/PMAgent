@@ -233,6 +233,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (existing) {
     const currentHash = existing.versions[0]?.contentHash ?? null;
     if (currentHash && currentHash === newHash) {
+      // Content unchanged — but advance the baseline stamp so the stale banner clears.
+      if (scopeBaselineId && (existing as any).scopeBaselineId !== scopeBaselineId) {
+        await prisma.artifact.update({
+          where: { id: existing.id },
+          data: { scopeBaselineId },
+        });
+      }
       return NextResponse.json(
         { noChange: true, currentVersion: existing.currentVersion, artifact: existing },
         { status: 200 }
