@@ -1,6 +1,5 @@
 "use client";
 import React, { useState, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, ReferenceLine } from "recharts";
 import { DrillDownPanel } from "./drill-down-panel";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
@@ -8,7 +7,12 @@ type TriageRow = {
   id: string; name: string; accountId: string | null; accountName: string | null;
   programId: string | null; programName: string | null; pmId: string; pmName: string;
   healthStatus: string; band: "red" | "amber" | "no_data" | "green"; attentionScore: number;
+  deliveryMethod: string; // "predictive" | "agile_scrum" | "hybrid" — extensible
   spi: number | null; cpi: number | null; compositeScore: number | null;
+  // Agile-specific (null for waterfall)
+  velocity: number | null; commitmentReliability: number | null;
+  activeSprint: { id: string; label: string | null; sprintNumber: number } | null;
+  velTrend: "up" | "down" | "stable" | null;
   openActionItems: number; highRisks: number; criticalIssues: number;
   nextMilestone: { name: string; dueDate: string; daysUntilDue: number | null } | null;
   phase: string; lastReportDate: string | null; daysSinceReport: number | null;
@@ -43,6 +47,17 @@ const C = {
   FF: "var(--font-inter),'Inter',system-ui,sans-serif",
   FM: "'Consolas','SF Mono','Courier New',monospace",
 };
+
+// ── Methodology config — add new methodologies here only ─────────────────────────
+const METHODOLOGY_GROUPS: Record<string, { label: string; shortLabel: string; color: string; bg: string; border: string; perf: string }> = {
+  predictive: { label: "Waterfall / Predictive", shortLabel: "Waterfall", color: C.teal,    bg: "#e8f5f6", border: "#b2dde0", perf: "SPI / CPI" },
+  agile_scrum: { label: "Agile Scrum",           shortLabel: "Agile",     color: "#7c3aed", bg: "#f5f3ff", border: "#c4b5fd", perf: "Velocity / Reliability" },
+  hybrid:      { label: "Hybrid",                shortLabel: "Hybrid",    color: C.blue,    bg: C.blueSoft, border: "#93c5fd", perf: "SPI + Velocity" },
+};
+
+function mkey(row: TriageRow): string {
+  return METHODOLOGY_GROUPS[row.deliveryMethod] ? row.deliveryMethod : "predictive";
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 function ragColor(band: string) {
@@ -194,35 +209,65 @@ function AttentionRow({ p, onReview, onEscalate, onAddAction, escalated, addedAc
 
       {/* Metrics row */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" as const }}>
-        {/* SPI with sparkline */}
-        {p.spi !== null && (
-          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>SPI</span>
-            <Spark data={p.spiTrend} color={spiColor(p.spi)} w={52} h={16} />
-            <span style={{ fontFamily: C.FM, fontSize: 13, fontWeight: 700, color: spiColor(p.spi) }}>{fmt(p.spi)}</span>
-            <span style={{ fontSize: 10.5, color: spiArr.color }}>{spiArr.arrow}</span>
+        {/* Methodology badge */}
+        {METHODOLOGY_GROUPS[mkey(p)] && (
+          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: METHODOLOGY_GROUPS[mkey(p)].bg, color: METHODOLOGY_GROUPS[mkey(p)].color, border: `1px solid ${METHODOLOGY_GROUPS[mkey(p)].border}`, fontFamily: C.FF }}>
+            {METHODOLOGY_GROUPS[mkey(p)].shortLabel}
           </span>
         )}
-        {/* Burn bar */}
-        {p.burnPct !== null && (
-          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>Burn</span>
-            <BurnBar pct={p.burnPct} />
-          </span>
-        )}
-        {/* Next milestone */}
-        {p.nextMilestone && (
-          <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF, display: "flex", alignItems: "center", gap: 4 }}>
-            📅 {p.nextMilestone.name}
-            <span style={{
-              fontFamily: C.FM, fontWeight: 700,
-              color: (p.nextMilestone.daysUntilDue ?? 99) <= 14 ? C.red : C.blue,
-            }}>
-              {p.nextMilestone.daysUntilDue !== null
-                ? (p.nextMilestone.daysUntilDue < 0 ? `${Math.abs(p.nextMilestone.daysUntilDue)}d overdue` : `${p.nextMilestone.daysUntilDue}d`)
-                : fmtDate(p.nextMilestone.dueDate)}
-            </span>
-          </span>
+
+        {/* Agile metrics */}
+        {mkey(p) === "agile_scrum" ? (
+          <>
+            {p.velocity !== null && (
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>Velocity</span>
+                <span style={{ fontFamily: C.FM, fontSize: 13, fontWeight: 700, color: spiColor(p.velocity > 0 ? 1 : 0) }}>{p.velocity.toFixed(0)} pts</span>
+                {p.velTrend && <span style={{ fontSize: 10.5, color: p.velTrend === "up" ? C.green : C.red }}>{p.velTrend === "up" ? "▲" : "▼"}</span>}
+              </span>
+            )}
+            {p.commitmentReliability !== null && (
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>Reliability</span>
+                <span style={{ fontFamily: C.FM, fontSize: 13, fontWeight: 700, color: p.commitmentReliability < 60 ? C.red : p.commitmentReliability < 80 ? C.amber : C.green }}>{Math.round(p.commitmentReliability)}%</span>
+              </span>
+            )}
+            {p.activeSprint && (
+              <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>
+                Sprint {p.activeSprint.sprintNumber}{p.activeSprint.label ? ` · ${p.activeSprint.label}` : ""}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Waterfall: SPI with sparkline */}
+            {p.spi !== null && (
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>SPI</span>
+                <Spark data={p.spiTrend} color={spiColor(p.spi)} w={52} h={16} />
+                <span style={{ fontFamily: C.FM, fontSize: 13, fontWeight: 700, color: spiColor(p.spi) }}>{fmt(p.spi)}</span>
+                <span style={{ fontSize: 10.5, color: spiArr.color }}>{spiArr.arrow}</span>
+              </span>
+            )}
+            {/* Burn bar */}
+            {p.burnPct !== null && (
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF }}>Burn</span>
+                <BurnBar pct={p.burnPct} />
+              </span>
+            )}
+            {/* Next milestone */}
+            {p.nextMilestone && (
+              <span style={{ fontSize: 11.5, color: C.ink3, fontFamily: C.FF, display: "flex", alignItems: "center", gap: 4 }}>
+                📅 {p.nextMilestone.name}
+                <span style={{ fontFamily: C.FM, fontWeight: 700, color: (p.nextMilestone.daysUntilDue ?? 99) <= 14 ? C.red : C.blue }}>
+                  {p.nextMilestone.daysUntilDue !== null
+                    ? (p.nextMilestone.daysUntilDue < 0 ? `${Math.abs(p.nextMilestone.daysUntilDue)}d overdue` : `${p.nextMilestone.daysUntilDue}d`)
+                    : fmtDate(p.nextMilestone.dueDate)}
+                </span>
+              </span>
+            )}
+          </>
         )}
         {/* Chips */}
         <Pill count={p.highRisks} label="risks" activeColor={C.amber} activeBg={C.amberBg} />
@@ -299,6 +344,44 @@ function BandSection({ label, dotColor, projects, collapsed: initialCollapsed, o
   );
 }
 
+// ── Methodology section wrapper (attention queue) ─────────────────────────────────
+function MethodologySection({ methKey, bands, onReview, onEscalate, onAddAction, escalatedIds, addedActionsMap, filter }: {
+  methKey: string;
+  bands: { red: TriageRow[]; amber: TriageRow[]; no_data: TriageRow[]; green: TriageRow[] };
+  onReview: (id: string) => void;
+  onEscalate: (p: TriageRow) => void;
+  onAddAction: (p: TriageRow) => void;
+  escalatedIds: Set<string>;
+  addedActionsMap: Record<string, number>;
+  filter: (rows: TriageRow[]) => TriageRow[];
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const cfg = METHODOLOGY_GROUPS[methKey] ?? METHODOLOGY_GROUPS.predictive;
+  const total = filter(bands.red).length + filter(bands.amber).length + filter(bands.no_data).length + filter(bands.green).length;
+  if (total === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div onClick={() => setCollapsed(!collapsed)} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, cursor: "pointer", userSelect: "none" as const, padding: "10px 14px", borderRadius: 10, background: cfg.bg, border: `1.5px solid ${cfg.border}` }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: cfg.color, color: "#fff", fontFamily: C.FF }}>{cfg.shortLabel}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: cfg.color, fontFamily: C.FF }}>{cfg.label}</span>
+        <span style={{ fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>{total} project{total !== 1 ? "s" : ""}</span>
+        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>· {cfg.perf}</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ color: C.inkFaint, fontSize: 12 }}>{collapsed ? "▸" : "▾"}</span>
+      </div>
+      {!collapsed && (
+        <div style={{ paddingLeft: 12, borderLeft: `3px solid ${cfg.border}` }}>
+          <BandSection label="Needs you now" dotColor={C.red}   projects={filter(bands.red)}     collapsed={false} onReview={onReview} onEscalate={onEscalate} onAddAction={onAddAction} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+          <BandSection label="Watch"         dotColor={C.amber} projects={filter(bands.amber)}   collapsed={false} onReview={onReview} onEscalate={onEscalate} onAddAction={onAddAction} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+          <BandSection label="No data"       dotColor={C.grey}  projects={filter(bands.no_data)} collapsed={false} onReview={onReview} onEscalate={onEscalate} onAddAction={onAddAction} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+          <BandSection label="Steady"        dotColor={C.green} projects={filter(bands.green)}   collapsed={true}  onReview={onReview} onEscalate={onEscalate} onAddAction={onAddAction} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Portfolio summary cards ────────────────────────────────────────────────────────
 function PulseCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -359,24 +442,47 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
           <span style={{ width: 60 }} />
         </div>
         {all.length === 0 && <div style={{ padding: "40px 20px", textAlign: "center" as const, color: C.inkFaint, fontFamily: C.FF, fontSize: 14 }}>No projects in scope.</div>}
-        {all.map((p, i) => {
-          const rc = ragColor(p.band);
+        {Object.entries(METHODOLOGY_GROUPS).map(([methKey, cfg]) => {
+          const methProjects = [...data.bands.red, ...data.bands.amber, ...data.bands.no_data, ...data.bands.green].filter(p => mkey(p) === methKey);
+          if (methProjects.length === 0) return null;
           return (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", padding: "10px 20px", borderBottom: i < all.length - 1 ? `1px solid #f8f9fb` : "none", background: i % 2 === 0 ? C.surface : "#fafbfc" }}>
-              <div style={{ flex: 1.8, minWidth: 160, display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: rc, flexShrink: 0, display: "inline-block" }} />
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontFamily: C.FF }}>{p.name}</span>
+            <React.Fragment key={methKey}>
+              <div style={{ padding: "7px 20px", background: cfg.bg, borderBottom: `1px solid ${cfg.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, background: cfg.color, borderRadius: 4, padding: "1px 7px", fontFamily: C.FF, color: "#fff" }}>{cfg.shortLabel}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: cfg.color, fontFamily: C.FF }}>{cfg.label}</span>
+                <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{methProjects.length} project{methProjects.length !== 1 ? "s" : ""} · {cfg.perf}</span>
               </div>
-              <span style={{ width: 100, fontSize: 13, color: C.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontFamily: C.FF }}>{p.accountName ?? "—"}</span>
-              <span style={{ width: 90, fontSize: 13, color: C.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontFamily: C.FF }}>{p.pmName}</span>
-              <span style={{ width: 70 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: rc, background: `${rc}18`, border: `1px solid ${rc}30`, borderRadius: 5, padding: "2px 6px", fontFamily: C.FF }}>{ragLabel(p.band)}</span>
-              </span>
-              <span style={{ width: 52, fontSize: 13, fontWeight: 700, color: spiColor(p.spi), fontFamily: C.FM }}>{fmt(p.spi)}</span>
-              <span style={{ width: 52, fontSize: 13, fontWeight: 700, color: spiColor(p.cpi), fontFamily: C.FM }}>{fmt(p.cpi)}</span>
-              <span style={{ width: 60 }}>{p.burnPct !== null ? <BurnBar pct={p.burnPct} /> : <span style={{ color: C.inkFaint, fontSize: 12, fontFamily: C.FM }}>—</span>}</span>
-              <span style={{ width: 60, fontSize: 13, fontWeight: 600, color: C.blue, cursor: "pointer", textAlign: "right" as const, fontFamily: C.FF }} onClick={() => onSelect(p.id)}>Review →</span>
-            </div>
+              {methProjects.map((p, i) => {
+                const rc = ragColor(p.band);
+                const isAgile = mkey(p) === "agile_scrum";
+                return (
+                  <div key={p.id} style={{ display: "flex", alignItems: "center", padding: "10px 20px", borderBottom: i < methProjects.length - 1 ? `1px solid #f8f9fb` : "none", background: i % 2 === 0 ? C.surface : "#fafbfc" }}>
+                    <div style={{ flex: 1.8, minWidth: 160, display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: rc, flexShrink: 0, display: "inline-block" }} />
+                      <span style={{ fontSize: 13.5, fontWeight: 600, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontFamily: C.FF }}>{p.name}</span>
+                    </div>
+                    <span style={{ width: 100, fontSize: 13, color: C.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontFamily: C.FF }}>{p.accountName ?? "—"}</span>
+                    <span style={{ width: 90, fontSize: 13, color: C.inkFaint, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontFamily: C.FF }}>{p.pmName}</span>
+                    <span style={{ width: 70 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: rc, background: `${rc}18`, border: `1px solid ${rc}30`, borderRadius: 5, padding: "2px 6px", fontFamily: C.FF }}>{ragLabel(p.band)}</span>
+                    </span>
+                    {isAgile ? (
+                      <>
+                        <span style={{ width: 52, fontSize: 12, fontWeight: 700, color: p.velocity !== null ? (p.velocity > 0 ? C.green : C.red) : C.inkFaint, fontFamily: C.FM }} title="Velocity">{p.velocity !== null ? p.velocity.toFixed(0) : "—"}</span>
+                        <span style={{ width: 52, fontSize: 12, fontWeight: 700, color: p.commitmentReliability !== null ? (p.commitmentReliability < 60 ? C.red : p.commitmentReliability < 80 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }} title="Reliability">{p.commitmentReliability !== null ? Math.round(p.commitmentReliability) + "%" : "—"}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ width: 52, fontSize: 13, fontWeight: 700, color: spiColor(p.spi), fontFamily: C.FM }}>{fmt(p.spi)}</span>
+                        <span style={{ width: 52, fontSize: 13, fontWeight: 700, color: spiColor(p.cpi), fontFamily: C.FM }}>{fmt(p.cpi)}</span>
+                      </>
+                    )}
+                    <span style={{ width: 60 }}>{!isAgile && p.burnPct !== null ? <BurnBar pct={p.burnPct} /> : <span style={{ color: C.inkFaint, fontSize: 12, fontFamily: C.FM }}>—</span>}</span>
+                    <span style={{ width: 60, fontSize: 13, fontWeight: 600, color: C.blue, cursor: "pointer", textAlign: "right" as const, fontFamily: C.FF }} onClick={() => onSelect(p.id)}>Review →</span>
+                  </div>
+                );
+              })}
+            </React.Fragment>
           );
         })}
       </div>
@@ -682,6 +788,71 @@ function DeliveryMetrics({ data }: { data: TriageData }) {
         ))}
       </div>
 
+      {/* By Methodology tiles */}
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
+        By Methodology
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14, marginBottom: 28 }}>
+        {Object.entries(METHODOLOGY_GROUPS).map(([methKey, cfg]) => {
+          const mp = all.filter(p => mkey(p) === methKey);
+          if (mp.length === 0) return null;
+          const redC = mp.filter(p => p.band === "red").length;
+          const amberC = mp.filter(p => p.band === "amber").length;
+          const greenC = mp.filter(p => p.band === "green").length;
+          const isAgile = methKey === "agile_scrum";
+          const withVel = mp.filter(p => p.velocity !== null);
+          const withRel = mp.filter(p => p.commitmentReliability !== null);
+          const avgVel = withVel.length ? withVel.reduce((s, p) => s + (p.velocity ?? 0), 0) / withVel.length : null;
+          const avgRel = withRel.length ? withRel.reduce((s, p) => s + (p.commitmentReliability ?? 0), 0) / withRel.length : null;
+          const withSpi = mp.filter(p => p.spi !== null);
+          const withCpi = mp.filter(p => p.cpi !== null);
+          const avgMS = withSpi.length ? withSpi.reduce((s, p) => s + (p.spi ?? 0), 0) / withSpi.length : null;
+          const avgMC = withCpi.length ? withCpi.reduce((s, p) => s + (p.cpi ?? 0), 0) / withCpi.length : null;
+          return (
+            <div key={methKey} style={{ background: cfg.bg, border: `1.5px solid ${cfg.border}`, borderRadius: 13, padding: "16px 18px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: cfg.color, color: "#fff", fontFamily: C.FF }}>{cfg.shortLabel}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: cfg.color, fontFamily: C.FF }}>{cfg.label}</span>
+                <span style={{ marginLeft: "auto", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>{mp.length} projects</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                {[{ v: redC, l: "Critical", c: C.red, bg: C.redBg }, { v: amberC, l: "At Risk", c: C.amber, bg: C.amberBg }, { v: greenC, l: "On Track", c: C.green, bg: C.greenBg }].map(k => (
+                  <div key={k.l} style={{ flex: 1, textAlign: "center" as const, background: k.bg, borderRadius: 7, padding: "6px 4px" }}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: k.c, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
+                    <div style={{ fontSize: 9.5, color: k.c, fontFamily: C.FF, marginTop: 3 }}>{k.l}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 16 }}>
+                {isAgile ? (
+                  <>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg Velocity</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: avgVel !== null ? cfg.color : C.inkFaint, fontFamily: C.FM, lineHeight: 1 }}>{avgVel !== null ? avgVel.toFixed(0) + " pts" : "—"}</div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg Reliability</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: avgRel !== null ? (avgRel < 60 ? C.red : avgRel < 80 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM, lineHeight: 1 }}>{avgRel !== null ? Math.round(avgRel) + "%" : "—"}</div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg SPI</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: spiColor(avgMS), fontFamily: C.FM, lineHeight: 1 }}>{avgMS !== null ? avgMS.toFixed(2) : "—"}</div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg CPI</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: spiColor(avgMC), fontFamily: C.FM, lineHeight: 1 }}>{avgMC !== null ? avgMC.toFixed(2) : "—"}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Per-account breakdown tiles */}
       {accountTiles.length > 0 && (
         <>
@@ -875,10 +1046,24 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
             </div>
           )}
 
-          <BandSection label="Needs you now" dotColor={C.red} projects={filter(data.bands.red)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
-          <BandSection label="Watch" dotColor={C.amber} projects={filter(data.bands.amber)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
-          <BandSection label="No data" dotColor={C.grey} projects={filter(data.bands.no_data)} collapsed={false} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
-          <BandSection label="Steady" dotColor={C.green} projects={filter(data.bands.green)} collapsed={true} onReview={openReview} onEscalate={p => setEscalateTarget(p)} onAddAction={p => setActionTarget(p)} escalatedIds={escalatedIds} addedActionsMap={addedActionsMap} />
+          {Object.keys(METHODOLOGY_GROUPS).map(methKey => (
+            <MethodologySection
+              key={methKey}
+              methKey={methKey}
+              bands={{
+                red:     data.bands.red.filter(p => mkey(p) === methKey),
+                amber:   data.bands.amber.filter(p => mkey(p) === methKey),
+                no_data: data.bands.no_data.filter(p => mkey(p) === methKey),
+                green:   data.bands.green.filter(p => mkey(p) === methKey),
+              }}
+              onReview={openReview}
+              onEscalate={p => setEscalateTarget(p)}
+              onAddAction={p => setActionTarget(p)}
+              escalatedIds={escalatedIds}
+              addedActionsMap={addedActionsMap}
+              filter={filter}
+            />
+          ))}
 
           {q && filter(allProjects).length === 0 && (
             <div style={{ textAlign: "center" as const, padding: "40px 24px", color: C.inkFaint, fontFamily: C.FF, fontSize: 14 }}>No projects match "{searchQ}"</div>

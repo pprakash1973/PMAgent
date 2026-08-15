@@ -51,6 +51,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.endDate !== undefined && { endDate: body.endDate ? new Date(body.endDate) : null }),
       ...(body.budget !== undefined && { budget: body.budget }),
       ...(body.accountId !== undefined && { accountId: body.accountId || null }),
+      ...(body.methodology && {
+        methodology: body.methodology,
+        deliveryMethod: body.methodology === "agile_scrum" ? "agile_scrum"
+          : body.methodology === "hybrid" ? "hybrid"
+          : "predictive",
+      }),
     },
   });
 

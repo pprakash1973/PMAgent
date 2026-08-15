@@ -85,6 +85,31 @@ function computeWhyDiagnosis(p: {
   return flags.slice(0, 3).join("; ") + ".";
 }
 
+function isAgileProject(deliveryMethod: string | null, methodology: string | null): boolean {
+  return deliveryMethod === "agile_scrum" || methodology === "agile_scrum" || methodology === "agile";
+}
+
+function computeDhAgileMetrics(sprints: { state: string; committedPoints: number | null; acceptedPoints: number | null }[]) {
+  const closed = sprints.filter(s => s.state === "closed");
+  if (closed.length === 0) return { velocity: null, commitmentReliability: null };
+  const recent = closed.slice(0, 3);
+  const velocity = recent.reduce((s, sp) => s + (sp.acceptedPoints ?? 0), 0) / recent.length;
+  const reliable = recent.filter(s => {
+    const c = s.committedPoints ?? 0;
+    const a = s.acceptedPoints ?? 0;
+    return c > 0 && (a / c) >= 0.8;
+  });
+  const commitmentReliability = recent.length > 0 ? (reliable.length / recent.length) * 100 : null;
+  return { velocity, commitmentReliability };
+}
+
+function agileRag(commitmentReliability: number | null, velocity: number | null): "red" | "amber" | "green" {
+  if (commitmentReliability === null) return "amber";
+  if (commitmentReliability < 60) return "red";
+  if (commitmentReliability < 80) return "amber";
+  return "green";
+}
+
 export default async function ExecutivePage() {
   const session = await auth();
   const user = session!.user as any;
@@ -117,6 +142,12 @@ export default async function ExecutivePage() {
           take: 6,
           include: { healthScore: true },
         },
+        sprints: {
+          where: { state: { in: ["active", "closed"] } },
+          orderBy: { sprintNumber: "desc" },
+          take: 5,
+          select: { id: true, state: true, sprintNumber: true, label: true, committedPoints: true, acceptedPoints: true },
+        },
         _count: {
           select: {
             risks:       { where: { status: "open", probability: { in: ["high", "very_high"] } } },
@@ -135,19 +166,25 @@ export default async function ExecutivePage() {
 
     const now = Date.now();
     const dhProjects: DhProject[] = rawProjects.map((p) => {
+      const deliveryMethod: string = (p as any).deliveryMethod ?? "predictive";
+      const isAgile = isAgileProject(deliveryMethod, p.methodology);
+
       // EVM via shared utility — same formula as PM burndown endpoint
       const evm = computeEvm(p.scheduleTasks, p.costEntries, p.budget);
-      const spi = evm.spi ?? p.statusReports[0]?.healthScore?.spi ?? null;
-      const cpi = evm.cpi ?? p.statusReports[0]?.healthScore?.cpi ?? null;
+      const spi = isAgile ? null : (evm.spi ?? p.statusReports[0]?.healthScore?.spi ?? null);
+      const cpi = isAgile ? null : (evm.cpi ?? p.statusReports[0]?.healthScore?.cpi ?? null);
 
       const schedPct = p.scheduleTasks.length
         ? Math.round(p.scheduleTasks.reduce((s, t) => s + t.percentComplete, 0) / p.scheduleTasks.length)
         : 0;
       const budPct = p.budget && p.budget > 0 ? Math.round((evm.totalAC / p.budget) * 100) : 0;
 
-      // Live metrics govern RAG — stored healthStatus only applies when no live tasks.
+      // Agile: use velocity/reliability for RAG; waterfall: use SPI/CPI
+      const agileMetrics = isAgile ? computeDhAgileMetrics((p as any).sprints ?? []) : null;
       let rag: "red" | "amber" | "green";
-      if (spi !== null && cpi !== null) {
+      if (isAgile) {
+        rag = agileRag(agileMetrics?.commitmentReliability ?? null, agileMetrics?.velocity ?? null);
+      } else if (spi !== null && cpi !== null) {
         if (spi < 0.8 || cpi < 0.8) rag = "red";
         else if (spi < 0.9 || cpi < 0.9) rag = "amber";
         else rag = "green";
@@ -181,8 +218,11 @@ export default async function ExecutivePage() {
         programName: (p.program as any)?.name ?? "—",
         pmName:      p.pmOwner.fullName,
         rag,
-        spi:         spi ?? null,
-        cpi:         cpi ?? null,
+        spi,
+        cpi,
+        deliveryMethod,
+        velocity:              agileMetrics?.velocity ?? null,
+        commitmentReliability: agileMetrics?.commitmentReliability ?? null,
         schedPct,
         budPct,
         budget:      p.budget ?? null,

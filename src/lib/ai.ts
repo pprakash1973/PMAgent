@@ -1212,7 +1212,8 @@ Return JSON with:
   const pStart = projectContext.startDate ? String(projectContext.startDate).slice(0, 10) : null;
   const pEnd   = projectContext.endDate   ? String(projectContext.endDate).slice(0, 10)   : null;
   const methodologyLabels: Record<string, string> = {
-    waterfall: "Waterfall", agile: "Agile/Scrum", kanban: "Kanban", safe: "SAFe", hybrid: "Hybrid Agile",
+    waterfall: "Waterfall", agile: "Agile/Scrum", agile_scrum: "Agile/Scrum",
+    kanban: "Kanban", safe: "SAFe", hybrid: "Hybrid Agile",
   };
   const engagementTypeLabels: Record<string, string> = {
     application_development: "Application Development", product_development: "Product Development",

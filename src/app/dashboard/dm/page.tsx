@@ -114,6 +114,31 @@ export default async function DmTriagePage() {
     orderBy: { updatedAt: "desc" },
   });
 
+  // Sprint data for agile projects
+  const agileProjectIds = projects
+    .filter(p => {
+      const dm = (p as any).deliveryMethod ?? "predictive";
+      return dm === "agile_scrum" || p.methodology === "agile_scrum" || p.methodology === "agile";
+    })
+    .map(p => p.id);
+
+  const sprintsByProject = new Map<string, Array<{ id: string; state: string; sprintNumber: number; label: string | null; committedPoints: number | null; acceptedPoints: number | null }>>();
+
+  if (agileProjectIds.length > 0) {
+    try {
+      const sprints = await prisma.sprint.findMany({
+        where: { projectId: { in: agileProjectIds }, state: { in: ["active", "closed"] } },
+        orderBy: [{ projectId: "asc" }, { sprintNumber: "desc" }],
+        take: agileProjectIds.length * 5,
+        select: { id: true, projectId: true, state: true, sprintNumber: true, label: true, committedPoints: true, acceptedPoints: true },
+      });
+      for (const s of sprints) {
+        if (!sprintsByProject.has(s.projectId)) sprintsByProject.set(s.projectId, []);
+        sprintsByProject.get(s.projectId)!.push(s);
+      }
+    } catch {}
+  }
+
   // Action item counts (separate query — table may not exist on older deployments)
   let actionItemCountMap: Record<string, number> = {};
   let overdueActionItems = 0;
@@ -149,7 +174,29 @@ export default async function DmTriagePage() {
     projectProdStats = await getProductivityStatsForProjects(projects.map((p) => p.id));
   } catch {}
 
+  function computePageAgileMetrics(sprints: Array<{ id: string; state: string; sprintNumber: number; label: string | null; committedPoints: number | null; acceptedPoints: number | null }>) {
+    const active = sprints.find(s => s.state === "active");
+    const closed = sprints.filter(s => s.state === "closed");
+    const recent3 = closed.slice(0, 3);
+    const velocity = recent3.length > 0 ? recent3.reduce((s, sp) => s + (sp.acceptedPoints ?? 0), 0) / recent3.length : null;
+    const reliableCount = recent3.filter(s => {
+      const c = s.committedPoints ?? 0; const a = s.acceptedPoints ?? 0;
+      return c > 0 && (a / c) >= 0.8;
+    }).length;
+    const commitmentReliability = recent3.length > 0 ? (reliableCount / recent3.length) * 100 : null;
+    let velTrend: "up" | "down" | "stable" | null = null;
+    if (closed.length >= 2) {
+      const prev = closed[1].acceptedPoints ?? 0; const curr = closed[0].acceptedPoints ?? 0;
+      if (curr > prev * 1.05) velTrend = "up"; else if (curr < prev * 0.95) velTrend = "down"; else velTrend = "stable";
+    }
+    return { velocity, commitmentReliability, activeSprint: active ? { id: active.id, label: active.label, sprintNumber: active.sprintNumber } : null, velTrend };
+  }
+
   const rows = projects.map((p) => {
+    const deliveryMethod: string = (p as any).deliveryMethod ?? "predictive";
+    const isAgile = deliveryMethod === "agile_scrum" || p.methodology === "agile_scrum" || p.methodology === "agile";
+    const agileMetrics = isAgile ? computePageAgileMetrics(sprintsByProject.get(p.id) ?? []) : null;
+
     const latestReport = p.statusReports[0] ?? null;
     const hs = latestReport?.healthScore ?? null;
     const hasRecentReport = latestReport !== null && latestReport.reportDate >= fourteenDaysAgo;
@@ -201,6 +248,11 @@ export default async function DmTriagePage() {
       programId: p.programId, programName: p.program?.name ?? null,
       pmId: p.pmOwnerId, pmName: p.pmOwner.fullName,
       healthStatus: p.healthStatus, band, attentionScore,
+      deliveryMethod,
+      velocity:              agileMetrics?.velocity ?? null,
+      commitmentReliability: agileMetrics?.commitmentReliability ?? null,
+      activeSprint:          agileMetrics?.activeSprint ?? null,
+      velTrend:              agileMetrics?.velTrend ?? null,
       spi, cpi, compositeScore: composite,
       openActionItems: openAI, highRisks: highR, criticalIssues: critI,
       nextMilestone: nm

@@ -10,6 +10,8 @@ export interface DhProject {
   programName: string; pmName: string;
   rag: "red" | "amber" | "green";
   spi: number | null; cpi: number | null;
+  deliveryMethod: string; // "predictive" | "agile_scrum" | "hybrid" — extensible
+  velocity: number | null; commitmentReliability: number | null;
   schedPct: number; budPct: number; budget: number | null;
   phase: string;
   whyDiagnosis: string;
@@ -49,6 +51,16 @@ const C = {
   FF: "var(--font-inter),'Inter',system-ui,sans-serif",
   FM: "'Consolas','SF Mono','Courier New',monospace",
 };
+
+// ── Methodology config ────────────────────────────────────────────────────────────
+const METHODOLOGY_GROUPS: Record<string, { label: string; shortLabel: string; color: string; bg: string; border: string; perf: string }> = {
+  predictive:  { label: "Waterfall / Predictive", shortLabel: "Waterfall", color: C.teal,    bg: "#e8f5f6", border: "#b2dde0", perf: "SPI / CPI" },
+  agile_scrum: { label: "Agile Scrum",            shortLabel: "Agile",     color: "#7c3aed", bg: "#f5f3ff", border: "#c4b5fd", perf: "Velocity / Reliability" },
+  hybrid:      { label: "Hybrid",                 shortLabel: "Hybrid",    color: C.blue,    bg: "#e3f2f5", border: "#93c5fd", perf: "SPI + Velocity" },
+};
+function dmkey(p: DhProject): string {
+  return METHODOLOGY_GROUPS[p.deliveryMethod] ? p.deliveryMethod : "predictive";
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────────
 function sev(s: string) {
@@ -622,14 +634,32 @@ function HealthSection({ projects }: { projects: DhProject[] }) {
         </span>
       </div>
 
-      {/* Sections */}
+      {/* Sections — grouped by methodology */}
       <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
         <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 28 }}>
-          {band("Critical", C.red, C.redBg, C.redLine, reds)}
-          <div style={{ borderTop: `1px solid ${C.borderSoft}` }} />
-          {band("At Risk", C.amber, C.amberBg, C.amberLine, ambers)}
-          <div style={{ borderTop: `1px solid ${C.borderSoft}` }} />
-          {band("On Track", C.green, C.greenBg, C.greenLine, greens)}
+          {Object.entries(METHODOLOGY_GROUPS).map(([methKey, cfg]) => {
+            const mp = filtered.filter(p => dmkey(p) === methKey);
+            if (mp.length === 0) return null;
+            const mr = mp.filter(p => p.rag === "red");
+            const ma = mp.filter(p => p.rag === "amber");
+            const mg = mp.filter(p => p.rag === "green");
+            return (
+              <div key={methKey}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, padding: "10px 14px", borderRadius: 10, background: cfg.bg, border: `1.5px solid ${cfg.border}` }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: cfg.color, color: "#fff", fontFamily: C.FF }}>{cfg.shortLabel}</span>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: cfg.color, fontFamily: C.FF }}>{cfg.label}</span>
+                  <span style={{ fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>{mp.length} project{mp.length !== 1 ? "s" : ""} · {cfg.perf}</span>
+                </div>
+                <div style={{ paddingLeft: 12, borderLeft: `3px solid ${cfg.border}`, display: "flex", flexDirection: "column", gap: 20 }}>
+                  {band("Critical", C.red, C.redBg, C.redLine, mr)}
+                  {ma.length > 0 && mr.length > 0 && <div style={{ borderTop: `1px dashed ${C.borderSoft}` }} />}
+                  {band("At Risk", C.amber, C.amberBg, C.amberLine, ma)}
+                  {mg.length > 0 && (mr.length + ma.length) > 0 && <div style={{ borderTop: `1px dashed ${C.borderSoft}` }} />}
+                  {band("On Track", C.green, C.greenBg, C.greenLine, mg)}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -724,6 +754,71 @@ function MetricsTilesSection({ projects, clusterHealth }: { projects: DhProject[
               <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{t.sub}</div>
             </div>
           ))}
+        </div>
+
+        {/* By Methodology tiles */}
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
+          By Methodology
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14, marginBottom: 28 }}>
+          {Object.entries(METHODOLOGY_GROUPS).map(([methKey, cfg]) => {
+            const mp = filtered.filter(p => dmkey(p) === methKey);
+            if (mp.length === 0) return null;
+            const redC = mp.filter(p => p.rag === "red").length;
+            const amberC = mp.filter(p => p.rag === "amber").length;
+            const greenC = mp.filter(p => p.rag === "green").length;
+            const isAgile = methKey === "agile_scrum";
+            const withVel = mp.filter(p => p.velocity !== null);
+            const withRel = mp.filter(p => p.commitmentReliability !== null);
+            const avgVel = withVel.length ? withVel.reduce((s, p) => s + (p.velocity ?? 0), 0) / withVel.length : null;
+            const avgRel = withRel.length ? withRel.reduce((s, p) => s + (p.commitmentReliability ?? 0), 0) / withRel.length : null;
+            const withSpi = mp.filter(p => p.spi !== null);
+            const withCpi = mp.filter(p => p.cpi !== null);
+            const avgMS = withSpi.length ? withSpi.reduce((s, p) => s + (p.spi ?? 0), 0) / withSpi.length : null;
+            const avgMC = withCpi.length ? withCpi.reduce((s, p) => s + (p.cpi ?? 0), 0) / withCpi.length : null;
+            return (
+              <div key={methKey} style={{ background: cfg.bg, border: `1.5px solid ${cfg.border}`, borderRadius: 13, padding: "16px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: cfg.color, color: "#fff", fontFamily: C.FF }}>{cfg.shortLabel}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: cfg.color, fontFamily: C.FF, flex: 1 }}>{cfg.label}</span>
+                  <span style={{ fontSize: 11.5, color: C.inkFaint, fontFamily: C.FF }}>{mp.length}</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                  {[{ v: redC, l: "Critical", c: C.red, bg: C.redBg }, { v: amberC, l: "At Risk", c: C.amber, bg: C.amberBg }, { v: greenC, l: "On Track", c: C.green, bg: C.greenBg }].map(k => (
+                    <div key={k.l} style={{ flex: 1, textAlign: "center" as const, background: k.bg, borderRadius: 7, padding: "6px 4px" }}>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: k.c, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
+                      <div style={{ fontSize: 9.5, color: k.c, fontFamily: C.FF, marginTop: 3 }}>{k.l}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 16 }}>
+                  {isAgile ? (
+                    <>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg Velocity</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: avgVel !== null ? cfg.color : C.inkFaint, fontFamily: C.FM, lineHeight: 1 }}>{avgVel !== null ? avgVel.toFixed(0) + " pts" : "—"}</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg Reliability</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: avgRel !== null ? (avgRel < 60 ? C.red : avgRel < 80 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM, lineHeight: 1 }}>{avgRel !== null ? Math.round(avgRel) + "%" : "—"}</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg SPI</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: avgMS !== null ? (avgMS < 0.85 ? C.red : avgMS < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM, lineHeight: 1 }}>{avgMS !== null ? fmt2(avgMS) : "—"}</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 2 }}>Avg CPI</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: avgMC !== null ? (avgMC < 0.85 ? C.red : avgMC < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM, lineHeight: 1 }}>{avgMC !== null ? fmt2(avgMC) : "—"}</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* Cluster breakdown tiles */}
