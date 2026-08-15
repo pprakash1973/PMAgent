@@ -30,10 +30,17 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files — all variants except .env.example
 .env
 .env.local
 .env.*.local
+.env.neon
+.env.neon.*
+.env.prod
+.env.prod.*
+.env.production
+.env.vercel
+.env.*.temp
 # .env.example is intentionally committed (documents required vars)
 
 # vercel
