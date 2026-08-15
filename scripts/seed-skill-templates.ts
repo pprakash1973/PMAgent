@@ -18,15 +18,23 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as dotenv from "dotenv";
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.local") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-// Lazy-initialize so dry-runs don't require a DB connection
+// Lazy-initialize with pg adapter (required by driverAdapters preview feature)
+let _pool: Pool | null = null;
 let _prisma: PrismaClient | null = null;
+
 function getPrisma(): PrismaClient {
-  if (!_prisma) _prisma = new PrismaClient();
+  if (!_prisma) {
+    _pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const adapter = new PrismaPg(_pool);
+    _prisma = new PrismaClient({ adapter } as any);
+  }
   return _prisma;
 }
 
@@ -237,4 +245,7 @@ main()
     console.error(err);
     process.exit(1);
   })
-  .finally(() => _prisma?.$disconnect());
+  .finally(async () => {
+    await _prisma?.$disconnect();
+    await _pool?.end();
+  });

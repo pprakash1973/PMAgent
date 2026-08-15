@@ -1,0 +1,70 @@
+name: Build & Deploy to Azure App Service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20.x"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # ── Install all deps (dev needed for build) ──────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Build (runs prisma generate + DB migrations + next build) ────────────
+      - name: Build
+        env:
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+          NEXTAUTH_SECRET:   ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL:      ${{ secrets.NEXTAUTH_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESEND_API_KEY:    ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM:        ${{ secrets.EMAIL_FROM }}
+          OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
+        run: npm run build
+
+      # ── Swap to production-only node_modules before packaging ───────────────
+      - name: Prune dev dependencies
+        run: npm ci --omit=dev
+
+      # ── Package files needed at runtime ─────────────────────────────────────
+      - name: Create deployment package
+        run: |
+          zip -r deploy.zip \
+            .next \
+            public \
+            package.json \
+            package-lock.json \
+            node_modules \
+            prisma \
+            scripts \
+            -x "*.git*" "*.env*"
+
+      # ── Deploy to Azure App Service ──────────────────────────────────────────
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name:        ${{ vars.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package:         deploy.zip
+
+      # ── Seed PMI skills into the DB (idempotent — safe on every deploy) ──────
+      - name: Seed skill templates
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx tsx scripts/seed-skill-templates.ts
