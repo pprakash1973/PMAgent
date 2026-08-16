@@ -16,7 +16,6 @@ interface Cluster {
   name: string;
   code: string;
   type: string;
-  clusterLead: string | null;
   description: string | null;
   status: string;
   createdAt: string;
@@ -32,7 +31,7 @@ export default function ClustersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Cluster | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "geography", clusterLead: "", description: "" });
+  const [form, setForm] = useState({ name: "", type: "geography", description: "" });
 
   // DH assignment panel
   const [assigningCluster, setAssigningCluster] = useState<Cluster | null>(null);
@@ -55,7 +54,7 @@ export default function ClustersPage() {
 
   function startEdit(c: Cluster) {
     setEditing(c);
-    setForm({ name: c.name, type: c.type, clusterLead: c.clusterLead || "", description: c.description || "" });
+    setForm({ name: c.name, type: c.type, description: c.description || "" });
     setShowForm(true);
   }
 
@@ -75,7 +74,7 @@ export default function ClustersPage() {
       toast({ title: editing ? "Cluster updated" : "Cluster created" });
       setShowForm(false);
       setEditing(null);
-      setForm({ name: "", type: "geography", clusterLead: "", description: "" });
+      setForm({ name: "", type: "geography", description: "" });
       await load();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -128,7 +127,7 @@ export default function ClustersPage() {
           <h1 className="text-xl font-bold text-slate-900">Clusters</h1>
           <p className="text-slate-500 text-sm">Top-level hierarchy — geography, industry, or service line</p>
         </div>
-        <Button onClick={() => { setShowForm(!showForm); setEditing(null); setForm({ name: "", type: "geography", clusterLead: "", description: "" }); }} className="bg-[#006E74] hover:bg-[#004f54]">
+        <Button onClick={() => { setShowForm(!showForm); setEditing(null); setForm({ name: "", type: "geography", description: "" }); }} className="bg-[#006E74] hover:bg-[#004f54]">
           {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
           {showForm ? "Cancel" : "New Cluster"}
         </Button>
@@ -150,10 +149,6 @@ export default function ClustersPage() {
                   {Object.entries(TYPE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Cluster Lead</Label>
-              <Input value={form.clusterLead} onChange={(e) => setForm({ ...form, clusterLead: e.target.value })} placeholder="Name of delivery lead" />
             </div>
             <div className="space-y-2">
               <Label>Description</Label>

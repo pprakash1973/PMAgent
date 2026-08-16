@@ -14,7 +14,7 @@ interface Cluster { id: string; name: string; }
 interface DhUser { id: string; fullName: string; email: string; }
 interface Account {
   id: string; name: string; code: string; industry: string | null;
-  region: string; accountOwner: string | null; status: string; createdAt: string;
+  region: string; status: string; createdAt: string;
   primaryDmId: string | null;
   cluster: Cluster;
   dmAssignments: { user: DhUser; isPrimary: boolean }[];
@@ -29,7 +29,7 @@ export default function AccountsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ clusterId: "", name: "", industry: "", region: "other", accountOwner: "" });
+  const [form, setForm] = useState({ clusterId: "", name: "", industry: "", region: "other" });
 
   // DM assignment panel
   const [assigningAccount, setAssigningAccount] = useState<Account | null>(null);
@@ -57,7 +57,7 @@ export default function AccountsPage() {
 
   function startEdit(a: Account) {
     setEditing(a);
-    setForm({ clusterId: a.cluster.id, name: a.name, industry: a.industry || "", region: a.region, accountOwner: a.accountOwner || "" });
+    setForm({ clusterId: a.cluster.id, name: a.name, industry: a.industry || "", region: a.region });
     setShowForm(true);
   }
 
@@ -71,7 +71,7 @@ export default function AccountsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || "Failed");
       toast({ title: editing ? "Account updated" : "Account created" });
-      setShowForm(false); setEditing(null); setForm({ clusterId: "", name: "", industry: "", region: "other", accountOwner: "" });
+      setShowForm(false); setEditing(null); setForm({ clusterId: "", name: "", industry: "", region: "other" });
       await load();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -124,7 +124,7 @@ export default function AccountsPage() {
           <p className="text-slate-500 text-sm">UST customer accounts — source for the project creation cascade</p>
         </div>
         <Button
-          onClick={() => { setShowForm(!showForm); setEditing(null); setForm({ clusterId: clusters[0]?.id || "", name: "", industry: "", region: "other", accountOwner: "" }); }}
+          onClick={() => { setShowForm(!showForm); setEditing(null); setForm({ clusterId: clusters[0]?.id || "", name: "", industry: "", region: "other" }); }}
           className="bg-[#006E74] hover:bg-[#004f54]"
         >
           {showForm ? <X className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
@@ -163,10 +163,6 @@ export default function AccountsPage() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{Object.entries(REGION_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Account Owner</Label>
-              <Input value={form.accountOwner} onChange={(e) => setForm({ ...form, accountOwner: e.target.value })} placeholder="Account director name" />
             </div>
             <div className="col-span-2 flex gap-2">
               <Button type="submit" className="bg-[#006E74] hover:bg-[#004f54]" disabled={submitting}>
