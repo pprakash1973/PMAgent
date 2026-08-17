@@ -3527,14 +3527,13 @@ function ScopeControlTab({ project }: { project: any }) {
     ? ((latestBaseline.snapshot as any[]) ?? []).map((r: any) => r.requirementKey)
     : [];
 
-  // Docs whose requirements are captured in the active baseline — delete is hidden for these
-  const baselinedDocIds = new Set<string>(
-    latestBaseline
-      ? reqs
-          .filter(r => blSnapshot.includes(r.requirementKey) && r.sourceDocId)
-          .map(r => r.sourceDocId as string)
-      : []
-  );
+  // A doc uploaded before (or at) the latest baseline creation time is considered locked.
+  // This is more reliable than joining through sourceDocId (which can be null for older rows).
+  const baselineTs = latestBaseline ? new Date(latestBaseline.createdAt).getTime() : null;
+  function isDocLocked(doc: any): boolean {
+    if (!baselineTs) return false;
+    return new Date(doc.createdAt).getTime() <= baselineTs;
+  }
 
   const activeReqs = reqs.filter(r => r.isActive && r.status !== "rejected");
   // Live removed reqs (isActive:false) — drives the strikethrough row in the table
@@ -4121,7 +4120,7 @@ function ScopeControlTab({ project }: { project: any }) {
                     <div style={{ fontSize: 11, fontWeight: 600, color: C.text, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{doc.fileName}</div>
                     <div style={{ fontSize: 10, color: isExtracting ? C.amber : C.text3 }}>{isExtracting ? "Extracting requirements…" : formatDate(doc.createdAt)}</div>
                   </div>
-                  {!isExtracting && !baselinedDocIds.has(doc.id) && (
+                  {!isExtracting && !isDocLocked(doc) && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
                       title="Delete document"
