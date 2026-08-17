@@ -167,7 +167,7 @@ function buildDictionarySheet(wb: ExcelJS.Workbook, content: any) {
         const row = ws.addRow([
           safeStr(wp.id),
           safeStr(wp.name),
-          safeStr(wp.description),
+          safeStr(wp.description ?? `Deliver ${safeStr(wp.name)} within ${safeStr(phase.name)}`),
           safeStr(wp.name) + " completed and accepted",
           safeStr(wp.outOfScope ?? ("Work outside of " + safeStr(del.name))),
           safeStr(wp.acceptanceCriteria ?? "Delivered and signed off by owner"),

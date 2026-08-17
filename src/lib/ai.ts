@@ -91,7 +91,7 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
 // Traceability matrix needs headroom for large requirement sets.
 // Everything else is capped tightly to cut generation time proportionally.
 const ARTIFACT_TOKEN_BUDGET: Record<string, number> = {
-  wbs:                       32000,  // must handle 100-page BRDs
+  wbs:                       16000,  // description+acceptanceCriteria removed; output is now ~50% smaller
   traceability_matrix:       16000,  // can have 50+ requirements
   project_charter:           12000,  // many nested arrays (milestones, stakeholders, risks, signatures)
   initiation_deck:           12000,  // RACI + team intro + escalation channels make this large
@@ -634,18 +634,11 @@ Return JSON with:
           {
             id (string): "1.1.1.1" …
             name (string): work package name
-            description (string): what this deliverable contains
             estimatedDays (number)
             owner (string): generic numbered role name (e.g. "Developer 1", "Business Analyst 1")
-            acceptanceCriteria (string)
+            dependencies (array of strings): WBS codes this work package depends on — omit or leave empty if none
           }
       }
-  }
-- scopeBaselineSummary (object):
-  {
-    totalWorkPackages (number)
-    totalEstimatedDays (number)
-    note (string)
   }`,
 
     milestone_plan: `Generate a Milestone Plan.
