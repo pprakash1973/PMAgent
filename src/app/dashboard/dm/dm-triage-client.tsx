@@ -276,8 +276,8 @@ function AttentionRow({ p, onReview, onEscalate, onAddAction, escalated, addedAc
 
         {/* Action buttons — right-aligned */}
         <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
-          {p.band === "red" && !escalated && (
-            <button onClick={e => { e.stopPropagation(); onEscalate(); }} style={btnStyle("ghost-red")}>⚑ Escalate</button>
+          {!escalated && (
+            <button onClick={e => { e.stopPropagation(); onEscalate(); }} style={btnStyle(p.band === "red" ? "ghost-red" : "ghost")}>⚑ Escalate to DH</button>
           )}
           {escalated && <span style={{ fontSize: 11, color: C.green, fontWeight: 600, fontFamily: C.FF, alignSelf: "center" }}>✓ Escalated</span>}
           <button onClick={e => { e.stopPropagation(); onAddAction(); }} style={btnStyle("ghost")}>
