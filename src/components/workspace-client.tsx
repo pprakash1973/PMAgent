@@ -3527,6 +3527,15 @@ function ScopeControlTab({ project }: { project: any }) {
     ? ((latestBaseline.snapshot as any[]) ?? []).map((r: any) => r.requirementKey)
     : [];
 
+  // Docs whose requirements are captured in the active baseline — delete is hidden for these
+  const baselinedDocIds = new Set<string>(
+    latestBaseline
+      ? reqs
+          .filter(r => blSnapshot.includes(r.requirementKey) && r.sourceDocId)
+          .map(r => r.sourceDocId as string)
+      : []
+  );
+
   const activeReqs = reqs.filter(r => r.isActive && r.status !== "rejected");
   // Live removed reqs (isActive:false) — drives the strikethrough row in the table
   const removedReqs = reqs.filter(r => !r.isActive && r.status !== "rejected");
@@ -3646,6 +3655,19 @@ function ScopeControlTab({ project }: { project: any }) {
       setAddingReq(false);
     }
     setReqSaving(false);
+  }
+
+  function handleCreateBaselineWithConfirm() {
+    setScopeModal({
+      icon: "warn",
+      title: latestBaseline ? "Update Scope Baseline?" : "Create Scope Baseline?",
+      body: latestBaseline
+        ? "This will lock the current requirements into a new baseline version. Once created, documents that contributed to the baseline cannot be deleted and the baseline cannot be rolled back."
+        : "Once a scope baseline is created, the extracted requirements are locked in and the baseline cannot be rolled back. Documents that contributed requirements will no longer be deletable.",
+      confirmLabel: latestBaseline ? "Update Baseline" : "Create Baseline",
+      cancelLabel: "Cancel",
+      onConfirm: () => { setScopeModal(null); handleCreateBaseline(); },
+    });
   }
 
   async function handleCreateBaseline() {
@@ -3900,7 +3922,7 @@ function ScopeControlTab({ project }: { project: any }) {
             {extracting ? "Extracting…" : "Extract Requirements"}
           </button>
           <button
-            onClick={handleCreateBaseline}
+            onClick={handleCreateBaselineWithConfirm}
             disabled={creatingBaseline || activeReqs.length === 0}
             style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, background: creatingBaseline ? C.surface2 : C.primary, color: creatingBaseline ? C.text3 : "#fff", border: "none", borderRadius: 7, padding: "6px 13px", cursor: creatingBaseline || activeReqs.length === 0 ? "not-allowed" : "pointer", opacity: activeReqs.length === 0 ? 0.5 : 1 }}
           >
@@ -4062,12 +4084,6 @@ function ScopeControlTab({ project }: { project: any }) {
               Source Documents
               {docs.length > 0 && <span style={{ fontWeight: 400, textTransform: "none", marginLeft: 6, color: C.text3 }}>({docs.length})</span>}
             </div>
-            {!loading && latestBaseline && (
-              <span style={{ fontSize: 10, color: C.text3, display: "flex", alignItems: "center", gap: 4 }}>
-                <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-                Baseline locked · delete is blocked for documents whose requirements are in the active baseline
-              </span>
-            )}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "flex-start" }}>
             {docs.map((doc: any) => {
@@ -4105,11 +4121,11 @@ function ScopeControlTab({ project }: { project: any }) {
                     <div style={{ fontSize: 11, fontWeight: 600, color: C.text, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{doc.fileName}</div>
                     <div style={{ fontSize: 10, color: isExtracting ? C.amber : C.text3 }}>{isExtracting ? "Extracting requirements…" : formatDate(doc.createdAt)}</div>
                   </div>
-                  {!isExtracting && (
+                  {!isExtracting && !baselinedDocIds.has(doc.id) && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
-                      title={latestBaseline ? "Delete (may be blocked if requirements are in an active baseline)" : "Delete document"}
-                      style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", border: `1px solid ${latestBaseline ? C.border : C.red}`, borderRadius: 5, fontSize: 10, fontWeight: 600, color: latestBaseline ? C.text3 : C.red, background: latestBaseline ? C.surface2 : "#fff5f5", cursor: "pointer", flexShrink: 0, lineHeight: 1.4, opacity: loading ? 0 : 1, transition: "opacity 0.15s" }}
+                      title="Delete document"
+                      style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", border: `1px solid ${C.red}`, borderRadius: 5, fontSize: 10, fontWeight: 600, color: C.red, background: "#fff5f5", cursor: "pointer", flexShrink: 0, lineHeight: 1.4, opacity: loading ? 0 : 1, transition: "opacity 0.15s" }}
                     >
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                       Delete
@@ -4394,17 +4410,6 @@ function ScopeControlTab({ project }: { project: any }) {
                         {added > 0 && <span style={{ fontSize: 10, color: C.green, background: C.greenLight, borderRadius: 4, padding: "1px 5px" }}>+{added}</span>}
                         {removed > 0 && <span style={{ fontSize: 10, color: C.red, background: C.redLight, borderRadius: 4, padding: "1px 5px" }}>−{removed}</span>}
                       </div>
-                      {/* Roll back to this baseline (only for non-latest versions) */}
-                      {latestBaseline && bl.version < latestBaseline.version && (
-                        <button
-                          onClick={() => handleRollback(bl)}
-                          disabled={rollingBack === bl.id}
-                          title={`Delete all newer baselines and revert to ${bl.label}`}
-                          style={{ marginTop: 6, fontSize: 10, fontWeight: 600, color: C.red, background: "transparent", border: `1px solid ${C.redLight}`, borderRadius: 5, padding: "2px 7px", cursor: rollingBack === bl.id ? "wait" : "pointer", width: "100%" }}
-                        >
-                          {rollingBack === bl.id ? "Rolling back…" : "↩ Roll back to here"}
-                        </button>
-                      )}
                     </div>
                   </div>
                 );
