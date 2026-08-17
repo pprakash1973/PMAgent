@@ -2,9 +2,18 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { LLMCallOptions, LLMResponse } from "./types";
 import { getApiKey } from "./get-api-key";
 
+// Module-level singleton keyed by API key — avoids re-constructing the SDK client on every call
+const clientCache = new Map<string, Anthropic>();
+
 async function getClient(): Promise<Anthropic> {
   const apiKey = await getApiKey("anthropic");
-  return new Anthropic({ apiKey });
+  const key = apiKey ?? "";
+  let client = clientCache.get(key);
+  if (!client) {
+    client = new Anthropic({ apiKey });
+    clientCache.set(key, client);
+  }
+  return client;
 }
 
 export async function callAnthropic(opts: LLMCallOptions): Promise<LLMResponse> {
@@ -35,13 +44,22 @@ export async function streamAnthropic(opts: LLMCallOptions): Promise<LLMResponse
     system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
     messages: opts.messages,
   });
+
+  // Forward tokens to the caller while accumulating the full text
+  let fullText = "";
+  for await (const event of stream) {
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta"
+    ) {
+      fullText += event.delta.text;
+      opts.onToken?.(event.delta.text);
+    }
+  }
+
   const message = await stream.finalMessage();
-
-  const content = message.content[0];
-  if (!content || content.type !== "text") throw new Error("Unexpected Anthropic stream response type");
-
   return {
-    text: content.text,
+    text: fullText || (message.content[0]?.type === "text" ? message.content[0].text : ""),
     stopReason: message.stop_reason === "max_tokens" ? "max_tokens" : "end_turn",
   };
 }

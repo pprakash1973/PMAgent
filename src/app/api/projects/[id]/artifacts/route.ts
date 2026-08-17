@@ -7,6 +7,11 @@ import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
 import { extractAndStoreItems } from "@/lib/item-extractor";
+import type { Prisma } from "@prisma/client";
+
+// ── Template resolution with 60-second in-process cache ───────────────────────
+type TemplateCache = { value: ArtifactTemplateOverride | undefined; expiresAt: number };
+const templateCache = new Map<string, TemplateCache>();
 
 async function resolveTemplate(
   orgId: string | null | undefined,
@@ -14,6 +19,10 @@ async function resolveTemplate(
   artifactType: string
 ): Promise<ArtifactTemplateOverride | undefined> {
   if (!orgId) return undefined;
+  const key = `${orgId}:${accountId ?? ""}:${artifactType}`;
+  const cached = templateCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
   const db = prisma as any;
   const candidates = await db.artifactTemplate.findMany({
     where: {
@@ -30,14 +39,18 @@ async function resolveTemplate(
     },
     orderBy: [{ scope: "desc" }, { artifactType: "desc" }],
   });
-  if (candidates.length === 0) return undefined;
-  const pick = candidates.find((t: any) => t.scope === "account" && t.artifactType === artifactType)
-    ?? candidates.find((t: any) => t.scope === "account" && t.artifactType === "all")
-    ?? candidates.find((t: any) => t.scope === "global" && t.artifactType === artifactType)
-    ?? candidates[0];
-  // A template with no addendum content has zero effect — treat as no template
-  if (!pick.systemAddendum?.trim() && !pick.userAddendum?.trim()) return undefined;
-  return { systemAddendum: pick.systemAddendum, userAddendum: pick.userAddendum, templateId: pick.id };
+  let value: ArtifactTemplateOverride | undefined;
+  if (candidates.length > 0) {
+    const pick = candidates.find((t: any) => t.scope === "account" && t.artifactType === artifactType)
+      ?? candidates.find((t: any) => t.scope === "account" && t.artifactType === "all")
+      ?? candidates.find((t: any) => t.scope === "global" && t.artifactType === artifactType)
+      ?? candidates[0];
+    if (pick.systemAddendum?.trim() || pick.userAddendum?.trim()) {
+      value = { systemAddendum: pick.systemAddendum, userAddendum: pick.userAddendum, templateId: pick.id };
+    }
+  }
+  templateCache.set(key, { value, expiresAt: Date.now() + 60_000 });
+  return value;
 }
 
 export const maxDuration = 300;
@@ -76,16 +89,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
-
-  // Org-level ownership check (SEC-3)
-  if (project.orgId !== user.orgId) {
-    return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
-  }
+  if (project.orgId !== user.orgId) return NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 });
 
   const catalogEntry = ARTIFACT_CATALOG.find((a) => a.type === artifactType);
-  if (!catalogEntry) {
-    return NextResponse.json({ error: { code: "INVALID_ARTIFACT" } }, { status: 400 });
-  }
+  if (!catalogEntry) return NextResponse.json({ error: { code: "INVALID_ARTIFACT" } }, { status: 400 });
 
   // ── Guardrail pre-flight ────────────────────────────────────────────────────
   const [existingArtifacts, costEntryCount] = await Promise.all([
@@ -109,9 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       riskCount: project.risks.length,
     });
     guardrailWarnings = guardrailResult.warnings;
-    if (guardrailWarnings.length > 0) {
-      console.warn(`[guardrails] ${artifactType}:`, guardrailWarnings);
-    }
+    if (guardrailWarnings.length > 0) console.warn(`[guardrails] ${artifactType}:`, guardrailWarnings);
   } catch (err) {
     if (err instanceof GuardrailError) {
       return NextResponse.json(
@@ -122,7 +127,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     throw err;
   }
 
-  // For RTM: fetch schedule tasks + existing WBS/charter artifacts to ground traceability
+  // ── RTM / EVM extra data ────────────────────────────────────────────────────
   let scheduleTasks: { name: string; phase: string | null }[] = [];
   let wbsContent: unknown = null;
   if (artifactType === "traceability_matrix") {
@@ -134,7 +139,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     wbsContent = wbsArtifact?.content ?? null;
   }
 
-  // For EVM: fetch cost entries and budget revision history
   let costEntries: { date: Date; amount: number; category: string }[] = [];
   let budgetRevisions: any[] = [];
   if (artifactType === "evm_analysis") {
@@ -148,7 +152,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ]);
   }
 
-  const projectContext = {
+  // ── Parallel pre-AI queries (scope baseline + template — independent) ───────
+  const [latestScopeBaseline, templateOverride] = await Promise.all([
+    (prisma as any).scopeBaseline.findFirst({
+      where: { projectId: id },
+      orderBy: { version: "desc" },
+    }),
+    resolveTemplate((user as any).orgId, (project as any).accountId, artifactType),
+  ]);
+
+  const scopeBaselineId: string | null = latestScopeBaseline?.id ?? null;
+
+  // ── Build project context ───────────────────────────────────────────────────
+  const projectContext: Record<string, unknown> = {
     name: project.name,
     code: project.code,
     customer: project.customer,
@@ -161,10 +177,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     teamSize: project.teamSize,
     description: project.description,
     milestones: project.milestones,
-    ...(artifactType === "traceability_matrix" && {
-      scheduleTasks,
-      wbsStructure: wbsContent,
-    }),
+    ...(artifactType === "traceability_matrix" && { scheduleTasks, wbsStructure: wbsContent }),
     ...(artifactType === "evm_analysis" && {
       costEntries: costEntries.map((e) => ({
         date: e.date.toISOString().slice(0, 10),
@@ -183,145 +196,144 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }),
   };
 
+  if (latestScopeBaseline) {
+    const blReqs: any[] = (latestScopeBaseline.snapshot as any[]) ?? [];
+    if (blReqs.length > 0) {
+      projectContext.scopeRequirements = blReqs.map((r: any) => `${r.requirementKey}: ${r.statement}`);
+      projectContext.scopeBaselineLabel = latestScopeBaseline.label;
+    }
+  }
+
   const requirements = project.requirementsDocs[0]?.extractedContent
     ? JSON.stringify(project.requirementsDocs[0].extractedContent)
     : undefined;
 
-  // Fetch active scope baseline (if any)
-  const latestScopeBaseline = await (prisma as any).scopeBaseline.findFirst({
-    where: { projectId: id },
-    orderBy: { version: "desc" },
-  });
-  const scopeBaselineId: string | null = latestScopeBaseline?.id ?? null;
-  if (latestScopeBaseline) {
-    const blReqs: any[] = (latestScopeBaseline.snapshot as any[]) ?? [];
-    if (blReqs.length > 0) {
-      (projectContext as any).scopeRequirements = blReqs.map((r: any) => `${r.requirementKey}: ${r.statement}`);
-      (projectContext as any).scopeBaselineLabel = latestScopeBaseline.label;
-    }
-  }
+  // ── SSE stream — start immediately so the browser sees tokens as they arrive ─
+  const encoder = new TextEncoder();
 
-  const templateOverride = await resolveTemplate(
-    (user as any).orgId,
-    (project as any).accountId,
-    artifactType
-  );
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let content: any;
-  try {
-    content = await generateArtifact(artifactType, projectContext, requirements, undefined, templateOverride);
-  } catch (err: any) {
-    console.error(`[artifact] generation failed for ${artifactType}:`, err);
-    return NextResponse.json(
-      { error: { code: "GENERATION_FAILED", message: err.message ?? "AI generation failed" } },
-      { status: 502 }
-    );
-  }
-
-  const existing = await prisma.artifact.findFirst({
-    where: { projectId: id, artifactType },
-    include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
-  });
-  const newHash = hashArtifactContent(content);
-
-  // Wrap artifact + version creation in a single transaction (BUG-4).
-  // Returns the version ID so the post-commit extraction step needs no extra query.
-  let artifact;
-  let versionId: string;
-
-  if (existing) {
-    const currentHash = existing.versions[0]?.contentHash ?? null;
-    if (currentHash && currentHash === newHash) {
-      // Content unchanged — but advance the baseline stamp so the stale banner clears.
-      if (scopeBaselineId && (existing as any).scopeBaselineId !== scopeBaselineId) {
-        await prisma.artifact.update({
-          where: { id: existing.id },
-          data: { scopeBaselineId },
-        });
+  const stream = new ReadableStream({
+    async start(controller) {
+      function send(obj: object) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       }
-      return NextResponse.json(
-        { noChange: true, currentVersion: existing.currentVersion, artifact: existing },
-        { status: 200 }
-      );
-    }
-    const newVersion = existing.currentVersion + 1;
-    const parentVersionId = existing.versions[0]?.id ?? null;
-    ({ artifact, versionId } = await prisma.$transaction(async (tx) => {
-      const a = await tx.artifact.update({
-        where: { id: existing.id },
-        data: { content, currentVersion: newVersion, status: "draft", ...(scopeBaselineId ? { scopeBaselineId } : {}) },
-      });
-      const v = await tx.artifactVersion.create({
-        data: {
-          artifactId: existing.id,
-          versionNumber: newVersion,
-          content,
-          contentHash: newHash,
-          source: "ai_regenerated",
-          approvalStatus: "unreviewed",
-          parentVersionId,
-          editedById: user.id,
-          appliedTemplateId: templateOverride?.templateId ?? null,
-        },
-      });
-      return { artifact: a, versionId: v.id };
-    }));
-  } else {
-    ({ artifact, versionId } = await prisma.$transaction(async (tx) => {
-      const a = await tx.artifact.create({
-        data: {
-          projectId: id,
+
+      try {
+        // Generate — tokens are forwarded to the client as they arrive
+        const content = await generateArtifact(
           artifactType,
-          phase: catalogEntry.phase,
-          content,
-          currentVersion: 1,
-          status: "draft",
-          ...(scopeBaselineId ? { scopeBaselineId } : {}),
-        },
-      });
-      const v = await tx.artifactVersion.create({
-        data: {
-          artifactId: a.id,
-          versionNumber: 1,
-          content,
-          contentHash: newHash,
-          source: "ai_generated",
-          approvalStatus: "unreviewed",
-          parentVersionId: null,
-          editedById: user.id,
-          appliedTemplateId: templateOverride?.templateId ?? null,
-        },
-      });
-      return { artifact: a, versionId: v.id };
-    }));
-  }
+          projectContext,
+          requirements,
+          undefined,
+          templateOverride,
+          (chunk) => send({ chunk })
+        );
 
-  // Mark selection as active
-  await prisma.artifactSelection.upsert({
-    where: { projectId_artifactType: { projectId: id, artifactType } },
-    create: {
-      projectId: id,
-      artifactType,
-      selectionStatus: "active",
-      selectedById: user.id,
-      selectedAt: new Date(),
+        send({ status: "saving" });
+
+        // ── Persist to DB ──────────────────────────────────────────────────────
+        const existing = await prisma.artifact.findFirst({
+          where: { projectId: id, artifactType },
+          include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+        });
+        const newHash = hashArtifactContent(content);
+        const jsonContent = content as Prisma.InputJsonValue;
+
+        let artifact: any;
+        let versionId: string;
+
+        if (existing) {
+          const currentHash = existing.versions[0]?.contentHash ?? null;
+          if (currentHash && currentHash === newHash) {
+            if (scopeBaselineId && (existing as any).scopeBaselineId !== scopeBaselineId) {
+              await prisma.artifact.update({ where: { id: existing.id }, data: { scopeBaselineId } });
+            }
+            send({ done: true, noChange: true, artifact: existing });
+            return;
+          }
+          const newVersion = existing.currentVersion + 1;
+          const parentVersionId = existing.versions[0]?.id ?? null;
+          ({ artifact, versionId } = await prisma.$transaction(async (tx) => {
+            const a = await tx.artifact.update({
+              where: { id: existing.id },
+              data: { content: jsonContent, currentVersion: newVersion, status: "draft", ...(scopeBaselineId ? { scopeBaselineId } : {}) },
+            });
+            const v = await tx.artifactVersion.create({
+              data: {
+                artifactId: existing.id,
+                versionNumber: newVersion,
+                content: jsonContent,
+                contentHash: newHash,
+                source: "ai_regenerated",
+                approvalStatus: "unreviewed",
+                parentVersionId,
+                editedById: user.id,
+                appliedTemplateId: templateOverride?.templateId ?? null,
+              },
+            });
+            return { artifact: a, versionId: v.id };
+          }));
+        } else {
+          ({ artifact, versionId } = await prisma.$transaction(async (tx) => {
+            const a = await tx.artifact.create({
+              data: {
+                projectId: id,
+                artifactType,
+                phase: catalogEntry.phase,
+                content: jsonContent,
+                currentVersion: 1,
+                status: "draft",
+                ...(scopeBaselineId ? { scopeBaselineId } : {}),
+              },
+            });
+            const v = await tx.artifactVersion.create({
+              data: {
+                artifactId: a.id,
+                versionNumber: 1,
+                content: jsonContent,
+                contentHash: newHash,
+                source: "ai_generated",
+                approvalStatus: "unreviewed",
+                parentVersionId: null,
+                editedById: user.id,
+                appliedTemplateId: templateOverride?.templateId ?? null,
+              },
+            });
+            return { artifact: a, versionId: v.id };
+          }));
+        }
+
+        await prisma.artifactSelection.upsert({
+          where: { projectId_artifactType: { projectId: id, artifactType } },
+          create: { projectId: id, artifactType, selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
+          update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
+        });
+
+        // Fire-and-forget — do NOT await; these must never delay the response
+        syncArtifactToTables(id, artifactType, content).catch((err) =>
+          console.error(`[artifact-sync] generate sync failed for ${artifactType}:`, err)
+        );
+        extractAndStoreItems(versionId, artifactType, content).catch((e) =>
+          console.error("[item-extractor]", e)
+        );
+
+        send({
+          done: true,
+          artifact: { ...artifact, warnings: guardrailWarnings.length > 0 ? guardrailWarnings : undefined },
+        });
+      } catch (err: any) {
+        console.error(`[artifact] generation failed for ${artifactType}:`, err);
+        send({ error: err.message ?? "AI generation failed" });
+      } finally {
+        controller.close();
+      }
     },
-    update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
   });
 
-  // Sync artifact content into live DB tables (RAID tab, Resources tab, milestones)
-  await syncArtifactToTables(id, artifactType, content).catch((err) => {
-    console.error(`[artifact-sync] generate sync failed for ${artifactType}:`, err);
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
   });
-
-  // BL-P2: extract canonical items async (non-blocking — never delays the response)
-  extractAndStoreItems(versionId, artifactType, content).catch((e) => {
-    console.error("[item-extractor]", e);
-  });
-
-  return NextResponse.json(
-    { ...artifact, warnings: guardrailWarnings.length > 0 ? guardrailWarnings : undefined },
-    { status: 201 }
-  );
 }

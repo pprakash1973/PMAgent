@@ -127,6 +127,15 @@ export async function POST(
     ...guardBlocked.map((r) => ({ type: r.type, reason: r.reason! })),
   ];
 
+  // Fetch all existing artifacts in one query instead of N separate findFirst calls
+  const succeededTypes = subAgentResults
+    .map((r, i) => (r.status === "fulfilled" ? allowed[i].type : null))
+    .filter(Boolean) as string[];
+  const existingArtifactMap = new Map(
+    (await prisma.artifact.findMany({ where: { projectId: id, artifactType: { in: succeededTypes } } }))
+      .map((a) => [a.artifactType, a])
+  );
+
   await Promise.all(
     subAgentResults.map(async (result, i) => {
       const type = allowed[i].type;
@@ -148,7 +157,7 @@ export async function POST(
         ? Math.max(0, Math.round(((totalFields - gapCount) / Math.max(totalFields, 1)) * 100))
         : null;
 
-      const existing = await prisma.artifact.findFirst({ where: { projectId: id, artifactType: type } });
+      const existing = existingArtifactMap.get(type) ?? null;
       const jsonContent = content as Prisma.InputJsonValue;
 
       const appliedTemplateId = templateMap.get(type)?.templateId ?? null;
@@ -196,7 +205,7 @@ export async function POST(
         update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
       });
 
-      await syncArtifactToTables(id, type, content).catch((err) => {
+      syncArtifactToTables(id, type, content).catch((err) => {
         console.error(`[batch-sync] failed for ${type}:`, err);
       });
 

@@ -223,7 +223,7 @@ export async function generateArtifactForProject(
     update: { selectionStatus: "active", selectedById: userId, selectedAt: new Date() },
   });
 
-  await syncArtifactToTables(projectId, artifactType, content).catch((err) => {
+  syncArtifactToTables(projectId, artifactType, content).catch((err) => {
     console.error(`[artifact-sync] copilot sync failed for ${artifactType}:`, err);
   });
 

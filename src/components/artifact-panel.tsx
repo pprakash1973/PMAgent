@@ -197,20 +197,45 @@ export function ArtifactPanel({
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifactType }),
       });
-      const data = await res.json().catch(() => ({}));
+      // Non-SSE error response (auth, validation, guardrail)
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         const msg = data?.error?.message ?? data?.error ?? `Generation failed (${res.status})`;
         setGuardrailErrors((prev) => ({ ...prev, [artifactType]: msg }));
         return;
       }
-      setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
-      setLocalArtifacts((prev) => {
-        const existing = prev.findIndex((a) => a.artifactType === artifactType);
-        if (existing >= 0) { const copy = [...prev]; copy[existing] = data; return copy; }
-        return [...prev, data];
-      });
-      toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
-      router.refresh();
+      // Parse SSE stream — tokens arrive as {chunk}, final result as {done, artifact}
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const json = JSON.parse(line.slice(6));
+            if (json.error) {
+              setGuardrailErrors((prev) => ({ ...prev, [artifactType]: json.error }));
+              break outer;
+            }
+            if (json.done && json.artifact) {
+              setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
+              setLocalArtifacts((prev) => {
+                const idx = prev.findIndex((a) => a.artifactType === artifactType);
+                if (idx >= 0) { const copy = [...prev]; copy[idx] = json.artifact; return copy; }
+                return [...prev, json.artifact];
+              });
+              toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
+              router.refresh();
+              break outer;
+            }
+          } catch { /* skip malformed events */ }
+        }
+      }
     } catch (err: any) {
       setGuardrailErrors((prev) => ({ ...prev, [artifactType]: err.message || "Generation failed" }));
     } finally {

@@ -18,6 +18,8 @@ export interface LLMCallOptions {
   inputId?: string;
   /** Assembled evidence / retrieved context string — captured separately from the user message (AC-8.5). */
   retrievedContext?: string;
+  /** Called with each streamed text delta — only honoured by the Anthropic adapter's streamAnthropic(). */
+  onToken?: (text: string) => void;
 }
 
 export interface LLMResponse {

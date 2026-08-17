@@ -87,7 +87,39 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   quarterly_business_review: "quarter, projectName, executiveSummary, ragStatus, milestoneReview (array of {milestone, planned, forecast, status}), budgetSummary {budget, actualToDate, forecastAtCompletion, variance}, schedulePerformance {spi, spiTrend}, costPerformance {cpi, cpiTrend}, keyRisks (array), keyIssues (array), decisions (array), nextQuarterPlan (array), clientActions (array)",
 };
 
-const ARTIFACT_MAX_TOKENS = 32000;
+// Per-type token budgets. WBS stays at 32k to handle 100-page BRDs/SOWs.
+// Traceability matrix needs headroom for large requirement sets.
+// Everything else is capped tightly to cut generation time proportionally.
+const ARTIFACT_TOKEN_BUDGET: Record<string, number> = {
+  wbs:                       32000,
+  traceability_matrix:       16000,
+  evm_analysis:               8000,
+  raid_register:              8000,
+  risk_register:              8000,
+  project_charter:            6000,
+  initiation_deck:            6000,
+  cost_plan:                  6000,
+  resource_plan:              6000,
+  raci_matrix:                6000,
+  lessons_learned:            6000,
+  closure_report:             6000,
+  quarterly_business_review:  5000,
+  stakeholder_register:       4000,
+  communication_plan:         4000,
+  quality_plan:               4000,
+  scope_statement:            4000,
+  milestone_plan:             4000,
+  change_log:                 4000,
+  monthly_status:             4000,
+  business_case:              4000,
+  assumption_log:             3000,
+  benefits_register:          3000,
+  dependencies_register:      3000,
+  weekly_status:              3000,
+  action_log:                 3000,
+  issue_register:             3000,
+  decision_log:               3000,
+};
 
 export interface ArtifactTemplateOverride {
   systemAddendum?: string | null;
@@ -100,28 +132,30 @@ export async function generateArtifact(
   projectContext: Record<string, unknown>,
   requirements?: string,
   evidenceContext?: EvidenceContext,
-  templateOverride?: ArtifactTemplateOverride
+  templateOverride?: ArtifactTemplateOverride,
+  onToken?: (text: string) => void
 ): Promise<Record<string, unknown>> {
   const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext, templateOverride);
   const config = await resolveModel("artifact");
 
-  // Build system prompt — client addendum leads as a mandatory override block
   const systemText = templateOverride?.systemAddendum
     ? `${PMI_SYSTEM_PROMPT}\n\nMANDATORY CLIENT-SPECIFIC INSTRUCTIONS — these override your defaults:\n${templateOverride.systemAddendum}`
     : PMI_SYSTEM_PROMPT;
 
   const userContent = content.map((b) => b.text).join("\n\n");
   const evidenceText = evidenceContext?.hasEvidence ? formatEvidenceForPrompt(evidenceContext) : undefined;
+  const maxTokens = ARTIFACT_TOKEN_BUDGET[artifactType] ?? 6000;
 
   const response = await streamLLM(
     {
       model:            config.model,
-      maxTokens:        ARTIFACT_MAX_TOKENS,
+      maxTokens,
       system:           systemText,
       messages:         [{ role: "user", content: userContent }],
       temperature:      0,
       agent:            "artifact",
       retrievedContext: evidenceText,
+      onToken,
     },
     config
   );
