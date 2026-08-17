@@ -279,13 +279,27 @@ export async function DELETE(
   const docId = searchParams.get("docId");
   if (!docId) return NextResponse.json({ error: "docId required" }, { status: 400 });
 
-  // Deletion is only allowed before any scope baseline exists
-  const baselineCount = await (prisma as any).scopeBaseline.count({ where: { projectId: id } }).catch(() => 0);
-  if (baselineCount > 0) {
-    return NextResponse.json(
-      { error: "Documents cannot be deleted after a scope baseline has been created. Use baseline rollback to revert scope changes." },
-      { status: 403 }
-    );
+  // Deletion is blocked only if this doc's requirements are captured in the current baseline snapshot
+  const latestBl = await (prisma as any).scopeBaseline.findFirst({
+    where: { projectId: id },
+    orderBy: { version: "desc" },
+    select: { snapshot: true, label: true },
+  }).catch(() => null);
+
+  if (latestBl) {
+    const docReqs = await prisma.requirement.findMany({
+      where: { projectId: id, sourceDocId: docId },
+      select: { requirementKey: true },
+    });
+    const docReqKeys = new Set(docReqs.map((r: any) => r.requirementKey));
+    const snapshot: any[] = latestBl.snapshot ?? [];
+    const inBaseline = snapshot.some((r: any) => docReqKeys.has(r.requirementKey));
+    if (inBaseline) {
+      return NextResponse.json(
+        { error: `This document's requirements are locked in baseline "${latestBl.label}". Roll back that baseline before deleting.` },
+        { status: 403 }
+      );
+    }
   }
 
   const doc = await prisma.requirementsDocument.findFirst({

@@ -47,10 +47,7 @@ export async function POST(
   });
 
   const version = prevBaseline ? prevBaseline.version + 1 : 1;
-  let baselineLabel = label;
-  if (!baselineLabel) {
-    baselineLabel = `${id}_BL_V${version}`;
-  }
+  const userLabel = label as string | undefined;
 
   const snapshot = activeReqs.map(r => ({
     requirementId: r.id,
@@ -74,6 +71,21 @@ export async function POST(
     addedKeys = snapshot
       .filter(r => !prevKeys.has(r.requirementKey))
       .map(r => r.requirementKey);
+  }
+
+  // Build a meaningful baseline label now that we know the diff
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  let baselineLabel: string;
+  if (userLabel) {
+    baselineLabel = userLabel;
+  } else if (version === 1) {
+    baselineLabel = `Initial Scope Baseline · ${activeReqs.length} requirement${activeReqs.length !== 1 ? "s" : ""} · ${dateStr}`;
+  } else {
+    const parts: string[] = [];
+    if (addedKeys.length > 0) parts.push(`+${addedKeys.length} added`);
+    if ((removedSnapshot as any[]).length > 0) parts.push(`−${(removedSnapshot as any[]).length} removed`);
+    const changeStr = parts.length > 0 ? parts.join(", ") : "no req changes";
+    baselineLabel = `Scope Update v${version} · ${changeStr} · ${dateStr}`;
   }
 
   // Fetch current WBS tasks and milestones for AI delta generation

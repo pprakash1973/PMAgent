@@ -3495,6 +3495,17 @@ function ScopeControlTab({ project }: { project: any }) {
   const [acceptedMilestones, setAcceptedMilestones] = React.useState<Set<string>>(new Set());
   const [applyingDelta, setApplyingDelta] = React.useState(false);
 
+  // Confirm / alert modal (replaces native window.confirm / window.alert)
+  const [scopeModal, setScopeModal] = React.useState<{
+    icon: "warn" | "danger" | "info";
+    title: string;
+    body: string;
+    bullets?: string[];
+    confirmLabel?: string;
+    onConfirm?: () => void;
+    cancelLabel?: string;
+  } | null>(null);
+
   async function loadData() {
     setLoading(true);
     const [rRes, bRes] = await Promise.all([
@@ -3657,7 +3668,7 @@ function ScopeControlTab({ project }: { project: any }) {
       }
       await loadData();
     } catch (err: any) {
-      alert(err.message || "Baseline creation failed");
+      setScopeModal({ icon: "danger", title: "Baseline creation failed", body: err.message || "An unexpected error occurred. Please try again." });
     } finally {
       setCreatingBaseline(false);
     }
@@ -3698,25 +3709,31 @@ function ScopeControlTab({ project }: { project: any }) {
     if (res.status === 409 && data.requiresConfirmation) {
       setRollingBack(null);
       const del = data.willDelete;
-      const lines: string[] = [];
-      lines.push(`⚠ Roll back to ${data.target.label}?\n`);
-      lines.push(`This will PERMANENTLY DELETE ${del.baselines.length} newer baseline(s): ${del.baselines.map((b: any) => b.label).join(", ")}`);
+      const bullets: string[] = [];
+      bullets.push(`Permanently deletes ${del.baselines.length} newer baseline(s): ${del.baselines.map((b: any) => b.label).join(", ")}`);
       if (del.scheduleTasksWithProgress > 0) {
-        lines.push(`\n⛔ ${del.scheduleTasksWithProgress} schedule task(s) with recorded progress will be DELETED and their progress discarded:`);
-        lines.push(del.scheduleTasks.filter((t: any) => (t.percentComplete ?? 0) > 0).slice(0, 6).map((t: any) => `  • [${t.wbsCode}] ${t.name} — ${t.percentComplete}%`).join("\n"));
+        bullets.push(`⛔ Discards progress on ${del.scheduleTasksWithProgress} schedule task(s) — this cannot be recovered`);
+        del.scheduleTasks.filter((t: any) => (t.percentComplete ?? 0) > 0).slice(0, 4).forEach((t: any) => bullets.push(`   [${t.wbsCode}] ${t.name} — ${t.percentComplete}% complete`));
       } else if (del.scheduleTasks.length > 0) {
-        lines.push(`\n${del.scheduleTasks.length} CR-added schedule task(s) will be removed.`);
+        bullets.push(`Removes ${del.scheduleTasks.length} CR-added schedule task(s)`);
       }
-      if (del.milestones.length > 0) lines.push(`\n${del.milestones.length} milestone(s) will be removed.`);
-      if (data.willRestore.descopedTasks.length > 0) lines.push(`\n${data.willRestore.descopedTasks.length} descoped task(s) will be restored.`);
-      if (data.willFlagStale.length > 0) lines.push(`\n${data.willFlagStale.length} artifact(s) will be flagged for regeneration: ${data.willFlagStale.join(", ")}`);
-      lines.push(`\nThis cannot be undone. Proceed?`);
-      if (window.confirm(lines.join("\n"))) handleRollback(bl, true);
+      if (del.milestones.length > 0) bullets.push(`Removes ${del.milestones.length} milestone(s)`);
+      if (data.willRestore.descopedTasks.length > 0) bullets.push(`Restores ${data.willRestore.descopedTasks.length} previously descoped task(s)`);
+      if (data.willFlagStale.length > 0) bullets.push(`Flags for regeneration: ${data.willFlagStale.join(", ")}`);
+      setScopeModal({
+        icon: "danger",
+        title: `Roll back to "${data.target.label}"?`,
+        body: "This is a destructive, irreversible action. The following will happen:",
+        bullets,
+        confirmLabel: "Yes, Roll Back",
+        onConfirm: () => { setScopeModal(null); handleRollback(bl, true); },
+        cancelLabel: "Cancel",
+      });
       return;
     }
 
     if (!res.ok) {
-      alert(data.error || "Rollback failed");
+      setScopeModal({ icon: "danger", title: "Rollback failed", body: data.error || "An unexpected error occurred." });
       setRollingBack(null);
       return;
     }
@@ -3725,17 +3742,26 @@ function ScopeControlTab({ project }: { project: any }) {
     router.refresh();
   }
 
-  async function handleDeleteDoc(docId: string, fileName: string) {
-    if (!window.confirm(`Delete "${fileName}"?\n\nThis will also remove any requirements extracted from it. This cannot be undone.`)) return;
-    const res = await fetch(`/api/projects/${project.id}/requirements?docId=${encodeURIComponent(docId)}`, { method: "DELETE" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      alert(data.error || "Delete failed");
-      return;
-    }
-    setDocs(prev => prev.filter(d => d.id !== docId));
-    setSelectedDocIds(prev => { const next = new Set(prev); next.delete(docId); return next; });
-    await loadData();
+  function handleDeleteDoc(docId: string, fileName: string) {
+    setScopeModal({
+      icon: "warn",
+      title: `Delete "${fileName}"?`,
+      body: "Any requirements extracted from this document will also be removed. This cannot be undone.",
+      confirmLabel: "Delete Document",
+      cancelLabel: "Cancel",
+      onConfirm: async () => {
+        setScopeModal(null);
+        const res = await fetch(`/api/projects/${project.id}/requirements?docId=${encodeURIComponent(docId)}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setScopeModal({ icon: "danger", title: "Delete failed", body: data.error || "An unexpected error occurred." });
+          return;
+        }
+        setDocs(prev => prev.filter(d => d.id !== docId));
+        setSelectedDocIds(prev => { const next = new Set(prev); next.delete(docId); return next; });
+        await loadData();
+      },
+    });
   }
 
   async function runImpactAnalysis() {
@@ -3786,24 +3812,76 @@ function ScopeControlTab({ project }: { project: any }) {
 
   return (
     <div>
-      {/* ── Top bar ──────────────────────────────────────────────────────────── */}
+      {/* ── Custom confirm / alert modal ───────────────────────────────────── */}
+      {scopeModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={e => { if (e.target === e.currentTarget && !scopeModal.onConfirm) setScopeModal(null); }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: "26px 26px 20px", maxWidth: 480, width: "100%", boxShadow: "0 24px 64px rgba(0,0,0,.22)" }}>
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 14 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 11, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                background: scopeModal.icon === "danger" ? "#fef2f2" : scopeModal.icon === "warn" ? "#fffbeb" : "#eff6ff" }}>
+                {scopeModal.icon === "danger" && <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#dc2626" strokeWidth="2"><path strokeLinecap="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>}
+                {scopeModal.icon === "warn" && <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#d97706" strokeWidth="2"><path strokeLinecap="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>}
+                {scopeModal.icon === "info" && <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#2563eb" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" d="M12 8h.01M12 12v4"/></svg>}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", marginBottom: 5, lineHeight: 1.3 }}>{scopeModal.title}</div>
+                <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.65 }}>{scopeModal.body}</div>
+              </div>
+            </div>
+            {scopeModal.bullets && scopeModal.bullets.length > 0 && (
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 9, padding: "10px 14px", marginBottom: 16, maxHeight: 220, overflowY: "auto" as const }}>
+                {scopeModal.bullets.map((b, i) => (
+                  <div key={i} style={{ fontSize: 12, color: "#334155", lineHeight: 1.55, padding: "2px 0", display: "flex", gap: 7 }}>
+                    <span style={{ color: scopeModal.icon === "danger" ? "#dc2626" : "#d97706", flexShrink: 0, marginTop: 1 }}>•</span>
+                    <span>{b}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              {(scopeModal.cancelLabel || scopeModal.onConfirm) && (
+                <button onClick={() => setScopeModal(null)} style={{ fontSize: 13, fontWeight: 500, background: "#f1f5f9", color: "#475569", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer" }}>
+                  {scopeModal.cancelLabel ?? "Dismiss"}
+                </button>
+              )}
+              {scopeModal.onConfirm && (
+                <button
+                  onClick={scopeModal.onConfirm}
+                  style={{ fontSize: 13, fontWeight: 600, background: scopeModal.icon === "danger" ? "#dc2626" : scopeModal.icon === "warn" ? "#d97706" : C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer" }}
+                >
+                  {scopeModal.confirmLabel ?? "OK"}
+                </button>
+              )}
+              {!scopeModal.onConfirm && (
+                <button onClick={() => setScopeModal(null)} style={{ fontSize: 13, fontWeight: 600, background: C.primary, color: "#fff", border: "none", borderRadius: 8, padding: "8px 18px", cursor: "pointer" }}>
+                  OK
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Status bar ───────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" as const, marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
-          {blLabel ? (
+          {loading ? (
+            <span style={{ fontSize: 12, color: C.text3 }}>Loading…</span>
+          ) : blLabel ? (
             <span style={{ fontSize: 12, fontWeight: 600, color: C.green, background: C.greenLight, borderRadius: 6, padding: "3px 10px" }}>
-              ✓ {blLabel} — active
+              ✓ {blLabel}
             </span>
           ) : (
-            <span style={{ fontSize: 12, color: C.text3 }}>No baseline yet</span>
+            <span style={{ fontSize: 12, color: C.text3 }}>No baseline yet — create one to lock requirements</span>
           )}
-          {blLabel && (
+          {!loading && blLabel && (
             <span style={{ fontSize: 12, color: C.text2 }}>
-              Total {activeReqs.length + removedReqs.length} · {activeReqs.length} active · {removedReqs.length} removed
+              {activeReqs.length} active · {removedReqs.length} removed
             </span>
           )}
-          {pendingCount > 0 && (
+          {!loading && pendingCount > 0 && (
             <span style={{ fontSize: 12, fontWeight: 600, color: C.amber, background: C.amberLight, borderRadius: 6, padding: "3px 10px" }}>
-              ⚠ {pendingCount} pending
+              ⚠ {pendingCount} unbaselined
             </span>
           )}
         </div>
@@ -3820,12 +3898,17 @@ function ScopeControlTab({ project }: { project: any }) {
             disabled={creatingBaseline || activeReqs.length === 0}
             style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, background: creatingBaseline ? C.surface2 : C.primary, color: creatingBaseline ? C.text3 : "#fff", border: "none", borderRadius: 7, padding: "6px 13px", cursor: creatingBaseline || activeReqs.length === 0 ? "not-allowed" : "pointer", opacity: activeReqs.length === 0 ? 0.5 : 1 }}
           >
-            {creatingBaseline ? "Creating…" : latestBaseline ? "New Baseline" : "Create Baseline"}
+            {creatingBaseline ? "Creating Baseline…" : latestBaseline ? "Update Baseline" : "Create Baseline"}
           </button>
         </div>
       </div>
 
-      {extractError && <div style={{ color: C.red, fontSize: 12, marginBottom: 10 }}>{extractError}</div>}
+      {extractError && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.red, fontSize: 12, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" d="M12 8v4m0 4h.01"/></svg>
+          {extractError}
+        </div>
+      )}
 
       {/* ── Persistent Review Delta banner (baseline exists but delta not yet reviewed) ─ */}
       {latestBaseline && !latestBaseline.deltaReviewed && !deltaReview && (
@@ -3968,7 +4051,18 @@ function ScopeControlTab({ project }: { project: any }) {
 
         {/* Source Documents — horizontal tile row */}
         <div style={{ padding: "12px 14px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3, marginBottom: 8 }}>Source Documents</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase" as const, color: C.text3 }}>
+              Source Documents
+              {docs.length > 0 && <span style={{ fontWeight: 400, textTransform: "none", marginLeft: 6, color: C.text3 }}>({docs.length})</span>}
+            </div>
+            {!loading && latestBaseline && (
+              <span style={{ fontSize: 10, color: C.text3, display: "flex", alignItems: "center", gap: 4 }}>
+                <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                Baseline locked · delete is blocked for documents whose requirements are in the active baseline
+              </span>
+            )}
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "flex-start" }}>
             {docs.map((doc: any) => {
               const ext = (doc.fileName?.split(".").pop()?.toUpperCase() || "DOC") as string;
@@ -3997,16 +4091,14 @@ function ScopeControlTab({ project }: { project: any }) {
                     <div style={{ fontSize: 11, fontWeight: 600, color: C.text, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{doc.fileName}</div>
                     <div style={{ fontSize: 10, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
                   </div>
-                  {!latestBaseline && (
-                    <button
-                      onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
-                      title="Delete document"
-                      style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", border: `1px solid ${C.red}`, borderRadius: 5, fontSize: 10, fontWeight: 600, color: C.red, background: "#fff5f5", cursor: "pointer", flexShrink: 0, lineHeight: 1.4 }}
-                    >
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                      Delete
-                    </button>
-                  )}
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
+                    title={latestBaseline ? "Delete (may be blocked if requirements are in an active baseline)" : "Delete document"}
+                    style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", border: `1px solid ${latestBaseline ? C.border : C.red}`, borderRadius: 5, fontSize: 10, fontWeight: 600, color: latestBaseline ? C.text3 : C.red, background: latestBaseline ? C.surface2 : "#fff5f5", cursor: "pointer", flexShrink: 0, lineHeight: 1.4, opacity: loading ? 0 : 1, transition: "opacity 0.15s" }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    Delete
+                  </button>
                 </div>
               );
             })}
