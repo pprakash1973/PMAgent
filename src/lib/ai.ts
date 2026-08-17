@@ -91,30 +91,30 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
 // Traceability matrix needs headroom for large requirement sets.
 // Everything else is capped tightly to cut generation time proportionally.
 const ARTIFACT_TOKEN_BUDGET: Record<string, number> = {
-  wbs:                       32000,
-  traceability_matrix:       16000,
-  evm_analysis:               8000,
-  raid_register:              8000,
-  risk_register:              8000,
-  project_charter:            6000,
-  initiation_deck:            6000,
-  cost_plan:                  6000,
-  resource_plan:              6000,
-  raci_matrix:                6000,
-  lessons_learned:            6000,
-  closure_report:             6000,
-  quarterly_business_review:  5000,
-  stakeholder_register:       4000,
-  communication_plan:         4000,
-  quality_plan:               4000,
-  scope_statement:            4000,
-  milestone_plan:             4000,
-  change_log:                 4000,
-  monthly_status:             4000,
-  business_case:              4000,
-  assumption_log:             3000,
-  benefits_register:          3000,
-  dependencies_register:      3000,
+  wbs:                       32000,  // must handle 100-page BRDs
+  traceability_matrix:       16000,  // can have 50+ requirements
+  project_charter:           12000,  // many nested arrays (milestones, stakeholders, risks, signatures)
+  initiation_deck:           12000,  // RACI + team intro + escalation channels make this large
+  evm_analysis:              10000,  // per-period data table + forecasts
+  raid_register:             10000,  // 4 full arrays
+  risk_register:             10000,  // detailed risk entries
+  raci_matrix:                8000,  // activities × roles matrix
+  resource_plan:              8000,  // team directory + skills matrix
+  cost_plan:                  8000,  // labor estimates + phase breakdown
+  lessons_learned:            8000,  // detailed lesson entries
+  closure_report:             8000,  // objectives scorecard + deliverables + benefits
+  quarterly_business_review:  6000,
+  scope_statement:            5000,
+  stakeholder_register:       5000,
+  communication_plan:         5000,
+  quality_plan:               5000,
+  milestone_plan:             5000,
+  business_case:              5000,
+  change_log:                 5000,
+  monthly_status:             5000,
+  assumption_log:             4000,
+  benefits_register:          4000,
+  dependencies_register:      4000,
   weekly_status:              3000,
   action_log:                 3000,
   issue_register:             3000,
