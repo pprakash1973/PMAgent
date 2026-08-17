@@ -1695,13 +1695,14 @@ function ScheduleTab({ project }: { project: any }) {
       if (!editVal.trim()) return;
       await patchTask(taskId, { name: editVal.trim() });
     } else if (field === "baselineDays") {
-      // Input is in hours; convert to days (1 day = 8 hrs), minimum 1 day
-      const hrs = Math.max(1, parseInt(editVal) || 8);
+      // Input is hours; store as estimatedHours and derive baselineDays for schedule span
+      const hrs = parseFloat(editVal);
+      if (isNaN(hrs) || hrs <= 0) return; // cancel if user entered nothing valid
       const days = Math.max(1, Math.round(hrs / 8));
       const task = tasks.find(t => t.id === taskId);
       if (!task) return;
       const newFinish = addWorkingDays(new Date(task.baselineStart), days);
-      await patchTask(taskId, { baselineDays: days, baselineFinish: newFinish.toISOString() });
+      await patchTask(taskId, { baselineDays: days, estimatedHours: Math.round(hrs * 10) / 10, baselineFinish: newFinish.toISOString() });
     } else if (field === "percentComplete") {
       const pct = Math.max(0, Math.min(100, parseInt(editVal) || 0));
       await patchTask(taskId, { percentComplete: pct });
@@ -3482,6 +3483,7 @@ function ScopeControlTab({ project }: { project: any }) {
   const [selectedDocIds, setSelectedDocIds] = React.useState<Set<string>>(new Set());
   const [impactStatus, setImpactStatus] = React.useState<"idle" | "running" | "done" | "error">("idle");
   const [impactText, setImpactText] = React.useState("");
+  const [impactSummary, setImpactSummary] = React.useState<{ scope: string; schedule: string; cost: string } | null>(null);
   const impactPanelRef = React.useRef<HTMLDivElement>(null);
 
   // Bottom panel
@@ -3543,6 +3545,11 @@ function ScopeControlTab({ project }: { project: any }) {
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (docs.some((d: any) => d.fileName === file.name)) {
+      setUploadError(`"${file.name}" is already uploaded. Delete it first to replace.`);
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
     setUploadError(null);
     try {
@@ -3735,6 +3742,7 @@ function ScopeControlTab({ project }: { project: any }) {
     if (selectedDocIds.size < 2) return;
     setImpactStatus("running");
     setImpactText("");
+    setImpactSummary(null);
     setTimeout(() => impactPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     try {
       const res = await fetch(`/api/projects/${project.id}/requirements/impact`, {
@@ -3759,6 +3767,7 @@ function ScopeControlTab({ project }: { project: any }) {
           if (!line.startsWith("data: ")) continue;
           try {
             const json = JSON.parse(line.slice(6));
+            if (json.summary) setImpactSummary(json.summary);
             if (json.chunk) setImpactText(t => t + json.chunk);
             if (json.done) setImpactStatus("done");
             if (json.error) throw new Error(json.error);
@@ -3964,12 +3973,25 @@ function ScopeControlTab({ project }: { project: any }) {
             {docs.map((doc: any) => {
               const ext = (doc.fileName?.split(".").pop()?.toUpperCase() || "DOC") as string;
               const isChecked = selectedDocIds.has(doc.id);
+              const canCheck = isChecked || selectedDocIds.size < 2;
               return (
                 <div
                   key={doc.id}
-                  onClick={docs.length >= 2 ? () => setSelectedDocIds(prev => { const next = new Set(prev); if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id); return next; }) : undefined}
-                  style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", borderRadius: 8, background: isChecked ? C.primaryLight : C.surface2, border: `1px solid ${isChecked ? C.primaryBorder : C.border}`, cursor: docs.length >= 2 ? "pointer" : "default" }}
+                  style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", borderRadius: 8, background: isChecked ? C.primaryLight : C.surface2, border: `1px solid ${isChecked ? C.primaryBorder : C.border}` }}
                 >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    disabled={!canCheck}
+                    onChange={() => setSelectedDocIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(doc.id)) next.delete(doc.id);
+                      else if (next.size < 2) next.add(doc.id);
+                      return next;
+                    })}
+                    title={!canCheck ? "Deselect a document first (max 2)" : isChecked ? "Deselect" : "Select for comparison"}
+                    style={{ cursor: canCheck ? "pointer" : "not-allowed", accentColor: C.primary, flexShrink: 0, width: 14, height: 14 }}
+                  />
                   <div style={{ width: 28, height: 28, borderRadius: 5, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: C.text, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{doc.fileName}</div>
@@ -3978,9 +4000,12 @@ function ScopeControlTab({ project }: { project: any }) {
                   {!latestBaseline && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
-                      title="Delete document (only allowed before baselining)"
-                      style={{ padding: "1px 4px", border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 10, color: C.red, background: "transparent", cursor: "pointer", flexShrink: 0, lineHeight: 1.4 }}
-                    >✕</button>
+                      title="Delete document"
+                      style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", border: `1px solid ${C.red}`, borderRadius: 5, fontSize: 10, fontWeight: 600, color: C.red, background: "#fff5f5", cursor: "pointer", flexShrink: 0, lineHeight: 1.4 }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                      Delete
+                    </button>
                   )}
                 </div>
               );
@@ -4017,7 +4042,7 @@ function ScopeControlTab({ project }: { project: any }) {
             )}
             {docs.length >= 2 && selectedDocIds.size < 2 && (
               <div style={{ display: "flex", alignItems: "center", fontSize: 10, color: C.text3, fontStyle: "italic", padding: "7px 0" }}>
-                {selectedDocIds.size === 0 ? "Click docs to compare" : "Select 1 more to compare"}
+                {selectedDocIds.size === 0 ? "Check 2 docs to compare" : "Check 1 more to compare"}
               </div>
             )}
           </div>
@@ -4150,6 +4175,7 @@ function ScopeControlTab({ project }: { project: any }) {
       {/* ── Impact Analysis Results ─────────────────────────────────────────── */}
       {(impactStatus === "running" || impactStatus === "done" || impactStatus === "error") && (
         <div ref={impactPanelRef} style={{ marginTop: 16, border: `1.5px solid #4f46e5`, borderRadius: 12, overflow: "hidden", boxShadow: "0 4px 20px rgba(79,70,229,.10)" }}>
+          {/* Header */}
           <div style={{ background: "linear-gradient(90deg, #4f46e5, #7c3aed)", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>Impact Analysis</div>
@@ -4163,18 +4189,42 @@ function ScopeControlTab({ project }: { project: any }) {
               )}
               {impactStatus !== "running" && (
                 <button
-                  onClick={() => { setImpactStatus("idle"); setImpactText(""); setSelectedDocIds(new Set()); }}
+                  onClick={() => { setImpactStatus("idle"); setImpactText(""); setImpactSummary(null); setSelectedDocIds(new Set()); }}
                   style={{ background: "rgba(255,255,255,.15)", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, padding: "4px 10px", cursor: "pointer", fontWeight: 500 }}
                 >Close</button>
               )}
             </div>
           </div>
-          <div style={{ padding: "16px 18px", background: "#fafafa", maxHeight: 480, overflowY: "auto" as const }}>
+
+          {/* Summary cards — scope / schedule / cost */}
+          {(impactSummary || impactStatus === "running") && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0, borderBottom: `1px solid #e0dffe` }}>
+              {[
+                { icon: "📋", label: "Scope", key: "scope" as const, accent: "#4f46e5", bg: "#eef2ff" },
+                { icon: "📅", label: "Schedule", key: "schedule" as const, accent: "#0891b2", bg: "#ecfeff" },
+                { icon: "💰", label: "Cost", key: "cost" as const, accent: "#059669", bg: "#ecfdf5" },
+              ].map((card, i) => (
+                <div key={card.key} style={{ padding: "12px 14px", background: card.bg, borderRight: i < 2 ? "1px solid #e0dffe" : "none" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: card.accent, marginBottom: 4 }}>
+                    {card.icon} {card.label} Impact
+                  </div>
+                  {impactSummary ? (
+                    <div style={{ fontSize: 12, color: "#1e293b", lineHeight: 1.5 }}>{impactSummary[card.key]}</div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>Calculating…</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Detailed streaming text */}
+          <div style={{ padding: "16px 18px", background: "#fafafa", maxHeight: 440, overflowY: "auto" as const }}>
             {impactStatus === "error" ? (
               <div style={{ color: "#cf3f3a", fontSize: 13 }}>{impactText || "Analysis failed. Please try again."}</div>
             ) : (
               <div style={{ fontSize: 13, color: "#1a2332", lineHeight: 1.75, whiteSpace: "pre-wrap" as const }}>
-                {impactText || <span style={{ color: "#9ca3af" }}>Starting analysis…</span>}
+                {impactText || <span style={{ color: "#9ca3af" }}>Generating detailed analysis…</span>}
                 {impactStatus === "running" && <span style={{ display: "inline-block", width: 8, height: 14, background: "#4f46e5", borderRadius: 2, marginLeft: 2, verticalAlign: "text-bottom", animation: "blink-cursor 1s step-end infinite" }} />}
               </div>
             )}

@@ -79,7 +79,7 @@ export async function POST(
     ? `\nPM-confirmed requirements (${confirmedReqs.length} total):\n${confirmedReqs.slice(0, 40).map(r => `  [${r.requirementKey}] (${r.type}) ${r.statement}`).join("\n")}`
     : "\nNo requirements have been confirmed by the PM yet.";
 
-  const systemPrompt = `You are a senior PMO Scope Control Advisor reviewing project documents to identify scope impacts.
+  const detailSystemPrompt = `You are a senior PMO Scope Control Advisor reviewing project documents to identify scope impacts.
 Project: ${project.name} (${project.code ?? ""})${baselineContext}
 ${confirmedReqsContext}
 
@@ -115,10 +115,31 @@ If the documents appear to be versions of the same document type, treat the earl
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       }
       try {
+        // Step 1: fast structured summary (scope / schedule / cost) sent before streaming
+        const summaryRes = await anthropic.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 300,
+          system: `You are a PMO advisor. Return ONLY a JSON object — no markdown, no explanation — with exactly three keys:
+"scope": one sentence on scope impact (what is added, removed, or changed)
+"schedule": one sentence on schedule impact (estimated days added/saved if possible)
+"cost": one sentence on cost impact (estimated budget change if possible)
+Example: {"scope":"Adds AI recommendation engine with 3 new deliverables.","schedule":"Likely +15 working days for ML integration.","cost":"Estimated additional $120k in engineering effort."}`,
+          messages: [{ role: "user", content: `Compare these documents and summarise the impact:\n\n${docSections}` }],
+        });
+        const rawSummary = summaryRes.content[0]?.type === "text" ? summaryRes.content[0].text.trim() : "{}";
+        try {
+          const match = rawSummary.match(/\{[\s\S]*\}/);
+          const parsed = match ? JSON.parse(match[0]) : {};
+          send({ summary: { scope: parsed.scope ?? "—", schedule: parsed.schedule ?? "—", cost: parsed.cost ?? "—" } });
+        } catch {
+          send({ summary: { scope: "—", schedule: "—", cost: "—" } });
+        }
+
+        // Step 2: stream detailed analysis
         const response = await anthropic.messages.stream({
           model: "claude-sonnet-4-6",
           max_tokens: 2048,
-          system: systemPrompt,
+          system: detailSystemPrompt,
           messages: [{ role: "user", content: userPrompt }],
         });
         for await (const event of response) {
