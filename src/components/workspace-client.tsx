@@ -3478,6 +3478,7 @@ function ScopeControlTab({ project }: { project: any }) {
   // Extraction
   const [extracting, setExtracting] = React.useState(false);
   const [extractError, setExtractError] = React.useState<string | null>(null);
+  const [extractingDocIds, setExtractingDocIds] = React.useState<Set<string>>(new Set());
 
   // Impact analysis
   const [selectedDocIds, setSelectedDocIds] = React.useState<Set<string>>(new Set());
@@ -3570,12 +3571,16 @@ function ScopeControlTab({ project }: { project: any }) {
       const res = await fetch(`/api/projects/${project.id}/requirements`, { method: "POST", body: fd });
       const data = await res.json().catch(() => ({ error: "Upload failed" }));
       if (!res.ok) throw new Error(data?.error || "Upload failed");
-      setDocs(prev => [data.doc, ...prev]);
+      const newDoc = data.doc;
+      setDocs(prev => [newDoc, ...prev]);
       setShowUploadForm(false);
 
       // Auto-extract requirements from the newly uploaded document
+      // Mark this specific doc as extracting so its tile shows a spinner and its
+      // checkbox is disabled until extraction completes.
       setExtracting(true);
       setExtractError(null);
+      setExtractingDocIds(prev => { const s = new Set(prev); s.add(newDoc.id); return s; });
       try {
         const exRes = await fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" });
         const exData = await exRes.json().catch(() => ({}));
@@ -3585,6 +3590,7 @@ function ScopeControlTab({ project }: { project: any }) {
         setExtractError("Auto-extraction failed — click Extract to retry.");
       } finally {
         setExtracting(false);
+        setExtractingDocIds(prev => { const s = new Set(prev); s.delete(newDoc.id); return s; });
       }
 
       router.refresh();
@@ -4066,39 +4072,49 @@ function ScopeControlTab({ project }: { project: any }) {
           <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "flex-start" }}>
             {docs.map((doc: any) => {
               const ext = (doc.fileName?.split(".").pop()?.toUpperCase() || "DOC") as string;
+              const isExtracting = extractingDocIds.has(doc.id);
               const isChecked = selectedDocIds.has(doc.id);
-              const canCheck = isChecked || selectedDocIds.size < 2;
+              const canCheck = !isExtracting && (isChecked || selectedDocIds.size < 2);
               return (
                 <div
                   key={doc.id}
-                  style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", borderRadius: 8, background: isChecked ? C.primaryLight : C.surface2, border: `1px solid ${isChecked ? C.primaryBorder : C.border}` }}
+                  style={{ display: "flex", alignItems: "center", gap: 7, padding: "7px 10px", borderRadius: 8, background: isChecked ? C.primaryLight : C.surface2, border: `1px solid ${isChecked ? C.primaryBorder : isExtracting ? C.amber : C.border}`, opacity: isExtracting ? 0.75 : 1 }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    disabled={!canCheck}
-                    onChange={() => setSelectedDocIds(prev => {
-                      const next = new Set(prev);
-                      if (next.has(doc.id)) next.delete(doc.id);
-                      else if (next.size < 2) next.add(doc.id);
-                      return next;
-                    })}
-                    title={!canCheck ? "Deselect a document first (max 2)" : isChecked ? "Deselect" : "Select for comparison"}
-                    style={{ cursor: canCheck ? "pointer" : "not-allowed", accentColor: C.primary, flexShrink: 0, width: 14, height: 14 }}
-                  />
+                  {/* Spinner while extracting, checkbox otherwise */}
+                  {isExtracting ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+                      <circle cx="12" cy="12" r="10" stroke={C.amber} strokeWidth="2.5" strokeDasharray="31" strokeDashoffset="10" />
+                    </svg>
+                  ) : (
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      disabled={!canCheck}
+                      onChange={() => setSelectedDocIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(doc.id)) next.delete(doc.id);
+                        else if (next.size < 2) next.add(doc.id);
+                        return next;
+                      })}
+                      title={!canCheck ? "Deselect a document first (max 2)" : isChecked ? "Deselect" : "Select for comparison"}
+                      style={{ cursor: canCheck ? "pointer" : "not-allowed", accentColor: C.primary, flexShrink: 0, width: 14, height: 14 }}
+                    />
+                  )}
                   <div style={{ width: 28, height: 28, borderRadius: 5, background: EXT_COLORS[ext] || "#5b616e", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 8, fontWeight: 700, flexShrink: 0 }}>{ext}</div>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: C.text, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{doc.fileName}</div>
-                    <div style={{ fontSize: 10, color: C.text3 }}>{formatDate(doc.createdAt)}</div>
+                    <div style={{ fontSize: 10, color: isExtracting ? C.amber : C.text3 }}>{isExtracting ? "Extracting requirements…" : formatDate(doc.createdAt)}</div>
                   </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
-                    title={latestBaseline ? "Delete (may be blocked if requirements are in an active baseline)" : "Delete document"}
-                    style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", border: `1px solid ${latestBaseline ? C.border : C.red}`, borderRadius: 5, fontSize: 10, fontWeight: 600, color: latestBaseline ? C.text3 : C.red, background: latestBaseline ? C.surface2 : "#fff5f5", cursor: "pointer", flexShrink: 0, lineHeight: 1.4, opacity: loading ? 0 : 1, transition: "opacity 0.15s" }}
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    Delete
-                  </button>
+                  {!isExtracting && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDeleteDoc(doc.id, doc.fileName); }}
+                      title={latestBaseline ? "Delete (may be blocked if requirements are in an active baseline)" : "Delete document"}
+                      style={{ display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", border: `1px solid ${latestBaseline ? C.border : C.red}`, borderRadius: 5, fontSize: 10, fontWeight: 600, color: latestBaseline ? C.text3 : C.red, background: latestBaseline ? C.surface2 : "#fff5f5", cursor: "pointer", flexShrink: 0, lineHeight: 1.4, opacity: loading ? 0 : 1, transition: "opacity 0.15s" }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                      Delete
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -4122,21 +4138,38 @@ function ScopeControlTab({ project }: { project: any }) {
               </div>
             )}
 
-            {/* Impact analysis — shown inline when 2+ docs are selected */}
-            {docs.length >= 2 && selectedDocIds.size >= 2 && (
-              <button
-                onClick={runImpactAnalysis}
-                disabled={impactStatus === "running"}
-                style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", fontSize: 11, fontWeight: 600, background: impactStatus === "running" ? C.surface2 : "#4f46e5", color: impactStatus === "running" ? C.text3 : "#fff", border: "none", borderRadius: 8, cursor: impactStatus === "running" ? "not-allowed" : "pointer", opacity: impactStatus === "running" ? 0.7 : 1 }}
-              >
-                {impactStatus === "running" ? "Analysing…" : `Run Impact Analysis (${selectedDocIds.size})`}
-              </button>
-            )}
-            {docs.length >= 2 && selectedDocIds.size < 2 && (
-              <div style={{ display: "flex", alignItems: "center", fontSize: 10, color: C.text3, fontStyle: "italic", padding: "7px 0" }}>
-                {selectedDocIds.size === 0 ? "Check 2 docs to compare" : "Check 1 more to compare"}
-              </div>
-            )}
+            {/* Impact analysis — shown inline when exactly 2 ready docs are selected */}
+            {(() => {
+              const readySelected = [...selectedDocIds].filter(id => !extractingDocIds.has(id));
+              const anySelectedExtracting = [...selectedDocIds].some(id => extractingDocIds.has(id));
+              if (docs.length >= 2 && readySelected.length >= 2 && !anySelectedExtracting) {
+                return (
+                  <button
+                    onClick={runImpactAnalysis}
+                    disabled={impactStatus === "running"}
+                    style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", fontSize: 11, fontWeight: 600, background: impactStatus === "running" ? C.surface2 : "#4f46e5", color: impactStatus === "running" ? C.text3 : "#fff", border: "none", borderRadius: 8, cursor: impactStatus === "running" ? "not-allowed" : "pointer", opacity: impactStatus === "running" ? 0.7 : 1 }}
+                  >
+                    {impactStatus === "running" ? "Analysing…" : `Run Impact Analysis (${readySelected.length})`}
+                  </button>
+                );
+              }
+              if (anySelectedExtracting) {
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: C.amber, fontStyle: "italic", padding: "7px 0" }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite" }}><circle cx="12" cy="12" r="10" stroke={C.amber} strokeWidth="2.5" strokeDasharray="31" strokeDashoffset="10" /></svg>
+                    Waiting for extraction to finish…
+                  </div>
+                );
+              }
+              if (docs.length >= 2 && selectedDocIds.size < 2) {
+                return (
+                  <div style={{ display: "flex", alignItems: "center", fontSize: 10, color: C.text3, fontStyle: "italic", padding: "7px 0" }}>
+                    {selectedDocIds.size === 0 ? "Check 2 docs to compare" : "Check 1 more to compare"}
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
         </div>
 
