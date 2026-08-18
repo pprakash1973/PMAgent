@@ -2256,13 +2256,14 @@ function ScheduleTab({ project }: { project: any }) {
                     </div>
                     {!isCollapsed && (
                       <div style={{ border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 8px 8px", overflow: "hidden", background: C.surface }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "36px minmax(200px,400px) 120px 100px 150px 54px 54px 44px 44px 1fr", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${C.border}`, background: C.surface2 }}>
                           <div />
                           <div style={{ minWidth: 0, paddingRight: 8 }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Task name</span></div>
                           <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Dates</span></div>
                           <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Status</span></div>
                           <div><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Assignee</span></div>
-                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Hours</span></div>
+                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Est. Hrs</span></div>
+                          <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>Actual</span></div>
                           <div style={{ textAlign: "center" as const }}><span style={{ fontSize: 10.5, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".07em", color: C.text3 }}>%</span></div>
                           <div />
                         </div>
@@ -2281,7 +2282,7 @@ function ScheduleTab({ project }: { project: any }) {
                           const isNearCrit = cpPanelOpen && cpData && cpData.nearCriticalIds.includes(t.id);
                           return (
                             <div key={t.id} onMouseEnter={() => setHoverRowId(t.id)} onMouseLeave={() => setHoverRowId(null)}
-                              style={{ display: "grid", gridTemplateColumns: "52px minmax(200px,400px) 120px 100px 150px 50px 54px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : isNearCrit ? C.amber : isSelected ? C.primary : "transparent"}`, background: isSelected ? C.primaryLight : isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
+                              style={{ display: "grid", gridTemplateColumns: "52px minmax(200px,400px) 120px 100px 150px 54px 54px 44px 44px 1fr", alignItems: "center", minHeight: 52, borderBottom: rowIdx < phaseTasks.length - 1 ? `1px solid ${C.borderLight}` : "none", borderLeft: `3px solid ${isCrit ? C.red : isNearCrit ? C.amber : isSelected ? C.primary : "transparent"}`, background: isSelected ? C.primaryLight : isHover ? C.surface2 : "transparent", transition: "background .1s" }}>
                               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
                                 <input type="checkbox" checked={isSelected} onChange={() => !isDone && toggleTaskSelect(t.id)}
                                   onClick={e => e.stopPropagation()}
@@ -2353,6 +2354,7 @@ function ScheduleTab({ project }: { project: any }) {
                                   </>
                                 )}
                               </div>
+                              {/* Est. Hrs — editable */}
                               <div style={{ textAlign: "center" as const, cursor: "text" }}
                                 onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8)); }}>
                                 {isEditDays ? (
@@ -2360,13 +2362,14 @@ function ScheduleTab({ project }: { project: any }) {
                                     onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
                                     style={{ width: 42, height: 22, textAlign: "center", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                                 ) : (
-                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-                                    <span style={{ fontSize: 12, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
-                                    {(t as any).actualHours != null && (
-                                      <span style={{ fontSize: 10, color: C.primary, fontVariantNumeric: "tabular-nums" }}>{(t as any).actualHours}h actual</span>
-                                    )}
-                                  </div>
+                                  <span style={{ fontSize: 12, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
                                 )}
+                              </div>
+                              {/* Actual Hrs — read-only, 0 until actuals collected */}
+                              <div style={{ textAlign: "center" as const }}>
+                                <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", color: (t as any).actualHours != null && (t as any).actualHours > 0 ? C.primary : C.text3 }}>
+                                  {(t as any).actualHours != null ? `${(t as any).actualHours}h` : "0h"}
+                                </span>
                               </div>
                               <div style={{ textAlign: "center" as const, cursor: "text" }}
                                 onClick={() => { setEditCell({ taskId: t.id, field: "percentComplete" }); setEditVal(String(t.percentComplete)); }}>
@@ -2481,8 +2484,9 @@ function ScheduleTab({ project }: { project: any }) {
               <div style={{ width: GRID_W, flexShrink: 0, display: "flex", alignItems: "center" }}>
                 <div style={{ width: 28 }} />
                 <div style={{ flex: 1, padding: "7px 8px", font: `600 12px var(--font-inter),'Inter'`, color: C.text3, letterSpacing: ".05em", textTransform: "uppercase" as const }}>Task</div>
-                <div style={{ width: 60, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>Hours</div>
-                <div style={{ width: 52, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
+                <div style={{ width: 54, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>Est.</div>
+                <div style={{ width: 54, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>Actual</div>
+                <div style={{ width: 44, textAlign: "center" as const, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const }}>%</div>
                 <div style={{ width: 90, font: `600 12px var(--font-inter),'Inter'`, color: C.text3, textTransform: "uppercase" as const, padding: "7px 6px" }}>Start</div>
               </div>
               {/* Gantt header — 2 rows: month groups + week ticks */}
@@ -2578,8 +2582,8 @@ function ScheduleTab({ project }: { project: any }) {
                             )}
                           </div>
 
-                          {/* Hours */}
-                          <div style={{ width: 60, textAlign: "center" as const, cursor: "text" }}
+                          {/* Est. Hrs — editable */}
+                          <div style={{ width: 54, textAlign: "center" as const, cursor: "text" }}
                             onClick={() => { setEditCell({ taskId: t.id, field: "baselineDays" }); setEditVal(String(t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8)); }}>
                             {isEditDays ? (
                               <input autoFocus type="number" min={1} step={4} value={editVal}
@@ -2588,17 +2592,18 @@ function ScheduleTab({ project }: { project: any }) {
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
                                 style={{ width: 44, height: 22, textAlign: "center", fontSize: 14, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                             ) : (
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-                                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: C.text2 }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
-                                {(t as any).actualHours != null && (
-                                  <span style={{ fontSize: 10, color: C.primary }}>{(t as any).actualHours}h actual</span>
-                                )}
-                              </div>
+                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: C.text2 }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
                             )}
+                          </div>
+                          {/* Actual Hrs — read-only */}
+                          <div style={{ width: 54, textAlign: "center" as const }}>
+                            <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: (t as any).actualHours != null && (t as any).actualHours > 0 ? C.primary : C.text3 }}>
+                              {(t as any).actualHours != null ? `${(t as any).actualHours}h` : "0h"}
+                            </span>
                           </div>
 
                           {/* % */}
-                          <div style={{ width: 52, textAlign: "center" as const, cursor: "text" }}
+                          <div style={{ width: 44, textAlign: "center" as const, cursor: "text" }}
                             onClick={() => { setEditCell({ taskId: t.id, field: "percentComplete" }); setEditVal(String(t.percentComplete)); }}>
                             {isEditPct ? (
                               <input autoFocus type="number" min={0} max={100} value={editVal}
