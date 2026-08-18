@@ -44,25 +44,6 @@ function spiColor(spi: number | null) {
   return { text: "#cf3f3a", bg: "#fbe4e2" };
 }
 
-function computeProjectEVM(tasks: { baselineStart: Date | null; baselineFinish: Date | null; baselineDays: number; percentComplete: number }[]) {
-  if (tasks.length === 0) return null;
-  const now = Date.now();
-  let pv = 0, ev = 0;
-  for (const t of tasks) {
-    if (!t.baselineStart || !t.baselineFinish) continue;
-    const s = new Date(t.baselineStart).getTime();
-    const f = new Date(t.baselineFinish).getTime();
-    const dur = f - s;
-    const plannedPct = now <= s ? 0 : now >= f ? 1 : dur > 0 ? (now - s) / dur : 0;
-    pv += t.baselineDays * plannedPct;
-    ev += t.baselineDays * (t.percentComplete / 100);
-  }
-  if (pv === 0 && ev === 0) return null;
-  const spi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
-  const sv = Math.round((ev - pv) * 10) / 10;
-  const overallPct = Math.round(tasks.reduce((s, t) => s + t.percentComplete, 0) / tasks.length);
-  return { pv: Math.round(pv * 10) / 10, ev: Math.round(ev * 10) / 10, sv, spi, overallPct };
-}
 
 // Rule-based why-diagnosis for DH red digest (same logic as dm/triage whyDiagnosis)
 function computeWhyDiagnosis(p: {
@@ -316,16 +297,20 @@ export default async function ExecutivePage() {
     include: {
       pmOwner: { select: { fullName: true } },
       statusReports: { orderBy: { reportDate: "desc" }, take: 1, include: { healthScore: true } },
-      scheduleTasks: { select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true } },
+      scheduleTasks: { select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true, estimatedHours: true, plannedCost: true } },
+      costEntries: { select: { amount: true } },
       _count: { select: { risks: true } },
     },
   });
 
-  // Compute live EVM per project
-  const projectsWithEVM = projects.map(p => ({
-    ...p,
-    liveEVM: computeProjectEVM(p.scheduleTasks),
-  }));
+  // Compute live EVM per project via shared computeEvm (single source of truth)
+  const projectsWithEVM = projects.map(p => {
+    const evm = computeEvm(p.scheduleTasks, p.costEntries, p.budget);
+    const overallPct = p.scheduleTasks.length
+      ? Math.round(p.scheduleTasks.reduce((s, t) => s + t.percentComplete, 0) / p.scheduleTasks.length)
+      : null;
+    return { ...p, liveEVM: evm.taskCount > 0 ? { ...evm, overallPct } : null };
+  });
 
   // Portfolio KPIs — use effectiveHealth so SPI-derived degradation shows immediately
   const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
@@ -448,7 +433,7 @@ export default async function ExecutivePage() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f7f8fa" }}>
-                {["Project", "PM", "Phase", "Method", "Budget", "SPI", "SV", "% Done", "Health", "Risks"].map(h => (
+                {["Project", "PM", "Phase", "Method", "Budget", "SPI", "SV (hrs)", "% Done", "Health", "Risks"].map(h => (
                   <th key={h} style={{ textAlign: "left" as const, padding: "9px 14px", fontSize: 10, fontWeight: 600, color: "#8a909c", letterSpacing: ".05em", textTransform: "uppercase" as const, whiteSpace: "nowrap" as const }}>{h}</th>
                 ))}
               </tr>
@@ -463,8 +448,8 @@ export default async function ExecutivePage() {
                 })
                 .map(p => {
                   const spi = p.liveEVM?.spi ?? p.statusReports[0]?.healthScore?.spi ?? null;
-                  const sv = p.liveEVM?.sv;
-                  const overallPct = p.liveEVM?.overallPct;
+                  const svHrs = p.liveEVM?.svHours ?? null;
+                  const overallPct = p.liveEVM?.overallPct ?? null;
                   const spiC = spiColor(spi);
                   return (
                     <tr key={p.id} style={{ borderTop: "1px solid #eceef2" }}>
@@ -486,8 +471,8 @@ export default async function ExecutivePage() {
                           </div>
                         ) : <span style={{ color: "#c5cadb", fontSize: 13 }}>—</span>}
                       </td>
-                      <td style={{ padding: "13px 14px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: sv != null ? (sv >= 0 ? "#158a5a" : "#cf3f3a") : "#8a909c", whiteSpace: "nowrap" as const }}>
-                        {sv != null ? `${sv >= 0 ? "+" : ""}${sv.toFixed(1)}d` : "—"}
+                      <td style={{ padding: "13px 14px", fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, color: svHrs != null ? (svHrs >= 0 ? "#158a5a" : "#cf3f3a") : "#8a909c", whiteSpace: "nowrap" as const }}>
+                        {svHrs != null ? `${svHrs >= 0 ? "+" : ""}${svHrs}h` : "—"}
                       </td>
                       <td style={{ padding: "13px 14px" }}>
                         {overallPct != null ? (

@@ -5664,23 +5664,18 @@ function OverviewTab({ project }: { project: any }) {
   const compositeScore: number | null = hs?.compositeScore ?? null;
   const bac: number | null = project.budget ?? null;
 
-  // Fetch live EVM so Overview always matches Cost tab and Schedule tab
+  // Fetch live EVM — single source of truth via computeEvm (same formula as Cost tab and DH view)
   const [liveEvm, setLiveEvm] = React.useState<any>(null);
-  const [liveKpi, setLiveKpi] = React.useState<any>(null);
   React.useEffect(() => {
     fetch(`/api/projects/${project.id}/costs/burndown`)
       .then(r => r.ok ? r.json() : null)
       .then(d => d && setLiveEvm(d.summary))
       .catch(() => {});
-    fetch(`/api/projects/${project.id}/schedule`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => d && setLiveKpi(d.kpi))
-      .catch(() => {});
   }, [project.id]);
 
   // Live values take precedence over stale healthScore snapshot
-  const cpi: number | null = liveEvm?.cpi ?? hs?.cpi ?? (latest?.budgetVariance != null ? 1 + latest.budgetVariance / 100 : null);
-  const spi: number | null = liveKpi?.spi ?? liveEvm?.spi ?? hs?.spi ?? (latest?.scheduleVariance != null ? 1 + latest.scheduleVariance / 100 : null);
+  const cpi: number | null = liveEvm?.cpi ?? hs?.cpi ?? null;
+  const spi: number | null = liveEvm?.spi ?? hs?.spi ?? null;
   const ev: number | null = liveEvm?.totalEV ?? hs?.ev ?? null;
   const ac: number | null = liveEvm?.totalAC ?? hs?.ac ?? null;
   const pv: number | null = liveEvm?.pvNow ?? hs?.pv ?? null;
@@ -5707,8 +5702,9 @@ function OverviewTab({ project }: { project: any }) {
   const fmt2 = (v: number | null) => v === null ? "—" : v.toFixed(2);
   const fmtK = (v: number | null) => v === null ? "—" : `$${Math.round(v / 1000)}K`;
   const budgetPct = bac && ac && ac > 0 ? Math.round((ac / bac) * 100) : null;
-  // Schedule %: weighted avg task % complete (most intuitive); fall back to EV/BAC then milestone
-  const evPct = liveKpi?.completionPct ?? (bac && bac > 0 && ev != null && ev >= 0 ? Math.min(100, Math.round((ev / bac) * 100))
+  // Schedule %: task-completion % from schedCompletionPct (0/100 rule), fall back to EV/BAC or EV/PV
+  const evPct = liveEvm?.schedCompletionPct != null ? liveEvm.schedCompletionPct
+    : (bac && bac > 0 && ev != null && ev >= 0 ? Math.min(100, Math.round((ev / bac) * 100))
     : pv && ev ? Math.min(100, Math.round((ev / pv) * 100)) : null);
   const highRisks = risks.filter((r: any) => ["high", "very_high"].includes(r.probability ?? "")).length;
   const critIssues = issues.filter((i: any) => ["critical", "high"].includes(i.severity ?? "")).length;

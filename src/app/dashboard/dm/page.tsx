@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { computeEvm } from "@/lib/evm";
 import { getProductivityStatsForProjects } from "@/lib/productivity";
 import { DmTriageClient } from "./dm-triage-client";
 
@@ -102,6 +103,9 @@ export default async function DmTriagePage() {
         take: 4,
         include: { healthScore: true },
       },
+      scheduleTasks: {
+        select: { baselineStart: true, baselineFinish: true, baselineDays: true, percentComplete: true, estimatedHours: true, plannedCost: true },
+      },
       costEntries: { select: { amount: true } },
       _count: {
         select: {
@@ -200,8 +204,10 @@ export default async function DmTriagePage() {
     const latestReport = p.statusReports[0] ?? null;
     const hs = latestReport?.healthScore ?? null;
     const hasRecentReport = latestReport !== null && latestReport.reportDate >= fourteenDaysAgo;
-    const spi = hs?.spi ?? null;
-    const cpi = hs?.cpi ?? null;
+    // Live EVM via shared utility — same formula as PM burndown endpoint and DH view
+    const evm = computeEvm(p.scheduleTasks, p.costEntries, p.budget);
+    const spi = isAgile ? null : (evm.spi ?? hs?.spi ?? null);
+    const cpi = isAgile ? null : (evm.cpi ?? hs?.cpi ?? null);
     const composite = hs?.compositeScore ?? null;
     const openAI = actionItemCountMap[p.id] ?? 0;
     const highR = p._count.risks;
@@ -219,8 +225,8 @@ export default async function DmTriagePage() {
     const cpiTrend = trendReports.map(r => r.healthScore?.cpi ?? null);
     const compositeTrend = trendReports.map(r => r.healthScore?.compositeScore ?? null);
 
-    // Burn %
-    const totalSpent = p.costEntries.reduce((s, e) => s + e.amount, 0);
+    // Burn % from live EVM (already summed AC)
+    const totalSpent = evm.totalAC;
     const burnPct = (p.budget && p.budget > 0) ? Math.round((totalSpent / p.budget) * 100) : null;
 
     // Next milestone

@@ -87,6 +87,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       vac,
       cv:  evm.cv,
       sv:  evm.sv,
+      schedCompletionPct: evm.schedCompletionPct,
       percentSpent: bac > 0 ? Math.round((totalAC / bac) * 1000) / 10 : 0,
       currency: project.currency ?? "USD",
     },
