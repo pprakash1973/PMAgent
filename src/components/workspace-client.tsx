@@ -2175,10 +2175,12 @@ function ScheduleTab({ project }: { project: any }) {
               const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
               const toHrs = (h: number) => `${Math.round(h)}h`;
-              // AC = all actual hours worked to date (across all tasks, regardless of status)
               const actualEffort = tasks.reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
+              // EVM uses closed tasks only: AC = actual hrs of 100%-complete tasks
+              const ac = tasks
+                .filter(t => t.percentComplete === 100 || t.status === "complete")
+                .reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
               const evHrs = kpi?.ev ?? null;
-              const ac = actualEffort;
               const cv = evHrs != null && ac > 0 ? evHrs - ac : null;
               const cvColor = cv == null ? C.text2 : cv >= 0 ? C.green : C.red;
               const cvBg    = cv == null ? C.surface2 : cv >= 0 ? C.greenLight : C.redLight;
