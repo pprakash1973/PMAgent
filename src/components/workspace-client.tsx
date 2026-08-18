@@ -5330,21 +5330,17 @@ function CostTab({ project }: { project: any }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* ── KPI strip ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
           {(() => {
-            const budget = project.budget ?? null;
-            const cv  = s ? s.totalEV - s.totalAC : null;
-            const eac = s?.cpi != null && s.cpi > 0 && budget ? budget / s.cpi : null;
-            const cvColor = cv == null ? C.text : cv >= 0 ? C.green : C.red;
-            const cvBg    = cv == null ? C.surface2 : cv >= 0 ? C.greenLight : C.redLight;
-            const budgetUsedPct = budget && s?.totalAC ? Math.round((s.totalAC / budget) * 100) : null;
+            const totalBudget = project.budget ?? null;
+            const burnt = totalLogged;
+            const burntPct = totalBudget && totalBudget > 0 ? Math.round((burnt / totalBudget) * 100) : null;
+            const pctColor = burntPct == null ? C.text2 : burntPct <= 80 ? C.green : burntPct <= 100 ? C.amber : C.red;
+            const pctBg    = burntPct == null ? C.surface2 : burntPct <= 80 ? C.greenLight : burntPct <= 100 ? C.amberLight : C.redLight;
             return [
-              { label: "Budget", value: budget != null ? fmt$(budget, currency) : "—", sub: budgetUsedPct != null ? `${budgetUsedPct}% consumed · from Project Info` : "Set in Project Info", color: C.primary, bg: "#EDF5F6" },
-              { label: "EV",  value: s ? fmt$(s.totalEV, currency) : "—", sub: "Earned Value — budgeted cost of work performed",       color: TEAL,     bg: TEAL_BG  },
-              { label: "AC",  value: s ? fmt$(s.totalAC, currency) : "—", sub: "Actual Cost — actual cost of work performed to date",   color: C.text,   bg: C.surface2 },
-              { label: "CV",  value: cv != null ? fmt$(cv, currency) : "—", sub: cv == null ? "CV = EV − AC" : cv >= 0 ? "Under budget ✓" : "Over budget", color: cvColor, bg: cvBg },
-              { label: "CPI", value: s ? (s.cpi != null ? s.cpi.toFixed(2) : "—") : "—", sub: s?.cpi != null ? (s.cpi >= 1 ? "Under budget ✓  (CPI = EV ÷ AC)" : "Over budget  (CPI = EV ÷ AC)") : "CPI = EV ÷ AC  (log costs to calculate)", color: cpiColor, bg: !s || s.cpi == null ? C.surface2 : s.cpi >= 1 ? C.greenLight : s.cpi >= 0.9 ? C.amberLight : C.redLight },
-              { label: "EAC", value: eac != null ? fmt$(eac, currency) : "—", sub: "Estimate at Completion = Budget ÷ CPI", color: C.text2, bg: C.surface2 },
+              { label: "Total Budget",  value: totalBudget != null ? fmt$(totalBudget, currency) : "—", sub: "Original budget + approved CRs", color: C.primary, bg: C.primaryLight },
+              { label: "Budget Burnt",  value: fmt$(burnt, currency),  sub: "Sum of all cost entries logged",          color: C.text,   bg: C.surface2 },
+              { label: "Burnt %",       value: burntPct != null ? `${burntPct}%` : "—",            sub: burntPct != null ? (burntPct <= 100 ? "Within budget" : "Over budget") : "Log costs to calculate", color: pctColor, bg: pctBg },
             ];
           })().map((k) => (
             <div key={k.label} style={{ background: k.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
