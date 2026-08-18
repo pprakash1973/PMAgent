@@ -2174,7 +2174,7 @@ function ScheduleTab({ project }: { project: any }) {
               const sv = kpi?.ev != null && kpi?.pv != null ? kpi.ev - kpi.pv : null;
               const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
-              const toHrs = (d: number) => `${(d * 8).toFixed(0)}h`;
+              const toHrs = (h: number) => `${Math.round(h)}h`;
               const actualEffort = tasks.reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
               // Hours-based cost metrics: AC = actual hrs of closed tasks, EV already in hours
               const closedActualHours = tasks
