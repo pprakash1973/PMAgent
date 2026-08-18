@@ -2176,15 +2176,19 @@ function ScheduleTab({ project }: { project: any }) {
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
               const toHrs = (d: number) => `${(d * 8).toFixed(0)}h`;
               const actualEffort = tasks.reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
-              const cur = project.currency ?? "USD";
-              const cs = costSummary;
-              const cv$ = cs ? cs.totalEV - cs.totalAC : null;
-              const cv$Color = cv$ == null ? C.text2 : cv$ >= 0 ? C.green : C.red;
-              const cv$Bg    = cv$ == null ? C.surface2 : cv$ >= 0 ? C.greenLight : C.redLight;
-              const cpi = cs?.cpi ?? null;
+              // Hours-based cost metrics: AC = actual hrs of closed tasks, EV already in hours
+              const closedActualHours = tasks
+                .filter(t => t.percentComplete === 100 || t.status === "complete")
+                .reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
+              const evHrs = kpi?.ev ?? null;
+              const cv = evHrs != null && closedActualHours > 0 ? evHrs - closedActualHours : null;
+              const cvColor = cv == null ? C.text2 : cv >= 0 ? C.green : C.red;
+              const cvBg    = cv == null ? C.surface2 : cv >= 0 ? C.greenLight : C.redLight;
+              const cpi = evHrs != null && closedActualHours > 0 ? evHrs / closedActualHours : null;
               const cpiColor = cpi == null ? C.text2 : cpi >= 1 ? C.green : cpi >= 0.9 ? C.amber : C.red;
               const cpiBg    = cpi == null ? C.surface2 : cpi >= 1 ? C.greenLight : cpi >= 0.9 ? C.amberLight : C.redLight;
               const bac = project.budget ?? null;
+              const cur = project.currency ?? "USD";
               const eac = cpi != null && cpi > 0 && bac ? bac / cpi : null;
               return [
                 { label: "PV",  value: kpi?.pv  != null ? toHrs(kpi.pv)  : "—", sub: "Planned value",   color: C.text2, bg: C.surface2 },
@@ -2192,9 +2196,9 @@ function ScheduleTab({ project }: { project: any }) {
                 { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${toHrs(sv)}` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead ✓" : "Behind", color: svColor, bg: svBg },
                 { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "On track ✓" : kpi.spi >= 0.9 ? "Slightly behind" : "Behind", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.9 ? C.amberLight : C.redLight },
                 { label: "Actual Effort", value: actualEffort > 0 ? `${actualEffort.toFixed(1)}h` : "—", sub: "Sum of actual hrs", color: C.text2, bg: C.surface2 },
-                { label: "CV",  value: cv$ != null ? formatCurrency(cv$, cur) : "—", sub: cv$ == null ? "CV = EV − AC (log costs)" : cv$ >= 0 ? "Under budget ✓" : "Over budget", color: cv$Color, bg: cv$Bg },
-                { label: "CPI", value: cpi != null ? cpi.toFixed(2) : "—", sub: cpi == null ? "CPI = EV ÷ AC (log costs)" : cpi >= 1 ? "Under budget ✓" : "Over budget", color: cpiColor, bg: cpiBg },
-                { label: "EAC", value: eac != null ? formatCurrency(eac, cur) : "—", sub: "BAC ÷ CPI — Estimate at Completion", color: C.text2, bg: C.surface2 },
+                { label: "CV",  value: cv != null ? `${cv >= 0 ? "+" : ""}${cv.toFixed(1)}h` : "—", sub: cv == null ? "EV − Actual (closed tasks)" : cv >= 0 ? "Efficient ✓" : "Over effort", color: cvColor, bg: cvBg },
+                { label: "CPI", value: cpi != null ? cpi.toFixed(2) : "—", sub: cpi == null ? "EV ÷ Actual (closed tasks)" : cpi >= 1 ? "Efficient ✓" : "Over effort", color: cpiColor, bg: cpiBg },
+                { label: "EAC", value: eac != null ? formatCurrency(eac, cur) : "—", sub: "Budget ÷ CPI — Estimate at Completion", color: C.text2, bg: C.surface2 },
               ];
             })().map(k => (
               <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 10, padding: "11px 13px" }}>
