@@ -2176,9 +2176,10 @@ function ScheduleTab({ project }: { project: any }) {
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
               const toHrs = (h: number) => `${Math.round(h)}h`;
               const actualEffort = tasks.reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
-              // EVM uses closed tasks only: AC = actual hrs of 100%-complete tasks
+              // EVM closed tasks: use percentComplete===100 as the authoritative flag
+              // (status can be "complete" or "completed" depending on how task was closed)
               const ac = tasks
-                .filter(t => t.percentComplete === 100 || t.status === "complete")
+                .filter(t => t.percentComplete === 100)
                 .reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
               const evHrs = kpi?.ev ?? null;
               const cv = evHrs != null && ac > 0 ? evHrs - ac : null;
@@ -2190,13 +2191,14 @@ function ScheduleTab({ project }: { project: any }) {
               const bac = project.budget ?? null;
               const cur = project.currency ?? "USD";
               const eac = cpi != null && cpi > 0 && bac ? bac / cpi : null;
+              const rnd = (n: number) => `${Math.round(n)}h`;
               return [
                 { label: "PV",  value: kpi?.pv  != null ? toHrs(kpi.pv)  : "—", sub: "Planned value",   color: C.text2, bg: C.surface2 },
                 { label: "EV",  value: kpi?.ev  != null ? toHrs(kpi.ev)  : "—", sub: "Earned value",    color: C.primary, bg: C.primaryLight },
                 { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${toHrs(sv)}` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead ✓" : "Behind", color: svColor, bg: svBg },
                 { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "On track ✓" : kpi.spi >= 0.9 ? "Slightly behind" : "Behind", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.9 ? C.amberLight : C.redLight },
-                { label: "Actual Effort", value: actualEffort > 0 ? `${actualEffort.toFixed(1)}h` : "—", sub: "Sum of actual hrs", color: C.text2, bg: C.surface2 },
-                { label: "CV",  value: cv != null ? `${cv >= 0 ? "+" : ""}${cv.toFixed(1)}h` : "—", sub: cv == null ? "EV − Actual (closed tasks)" : cv >= 0 ? "Efficient ✓" : "Over effort", color: cvColor, bg: cvBg },
+                { label: "Actual Effort", value: actualEffort > 0 ? rnd(actualEffort) : "—", sub: "Sum of actual hrs", color: C.text2, bg: C.surface2 },
+                { label: "CV",  value: cv != null ? `${cv >= 0 ? "+" : ""}${rnd(cv)}` : "—", sub: cv == null ? "EV − Actual (closed tasks)" : cv >= 0 ? "Efficient ✓" : "Over effort", color: cvColor, bg: cvBg },
                 { label: "CPI", value: cpi != null ? cpi.toFixed(2) : "—", sub: cpi == null ? "EV ÷ Actual (closed tasks)" : cpi >= 1 ? "Efficient ✓" : "Over effort", color: cpiColor, bg: cpiBg },
                 { label: "EAC", value: eac != null ? formatCurrency(eac, cur) : "—", sub: "Budget ÷ CPI — Estimate at Completion", color: C.text2, bg: C.surface2 },
               ];
