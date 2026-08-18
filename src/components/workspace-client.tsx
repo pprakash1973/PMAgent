@@ -1676,6 +1676,40 @@ function ScheduleTab({ project }: { project: any }) {
     setGenerating(false);
   }
 
+  function computeKpiFromTasks(taskList: any[]) {
+    const today = Date.now();
+    let totalPV = 0, totalEV = 0, totalAC = 0, totalActualEffort = 0;
+    let totalHours = 0, weightedPct = 0;
+    for (const t of taskList) {
+      const weight = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 0) * 8;
+      const actualHrs = t.actualHours != null ? Number(t.actualHours) : 0;
+      if (!weight || !t.baselineStart || !t.baselineFinish) continue;
+      const s = new Date(t.baselineStart).getTime();
+      const f = new Date(t.baselineFinish).getTime();
+      if (isNaN(s) || isNaN(f) || f <= s) continue;
+      const plannedPct = today <= s ? 0 : today >= f ? 1 : (today - s) / (f - s);
+      totalPV += weight * plannedPct;
+      if (t.percentComplete === 100) {
+        totalEV += weight;
+        totalAC += actualHrs;
+        totalActualEffort += actualHrs;
+      }
+      totalHours += weight;
+      weightedPct += weight * (t.percentComplete / 100);
+    }
+    const spi = totalPV > 0 ? Math.round((totalEV / totalPV) * 100) / 100 : null;
+    const completionPct = totalHours > 0 ? Math.round((weightedPct / totalHours) * 100) : null;
+    return {
+      pv: Math.round(totalPV * 10) / 10,
+      ev: Math.round(totalEV * 10) / 10,
+      ac: Math.round(totalAC * 10) / 10,
+      sv: Math.round((totalEV - totalPV) * 10) / 10,
+      spi,
+      completionPct,
+      totalActualEffort: Math.round(totalActualEffort * 10) / 10,
+    };
+  }
+
   async function patchTask(taskId: string, body: Record<string, unknown>) {
     setSavingId(taskId);
     const res = await fetch(`/api/projects/${project.id}/schedule/${taskId}`, {
@@ -1684,10 +1718,15 @@ function ScheduleTab({ project }: { project: any }) {
     });
     if (res.ok) {
       const updated = await res.json();
-      setTasks(ts => ts.map(t => t.id === taskId ? { ...t, ...updated } : t));
-      if (body.percentComplete !== undefined) {
-        const d = await (await fetch(`/api/projects/${project.id}/schedule`)).json();
-        setKpi(d.kpi ?? null);
+      const newTasks = tasks.map(t => t.id === taskId ? { ...t, ...updated } : t);
+      setTasks(newTasks);
+      if (
+        body.percentComplete !== undefined ||
+        body.actualHours !== undefined ||
+        body.estimatedHours !== undefined ||
+        body.baselineDays !== undefined
+      ) {
+        setKpi(computeKpiFromTasks(newTasks));
       }
     }
     setSavingId(null);
