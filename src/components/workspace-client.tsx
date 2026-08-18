@@ -3635,12 +3635,12 @@ function ScopeControlTab({ project }: { project: any }) {
     ? ((latestBaseline.snapshot as any[]) ?? []).map((r: any) => r.requirementKey)
     : [];
 
-  // A doc uploaded before (or at) the latest baseline creation time is considered locked.
-  // This is more reliable than joining through sourceDocId (which can be null for older rows).
-  const baselineTs = latestBaseline ? new Date(latestBaseline.createdAt).getTime() : null;
+  // A doc is locked only if at least one of its requirements is captured in the current baseline.
+  // Timestamp comparison was too broad — it blocked deletion of docs whose reqs were never baselined.
+  const baselineReqKeys = new Set(blSnapshot);
   function isDocLocked(doc: any): boolean {
-    if (!baselineTs) return false;
-    return new Date(doc.createdAt).getTime() <= baselineTs;
+    if (!latestBaseline || baselineReqKeys.size === 0) return false;
+    return reqs.some(r => r.sourceDocId === doc.id && baselineReqKeys.has(r.requirementKey));
   }
 
   const activeReqs = reqs.filter(r => r.isActive && r.status !== "rejected");
@@ -3691,14 +3691,18 @@ function ScopeControlTab({ project }: { project: any }) {
       setDocs(prev => [newDoc, ...prev]);
       setShowUploadForm(false);
 
-      // Auto-extract requirements from the newly uploaded document
+      // Auto-extract requirements from the newly uploaded document only (scoped extraction)
       // Mark this specific doc as extracting so its tile shows a spinner and its
       // checkbox is disabled until extraction completes.
       setExtracting(true);
       setExtractError(null);
       setExtractingDocIds(prev => { const s = new Set(prev); s.add(newDoc.id); return s; });
       try {
-        const exRes = await fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" });
+        const exRes = await fetch(`/api/projects/${project.id}/requirements/extract`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentId: newDoc.id }),
+        });
         const exData = await exRes.json().catch(() => ({}));
         if (exRes.ok) await loadData();
         else setExtractError(exData.error || "Auto-extraction failed — click Extract to retry.");
@@ -3900,7 +3904,7 @@ function ScopeControlTab({ project }: { project: any }) {
   }
 
   async function runImpactAnalysis() {
-    if (selectedDocIds.size < 2) return;
+    if (selectedDocIds.size < 1) return;
     setImpactStatus("running");
     setImpactText("");
     setImpactSummary(null);
@@ -4266,14 +4270,17 @@ function ScopeControlTab({ project }: { project: any }) {
             {(() => {
               const readySelected = [...selectedDocIds].filter(id => !extractingDocIds.has(id));
               const anySelectedExtracting = [...selectedDocIds].some(id => extractingDocIds.has(id));
-              if (docs.length >= 2 && readySelected.length >= 2 && !anySelectedExtracting) {
+              if (readySelected.length >= 1 && !anySelectedExtracting) {
+                const label = readySelected.length === 1
+                  ? "Run Impact Analysis (vs baseline)"
+                  : `Run Impact Analysis (${readySelected.length} docs)`;
                 return (
                   <button
                     onClick={runImpactAnalysis}
                     disabled={impactStatus === "running"}
                     style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", fontSize: 11, fontWeight: 600, background: impactStatus === "running" ? C.surface2 : "#4f46e5", color: impactStatus === "running" ? C.text3 : "#fff", border: "none", borderRadius: 8, cursor: impactStatus === "running" ? "not-allowed" : "pointer", opacity: impactStatus === "running" ? 0.7 : 1 }}
                   >
-                    {impactStatus === "running" ? "Analysing…" : `Run Impact Analysis (${readySelected.length})`}
+                    {impactStatus === "running" ? "Analysing…" : label}
                   </button>
                 );
               }
@@ -4285,10 +4292,10 @@ function ScopeControlTab({ project }: { project: any }) {
                   </div>
                 );
               }
-              if (docs.length >= 2 && selectedDocIds.size < 2) {
+              if (docs.length >= 1 && selectedDocIds.size === 0) {
                 return (
                   <div style={{ display: "flex", alignItems: "center", fontSize: 10, color: C.text3, fontStyle: "italic", padding: "7px 0" }}>
-                    {selectedDocIds.size === 0 ? "Check 2 docs to compare" : "Check 1 more to compare"}
+                    Check a doc to analyse its impact on your baseline
                   </div>
                 );
               }
@@ -4674,7 +4681,7 @@ function RequirementsTab({ project }: { project: any }) {
   }
 
   async function runImpactAnalysis() {
-    if (selectedDocIds.size < 2) return;
+    if (selectedDocIds.size < 1) return;
     setImpactStatus("running");
     setImpactText("");
     setTimeout(() => impactPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);

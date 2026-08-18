@@ -35,8 +35,8 @@ export async function POST(
   const { id } = await params;
   const { documentIds } = await req.json();
 
-  if (!Array.isArray(documentIds) || documentIds.length < 2) {
-    return NextResponse.json({ error: "Select at least 2 documents to compare" }, { status: 400 });
+  if (!Array.isArray(documentIds) || documentIds.length < 1) {
+    return NextResponse.json({ error: "Select at least 1 document to analyse" }, { status: 400 });
   }
   if (documentIds.length > 8) {
     return NextResponse.json({ error: "Maximum 8 documents per analysis" }, { status: 400 });
@@ -62,14 +62,55 @@ export async function POST(
   ]);
 
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  if (docs.length < 2) return NextResponse.json({ error: "Could not load the selected documents" }, { status: 404 });
+  if (docs.length < 1) {
+    return NextResponse.json(
+      { error: "Could not load the selected document. It may have been deleted — please re-upload and try again." },
+      { status: 404 }
+    );
+  }
+
+  // For each doc, prefer extractedContent; fall back to its DocumentChunk text
+  async function getDocText(doc: any): Promise<string> {
+    const extracted = formatExtracted(doc.extractedContent);
+    if (extracted !== "(no structured content extracted)" && extracted.length > 40) return extracted;
+    // Fall back to chunk text (up to 8 000 chars)
+    const chunks = await prisma.documentChunk.findMany({
+      where: { documentId: doc.id },
+      orderBy: { chunkIndex: "asc" },
+      select: { text: true },
+      take: 30,
+    });
+    if (chunks.length === 0) return "(no content available)";
+    let text = "";
+    for (const c of chunks) {
+      if (text.length + c.text.length > 8000) break;
+      text += c.text + "\n";
+    }
+    return text.trim();
+  }
+
+  const docTexts = await Promise.all(docs.map(getDocText));
 
   // Build the document corpus
-  const docSections = docs.map((doc: any, i: number) => {
+  // Single-doc mode: synthesise a "current baseline" section from confirmed requirements
+  let docSections: string;
+  if (docs.length === 1) {
+    const baselineSection = confirmedReqs.length > 0
+      ? `--- Document 1: Current Confirmed Baseline (${confirmedReqs.length} requirements) ---\n` +
+        confirmedReqs.map(r => `[${r.requirementKey}] (${r.type}) ${r.statement}`).join("\n")
+      : "--- Document 1: Current Baseline ---\n(No confirmed requirements yet — treat this as a new project scope)";
+    const doc = docs[0];
     const label = DOC_CLASS_LABEL[doc.docClass] ?? "Document";
     const date = new Date(doc.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-    return `--- Document ${i + 1}: ${label} (${doc.fileName}, uploaded ${date}) ---\n${formatExtracted(doc.extractedContent)}`;
-  }).join("\n\n");
+    const newDocSection = `--- Document 2: ${label} (${doc.fileName}, uploaded ${date}) ---\n${docTexts[0]}`;
+    docSections = [baselineSection, newDocSection].join("\n\n");
+  } else {
+    docSections = docs.map((doc: any, i: number) => {
+      const label = DOC_CLASS_LABEL[doc.docClass] ?? "Document";
+      const date = new Date(doc.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      return `--- Document ${i + 1}: ${label} (${doc.fileName}, uploaded ${date}) ---\n${docTexts[i]}`;
+    }).join("\n\n");
+  }
 
   const baselineContext = currentSnapshot
     ? `\nThe project has an active Performance Measurement Baseline (PMB Snapshot #${currentSnapshot.snapshotNumber}: "${currentSnapshot.label}", established ${new Date(currentSnapshot.baselinedAt).toLocaleDateString()}).`

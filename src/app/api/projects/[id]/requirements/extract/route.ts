@@ -16,7 +16,7 @@ interface ExtractedRequirement {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
@@ -26,12 +26,21 @@ export async function POST(
   const project = await prisma.project.findUnique({ where: { id }, select: { id: true, name: true } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  // Pull all ready chunks for this project (up to 150 for extraction)
+  // Optional: scope extraction to a specific document (used on upload auto-extract)
+  let documentId: string | undefined;
+  try { documentId = (await req.json())?.documentId ?? undefined; } catch { /* no body */ }
+
+  // Pull chunks — if a specific doc is given, only from that doc;
+  // otherwise from all non-deleted docs (prevents stale chunks from soft-deleted docs)
+  const chunkWhere: any = documentId
+    ? { projectId: id, documentId }
+    : { projectId: id, document: { deletedAt: null } };
+
   const chunks = await prisma.documentChunk.findMany({
-    where: { projectId: id },
+    where: chunkWhere,
     orderBy: [{ documentId: "asc" }, { chunkIndex: "asc" }],
     take: 150,
-    select: { id: true, text: true, sectionTitle: true, pageNumber: true },
+    select: { id: true, text: true, sectionTitle: true, pageNumber: true, documentId: true },
   });
 
   if (chunks.length === 0) {
@@ -80,16 +89,20 @@ Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "..
     return NextResponse.json({ error: "Extraction failed — AI did not return valid JSON" }, { status: 500 });
   }
 
-  // Find chunk IDs that best match each sourceQuote
-  const chunkTextMap = chunks.map(c => ({ id: c.id, text: c.text.toLowerCase() }));
+  // Find chunk + document that best matches each sourceQuote
+  const chunkTextMap = chunks.map(c => ({ id: c.id, documentId: c.documentId, text: c.text.toLowerCase() }));
 
-  function findChunkId(quote: string): string | null {
+  function findChunk(quote: string): { chunkId: string; documentId: string } | null {
     const q = quote.toLowerCase().slice(0, 80);
     for (const c of chunkTextMap) {
-      if (c.text.includes(q)) return c.id;
+      if (c.text.includes(q)) return { chunkId: c.id, documentId: c.documentId };
     }
     return null;
   }
+
+  // Derive the source doc when all chunks are from a single document (scoped extraction)
+  const uniqueDocIds = [...new Set(chunks.map(c => c.documentId))];
+  const scopedDocId = uniqueDocIds.length === 1 ? uniqueDocIds[0] : null;
 
   // Get highest existing REQ number to avoid collisions
   const existingReqs = await prisma.requirement.findMany({
@@ -106,7 +119,9 @@ Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "..
   for (let i = 0; i < extracted.length; i++) {
     const req = extracted[i];
     const key = `REQ-${String(maxExisting + i + 1).padStart(3, "0")}`;
-    const sourceChunkId = req.sourceQuote ? findChunkId(req.sourceQuote) : null;
+    const matched = req.sourceQuote ? findChunk(req.sourceQuote) : null;
+    const sourceChunkId = matched?.chunkId ?? null;
+    const sourceDocId = matched?.documentId ?? scopedDocId ?? null;
     await prisma.requirement.upsert({
       where: { projectId_requirementKey: { projectId: id, requirementKey: key } },
       create: {
@@ -120,12 +135,14 @@ Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "..
         status: "proposed",
         confidence: req.confidence ?? 0.8,
         sourceChunkId: sourceChunkId ?? undefined,
+        sourceDocId: sourceDocId ?? undefined,
         sourceQuote: req.sourceQuote?.slice(0, 500),
       },
       update: {
         statement: req.statement,
         confidence: req.confidence ?? 0.8,
         sourceChunkId: sourceChunkId ?? undefined,
+        sourceDocId: sourceDocId ?? undefined,
         sourceQuote: req.sourceQuote?.slice(0, 500),
       },
     });

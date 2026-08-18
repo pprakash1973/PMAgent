@@ -308,12 +308,15 @@ export async function DELETE(
   });
   if (!doc) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  // Remove requirements that trace back to this document (sourceDocId column added by migrate-scope-control)
+  // Remove requirements that trace back to this document
   try {
     await prisma.requirement.deleteMany({ where: { projectId: id, sourceDocId: docId } });
   } catch {
-    // Column doesn't exist yet — skip; requirements without a source trace are left intact
+    // sourceDocId column may not exist on older deployments — skip
   }
+
+  // Hard-delete DocumentChunk records (soft-deleting the parent doesn't cascade)
+  await prisma.documentChunk.deleteMany({ where: { documentId: docId } });
 
   // Soft-delete the document
   await prisma.requirementsDocument.update({
