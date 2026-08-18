@@ -2175,16 +2175,14 @@ function ScheduleTab({ project }: { project: any }) {
               const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
               const toHrs = (h: number) => `${Math.round(h)}h`;
+              // AC = all actual hours worked to date (across all tasks, regardless of status)
               const actualEffort = tasks.reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
-              // Hours-based cost metrics: AC = actual hrs of closed tasks, EV already in hours
-              const closedActualHours = tasks
-                .filter(t => t.percentComplete === 100 || t.status === "complete")
-                .reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
               const evHrs = kpi?.ev ?? null;
-              const cv = evHrs != null && closedActualHours > 0 ? evHrs - closedActualHours : null;
+              const ac = actualEffort;
+              const cv = evHrs != null && ac > 0 ? evHrs - ac : null;
               const cvColor = cv == null ? C.text2 : cv >= 0 ? C.green : C.red;
               const cvBg    = cv == null ? C.surface2 : cv >= 0 ? C.greenLight : C.redLight;
-              const cpi = evHrs != null && closedActualHours > 0 ? evHrs / closedActualHours : null;
+              const cpi = evHrs != null && ac > 0 ? evHrs / ac : null;
               const cpiColor = cpi == null ? C.text2 : cpi >= 1 ? C.green : cpi >= 0.9 ? C.amber : C.red;
               const cpiBg    = cpi == null ? C.surface2 : cpi >= 1 ? C.greenLight : cpi >= 0.9 ? C.amberLight : C.redLight;
               const bac = project.budget ?? null;
