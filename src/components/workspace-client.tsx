@@ -1431,6 +1431,7 @@ function ScheduleTab({ project }: { project: any }) {
   const [tasks, setTasks] = useState<any[]>([]);
   const [resources, setResources] = useState<any[]>([]);
   const [kpi, setKpi] = useState<{ pv: number; ev: number; spi: number | null; sv: number; completionPct?: number | null } | null>(null);
+  const [costSummary, setCostSummary] = useState<{ totalEV: number; totalAC: number; cpi: number | null; cv: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [milestones, setMilestones] = useState<any[]>(
     [...(project.milestones ?? [])].sort((a: any, b: any) => new Date(a.dueDate ?? 0).getTime() - new Date(b.dueDate ?? 0).getTime())
@@ -1586,10 +1587,11 @@ function ScheduleTab({ project }: { project: any }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadSchedule = useCallback(async () => {
-    const [schedRes, resRes, statusRes] = await Promise.all([
+    const [schedRes, resRes, statusRes, costRes] = await Promise.all([
       fetch(`/api/projects/${project.id}/schedule`),
       fetch(`/api/projects/${project.id}/resources`),
       fetch(`/api/projects/${project.id}/actuals/status`),
+      fetch(`/api/projects/${project.id}/costs/burndown`),
     ]);
     if (schedRes.ok) {
       const data = await schedRes.json();
@@ -1598,6 +1600,10 @@ function ScheduleTab({ project }: { project: any }) {
     }
     if (resRes.ok) setResources(await resRes.json());
     if (statusRes.ok) setActualsStatus(await statusRes.json());
+    if (costRes.ok) {
+      const costData = await costRes.json();
+      if (costData?.summary) setCostSummary(costData.summary);
+    }
     setLoading(false);
   }, [project.id]);
 
@@ -2169,11 +2175,26 @@ function ScheduleTab({ project }: { project: any }) {
               const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
               const svBg   = sv == null ? C.surface2 : sv >= 0 ? C.greenLight : C.redLight;
               const toHrs = (d: number) => `${(d * 8).toFixed(0)}h`;
+              const actualEffort = tasks.reduce((s, t) => s + (((t as any).actualHours ?? 0) as number), 0);
+              const cur = project.currency ?? "USD";
+              const cs = costSummary;
+              const cv$ = cs ? cs.totalEV - cs.totalAC : null;
+              const cv$Color = cv$ == null ? C.text2 : cv$ >= 0 ? C.green : C.red;
+              const cv$Bg    = cv$ == null ? C.surface2 : cv$ >= 0 ? C.greenLight : C.redLight;
+              const cpi = cs?.cpi ?? null;
+              const cpiColor = cpi == null ? C.text2 : cpi >= 1 ? C.green : cpi >= 0.9 ? C.amber : C.red;
+              const cpiBg    = cpi == null ? C.surface2 : cpi >= 1 ? C.greenLight : cpi >= 0.9 ? C.amberLight : C.redLight;
+              const bac = project.budget ?? null;
+              const eac = cpi != null && cpi > 0 && bac ? bac / cpi : null;
               return [
                 { label: "PV",  value: kpi?.pv  != null ? toHrs(kpi.pv)  : "—", sub: "Planned value",   color: C.text2, bg: C.surface2 },
                 { label: "EV",  value: kpi?.ev  != null ? toHrs(kpi.ev)  : "—", sub: "Earned value",    color: C.primary, bg: C.primaryLight },
                 { label: "SV",  value: sv != null ? `${sv >= 0 ? "+" : ""}${toHrs(sv)}` : "—", sub: sv == null ? "SV = EV − PV" : sv >= 0 ? "Ahead ✓" : "Behind", color: svColor, bg: svBg },
                 { label: "SPI", value: kpi?.spi != null ? kpi.spi.toFixed(2) : "—", sub: kpi?.spi == null ? "SPI = EV ÷ PV" : kpi.spi >= 1 ? "On track ✓" : kpi.spi >= 0.9 ? "Slightly behind" : "Behind", color: spiColor(kpi?.spi ?? null), bg: kpi?.spi == null ? C.surface2 : kpi.spi >= 1 ? C.greenLight : kpi.spi >= 0.9 ? C.amberLight : C.redLight },
+                { label: "Actual Effort", value: actualEffort > 0 ? `${actualEffort.toFixed(1)}h` : "—", sub: "Sum of actual hrs", color: C.text2, bg: C.surface2 },
+                { label: "CV",  value: cv$ != null ? formatCurrency(cv$, cur) : "—", sub: cv$ == null ? "CV = EV − AC (log costs)" : cv$ >= 0 ? "Under budget ✓" : "Over budget", color: cv$Color, bg: cv$Bg },
+                { label: "CPI", value: cpi != null ? cpi.toFixed(2) : "—", sub: cpi == null ? "CPI = EV ÷ AC (log costs)" : cpi >= 1 ? "Under budget ✓" : "Over budget", color: cpiColor, bg: cpiBg },
+                { label: "EAC", value: eac != null ? formatCurrency(eac, cur) : "—", sub: "BAC ÷ CPI — Estimate at Completion", color: C.text2, bg: C.surface2 },
               ];
             })().map(k => (
               <div key={k.label} style={{ flex: 1, background: k.bg, borderRadius: 10, padding: "11px 13px" }}>
