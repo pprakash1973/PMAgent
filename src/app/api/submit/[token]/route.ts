@@ -150,7 +150,7 @@ export async function POST(
   await prisma.$transaction(
     submissions.map((s) => {
       const pct = Math.min(100, Math.max(0, Math.round(s.percentComplete)));
-      const newStatus = pct === 100 ? "completed" : pct > 0 ? "in_progress" : "not_started";
+      const newStatus = pct === 100 ? "complete" : pct > 0 ? "in_progress" : "not_started";
       const totalHours = totalHoursMap.get(s.taskId) ?? s.hoursWorked;
       return prisma.scheduleTask.update({
         where: { id: s.taskId },
