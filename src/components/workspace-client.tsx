@@ -5160,7 +5160,7 @@ function fmt$(n: number, currency = "USD") {
 function CostBurndownChart({ series, currency, budget }: { series: any[]; currency: string; budget?: number | null }) {
   if (!series.length) return null;
 
-  const W = 560; const H = 200; const PAD = { top: 14, right: 16, bottom: 34, left: 68 };
+  const W = 560; const H = 230; const PAD = { top: 14, right: 16, bottom: 52, left: 68 };
   const inner = { w: W - PAD.left - PAD.right, h: H - PAD.top - PAD.bottom };
 
   const allVals = series.flatMap((s) => [s.pv, s.ev, s.ac]).filter((v) => v > 0);
@@ -5203,7 +5203,7 @@ function CostBurndownChart({ series, currency, budget }: { series: any[]; curren
       {xTicks.map((s, i) => {
         const idx = series.indexOf(s);
         return (
-          <text key={i} x={xOf(idx)} y={H - 4} textAnchor="middle" fontSize={8.5} fill={C.text3}>
+          <text key={i} x={xOf(idx)} y={H - PAD.bottom + 14} textAnchor="middle" fontSize={8.5} fill={C.text3}>
             {s.date.slice(5)}
           </text>
         );
@@ -5236,7 +5236,7 @@ function CostBurndownChart({ series, currency, budget }: { series: any[]; curren
         { color: C.red, label: "AC (Actual)", dash: false },
         ...(budget != null && budget > 0 ? [{ color: C.primary, label: "Budget", dash: true }] : []),
       ].map((l, i) => (
-        <g key={i} transform={`translate(${PAD.left + i * 100}, ${H - 8})`}>
+        <g key={i} transform={`translate(${PAD.left + i * 105}, ${H - 16})`}>
           <line x1={0} x2={16} y1={0} y2={0} stroke={l.color} strokeWidth={2} strokeDasharray={l.dash ? "4 2" : undefined} />
           <text x={20} y={4} fontSize={8.5} fill={C.text2}>{l.label}</text>
         </g>
