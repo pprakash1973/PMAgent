@@ -41,6 +41,7 @@ function computeEVM(tasks: any[]) {
   }
 
   const spi = totalPV > 0 ? totalEV / totalPV : null;
+  const cpi = totalAC > 0 ? totalEV / totalAC : null;
   const sv = totalEV - totalPV;
   const completionPct = totalHours > 0 ? Math.round((weightedPct / totalHours) * 100) : null;
 
@@ -50,6 +51,7 @@ function computeEVM(tasks: any[]) {
     ac:  Math.round(totalAC * 10) / 10,
     sv:  Math.round(sv * 10) / 10,
     spi: spi !== null ? Math.round(spi * 100) / 100 : null,
+    cpi: cpi !== null ? Math.round(cpi * 1000) / 1000 : null,
     completionPct,
     totalActualEffort: Math.round(totalActualEffort * 10) / 10,
   };
