@@ -8,11 +8,15 @@ function computeEVM(tasks: any[]) {
   const today = Date.now();
   let totalPV = 0;
   let totalEV = 0;
+  let totalAC = 0;
+  let totalActualEffort = 0;
   let totalHours = 0;
   let weightedPct = 0;
 
   for (const t of tasks) {
     const weight = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 0) * 8;
+    const actualHrs = t.actualHours != null ? Number(t.actualHours) : 0;
+
     if (!weight || !t.baselineStart || !t.baselineFinish) continue;
 
     const s = new Date(t.baselineStart).getTime();
@@ -25,23 +29,29 @@ function computeEVM(tasks: any[]) {
     else plannedPct = (today - s) / (f - s);
 
     totalPV += weight * plannedPct;
-    // 0/100 rule: only credit full weight when task is 100% complete
-    totalEV += (t.percentComplete === 100 ? weight : 0);
+    if (t.percentComplete === 100) {
+      // 0/100 rule: only credit full weight when task is 100% complete
+      totalEV += weight;
+      // AC and Actual Effort both use closed tasks only (EVM standard)
+      totalAC += actualHrs;
+      totalActualEffort += actualHrs;
+    }
     totalHours += weight;
     weightedPct += weight * (t.percentComplete / 100);
   }
 
   const spi = totalPV > 0 ? totalEV / totalPV : null;
   const sv = totalEV - totalPV;
-  // completionPct: weighted average % complete across all tasks (not 0/100 rule)
   const completionPct = totalHours > 0 ? Math.round((weightedPct / totalHours) * 100) : null;
 
   return {
-    pv: Math.round(totalPV * 10) / 10,
-    ev: Math.round(totalEV * 10) / 10,
-    sv: Math.round(sv * 10) / 10,
+    pv:  Math.round(totalPV * 10) / 10,
+    ev:  Math.round(totalEV * 10) / 10,
+    ac:  Math.round(totalAC * 10) / 10,
+    sv:  Math.round(sv * 10) / 10,
     spi: spi !== null ? Math.round(spi * 100) / 100 : null,
     completionPct,
+    totalActualEffort: Math.round(totalActualEffort * 10) / 10,
   };
 }
 
