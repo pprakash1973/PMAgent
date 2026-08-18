@@ -4253,6 +4253,7 @@ function ScopeControlTab({ project }: { project: any }) {
                   {DOC_CLASS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
                 <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, background: uploading ? C.surface2 : C.primary, color: uploading ? C.text3 : "#fff", borderRadius: 5, padding: "5px 9px", cursor: uploading ? "not-allowed" : "pointer" }}>
+                  {uploading && <span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #ccc", borderTopColor: C.primary, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />}
                   {uploading ? "Uploading…" : "Choose file"}
                   <input type="file" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv" style={{ display: "none" }} disabled={uploading} onChange={handleFileChange} />
                 </label>
