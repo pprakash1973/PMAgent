@@ -2360,7 +2360,12 @@ function ScheduleTab({ project }: { project: any }) {
                                     onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
                                     style={{ width: 42, height: 22, textAlign: "center", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                                 ) : (
-                                  <span style={{ fontSize: 12, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                                    <span style={{ fontSize: 12, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
+                                    {(t as any).actualHours != null && (
+                                      <span style={{ fontSize: 10, color: C.primary, fontVariantNumeric: "tabular-nums" }}>{(t as any).actualHours}h actual</span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                               <div style={{ textAlign: "center" as const, cursor: "text" }}
@@ -2583,7 +2588,12 @@ function ScheduleTab({ project }: { project: any }) {
                                 onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
                                 style={{ width: 44, height: 22, textAlign: "center", fontSize: 14, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
                             ) : (
-                              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: C.text2 }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: C.text2 }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
+                                {(t as any).actualHours != null && (
+                                  <span style={{ fontSize: 10, color: C.primary }}>{(t as any).actualHours}h actual</span>
+                                )}
+                              </div>
                             )}
                           </div>
 

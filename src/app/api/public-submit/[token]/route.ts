@@ -86,10 +86,10 @@ export async function GET(
     wbsCode: t.wbsCode,
     name: t.name,
     phase: t.phase,
-    estimatedHours: t.estimatedHours,
+    plannedHours: t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8,
     percentComplete: t.percentComplete,
-    baselineStart: new Date(t.baselineStart).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
-    baselineFinish: new Date(t.baselineFinish).toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+    baselineStart: new Date(t.baselineStart).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    baselineFinish: new Date(t.baselineFinish).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
   })));
 
   const html = `<!DOCTYPE html>
@@ -108,10 +108,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .header .sub{font-size:13px;color:#bfdbfe}
 .intro{background:#fff;border-radius:12px;padding:18px 22px;margin-bottom:16px;font-size:14px;line-height:1.6;color:#475569;border:1px solid #e2e8f0}
 .task-card{background:#fff;border-radius:12px;padding:22px;margin-bottom:14px;border:1px solid #e2e8f0}
-.task-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:18px}
+.task-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
 .wbs{font-family:monospace;font-size:11px;background:#f1f5f9;color:#64748b;padding:3px 7px;border-radius:4px;flex-shrink:0;margin-top:2px}
 .task-name{font-weight:600;font-size:14px;color:#0f172a;line-height:1.3}
 .task-meta{font-size:12px;color:#94a3b8;margin-top:3px}
+.plan-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0}
+.plan-item{display:flex;flex-direction:column;gap:2px;min-width:80px}
+.plan-label{font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em}
+.plan-value{font-size:13px;font-weight:600;color:#1e3a8a}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:520px){.grid2{grid-template-columns:1fr}}
 label{display:block;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
@@ -191,11 +195,16 @@ input:focus,select:focus,textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 3p
         +'<div class="task-header">'
           +'<span class="wbs">'+h(t.wbsCode)+'</span>'
           +'<div><div class="task-name">'+h(t.name)+'</div>'
-          +'<div class="task-meta">'+h(t.phase)+(t.estimatedHours!=null?' &middot; '+t.estimatedHours+'h estimated':'')+'</div></div>'
+          +'<div class="task-meta">'+h(t.phase)+'</div></div>'
+        +'</div>'
+        +'<div class="plan-row">'
+          +'<div class="plan-item"><span class="plan-label">Planned effort</span><span class="plan-value">'+h(t.plannedHours)+'h</span></div>'
+          +'<div class="plan-item"><span class="plan-label">Start</span><span class="plan-value">'+h(t.baselineStart)+'</span></div>'
+          +'<div class="plan-item"><span class="plan-label">End</span><span class="plan-value">'+h(t.baselineFinish)+'</span></div>'
         +'</div>'
         +'<div class="grid2">'
-          +'<div><label>Hours worked *</label>'
-            +'<input type="number" min="0" step="0.5" required data-id="'+t.id+'" data-field="hoursWorked" value="0"></div>'
+          +'<div><label>Actual hours worked *</label>'
+            +'<input type="number" min="0" step="0.5" required data-id="'+t.id+'" data-field="hoursWorked" value="0" placeholder="e.g. 6.5"></div>'
           +'<div><label>% Complete *</label>'
             +'<div class="pct-wrap">'
               +'<input type="number" min="0" max="100" required data-id="'+t.id+'" data-field="percentComplete" value="'+h(t.percentComplete)+'">'

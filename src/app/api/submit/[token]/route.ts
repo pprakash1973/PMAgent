@@ -137,17 +137,29 @@ export async function POST(
     )
   );
 
-  // Update ScheduleTask with the reported actuals
+  // Aggregate total hoursWorked per task from the full ledger (including what we just wrote)
+  const taskIds = submissions.map((s) => s.taskId);
+  const ledgerTotals = await prisma.taskActualsLedger.groupBy({
+    by: ["taskId"],
+    where: { taskId: { in: taskIds } },
+    _sum: { hoursWorked: true },
+  });
+  const totalHoursMap = new Map(ledgerTotals.map((r) => [r.taskId, r._sum.hoursWorked ?? 0]));
+
+  // Update ScheduleTask with the reported actuals and cumulative actual hours
   await prisma.$transaction(
     submissions.map((s) => {
       const pct = Math.min(100, Math.max(0, Math.round(s.percentComplete)));
       const newStatus = pct === 100 ? "completed" : pct > 0 ? "in_progress" : "not_started";
+      const totalHours = totalHoursMap.get(s.taskId) ?? s.hoursWorked;
       return prisma.scheduleTask.update({
         where: { id: s.taskId },
         data: {
           percentComplete: pct,
           status: newStatus,
+          actualHours: Math.round(totalHours * 10) / 10,
           ...(pct === 100 ? { actualFinish: new Date() } : {}),
+          ...(pct > 0 ? { actualStart: new Date() } : {}),
         },
       });
     })

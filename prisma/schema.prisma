@@ -1169,6 +1169,7 @@ model ScheduleTask {
   plannedCost     Float?
   actualStart     DateTime?
   actualFinish    DateTime?
+  actualHours     Float?
   percentComplete Int       @default(0)
   status          String    @default("not_started")
   dependencies    Json      @default("[]")
