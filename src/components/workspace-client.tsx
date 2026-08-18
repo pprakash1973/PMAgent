@@ -1703,6 +1703,10 @@ function ScheduleTab({ project }: { project: any }) {
       if (!task) return;
       const newFinish = addWorkingDays(new Date(task.baselineStart), days);
       await patchTask(taskId, { baselineDays: days, estimatedHours: Math.round(hrs * 10) / 10, baselineFinish: newFinish.toISOString() });
+    } else if (field === "actualHours") {
+      const hrs = parseFloat(editVal);
+      if (isNaN(hrs) || hrs < 0) return;
+      await patchTask(taskId, { actualHours: hrs });
     } else if (field === "percentComplete") {
       const pct = Math.max(0, Math.min(100, parseInt(editVal) || 0));
       await patchTask(taskId, { percentComplete: pct });
@@ -2365,12 +2369,25 @@ function ScheduleTab({ project }: { project: any }) {
                                   <span style={{ fontSize: 12, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
                                 )}
                               </div>
-                              {/* Actual Hrs — read-only, 0 until actuals collected */}
-                              <div style={{ textAlign: "center" as const }}>
-                                <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", color: (t as any).actualHours != null && (t as any).actualHours > 0 ? C.primary : C.text3 }}>
-                                  {(t as any).actualHours != null ? `${(t as any).actualHours}h` : "0h"}
-                                </span>
-                              </div>
+                              {/* Actual Hrs — editable */}
+                              {(() => {
+                                const isEditActual = editCell?.taskId === t.id && editCell?.field === "actualHours";
+                                return (
+                                  <div style={{ textAlign: "center" as const, cursor: "text" }}
+                                    onClick={() => { setEditCell({ taskId: t.id, field: "actualHours" }); setEditVal(String((t as any).actualHours ?? 0)); }}>
+                                    {isEditActual ? (
+                                      <input autoFocus type="number" min={0} step={0.5} value={editVal}
+                                        onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
+                                        onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                        style={{ width: 42, height: 22, textAlign: "center", fontSize: 13, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                                    ) : (
+                                      <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", color: (t as any).actualHours != null && (t as any).actualHours > 0 ? C.primary : C.text3 }}>
+                                        {(t as any).actualHours != null ? `${(t as any).actualHours}h` : "0h"}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               <div style={{ textAlign: "center" as const, cursor: "text" }}
                                 onClick={() => { setEditCell({ taskId: t.id, field: "percentComplete" }); setEditVal(String(t.percentComplete)); }}>
                                 {isEditPct ? (
@@ -2595,12 +2612,25 @@ function ScheduleTab({ project }: { project: any }) {
                               <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: C.text2 }}>{t.estimatedHours != null ? t.estimatedHours : t.baselineDays * 8}h</span>
                             )}
                           </div>
-                          {/* Actual Hrs — read-only */}
-                          <div style={{ width: 54, textAlign: "center" as const }}>
-                            <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: (t as any).actualHours != null && (t as any).actualHours > 0 ? C.primary : C.text3 }}>
-                              {(t as any).actualHours != null ? `${(t as any).actualHours}h` : "0h"}
-                            </span>
-                          </div>
+                          {/* Actual Hrs — editable */}
+                          {(() => {
+                            const isEditActual = editCell?.taskId === t.id && editCell?.field === "actualHours";
+                            return (
+                              <div style={{ width: 54, textAlign: "center" as const, cursor: "text" }}
+                                onClick={() => { setEditCell({ taskId: t.id, field: "actualHours" }); setEditVal(String((t as any).actualHours ?? 0)); }}>
+                                {isEditActual ? (
+                                  <input autoFocus type="number" min={0} step={0.5} value={editVal}
+                                    onChange={e => setEditVal(e.target.value)} onBlur={commitEdit}
+                                    onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditCell(null); }}
+                                    style={{ width: 44, height: 22, textAlign: "center", fontSize: 14, border: `1px solid ${C.primary}`, borderRadius: 5 }} />
+                                ) : (
+                                  <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 14.5, color: (t as any).actualHours != null && (t as any).actualHours > 0 ? C.primary : C.text3 }}>
+                                    {(t as any).actualHours != null ? `${(t as any).actualHours}h` : "0h"}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {/* % */}
                           <div style={{ width: 44, textAlign: "center" as const, cursor: "text" }}

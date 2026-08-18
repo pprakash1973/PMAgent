@@ -78,6 +78,7 @@ export async function PATCH(
   if (pct === 100 && !task.actualFinish && !body.actualFinish) data.actualFinish = new Date();
   if ("resourceId" in body) data.resourceId = body.resourceId || null;
   if ("estimatedHours" in body) data.estimatedHours = body.estimatedHours ? Number(body.estimatedHours) : null;
+  if ("actualHours" in body) data.actualHours = body.actualHours != null ? Math.round(Number(body.actualHours) * 10) / 10 : null;
   if ("name" in body && typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if ("baselineDays" in body) data.baselineDays = Math.max(0, Number(body.baselineDays) || 0);
   if ("baselineStart" in body) data.baselineStart = new Date(body.baselineStart);
