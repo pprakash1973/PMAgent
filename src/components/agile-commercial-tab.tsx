@@ -275,7 +275,7 @@ export function AgileCommercialTab({ project }: { project: any }) {
                 background: C.surface2, borderRadius: 8, fontSize: 12,
               }}>
                 <CheckCircle2 size={13} color={C.green} />
-                <span style={{ flex: 1, color: C.text }}>{e.description || e.entryType}</span>
+                <span style={{ flex: 1, color: C.text }}>{e.description || e.category || "cost entry"}</span>
                 <span style={{ fontWeight: 700, color: C.text }}>{formatCurrency(e.amount, currency)}</span>
                 <span style={{ fontSize: 10, color: C.text3 }}>{new Date(e.createdAt).toLocaleDateString()}</span>
               </div>

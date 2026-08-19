@@ -1968,6 +1968,7 @@ function ScheduleTab({ project }: { project: any }) {
   if (loading) return <div style={{ padding: "40px 0", textAlign: "center" as const, color: C.text3, fontSize: 14 }}>Loading schedule…</div>;
 
   const isMilestone = (t: any) => t.baselineDays === 0 || t.phase === "Milestones";
+  const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
 
   return (
     <div>
@@ -2280,8 +2281,8 @@ function ScheduleTab({ project }: { project: any }) {
             </div>
           )}
 
-          {/* ── EVM KPI strip ── */}
-          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          {/* ── EVM KPI strip (waterfall only) ── */}
+          {!isAgile && <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
             {(() => {
               const sv = kpi?.ev != null && kpi?.pv != null ? kpi.ev - kpi.pv : null;
               const svColor = sv == null ? C.text2 : sv >= 0 ? C.green : C.red;
@@ -2318,9 +2319,9 @@ function ScheduleTab({ project }: { project: any }) {
                 <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>{k.sub}</div>
               </div>
             ))}
-          </div>
+          </div>}
 
-          {kpi?.spi != null && kpi.spi < 0.7 && <RecoveryPanel projectId={project.id} spi={kpi.spi} />}
+          {!isAgile && kpi?.spi != null && kpi.spi < 0.7 && <RecoveryPanel projectId={project.id} spi={kpi.spi} />}
 
           {/* ── Summary strip ── */}
           {(() => {
@@ -5842,7 +5843,7 @@ function AgileOverviewTab({ project }: { project: any }) {
 
   // Derive velocity from last 2 completed sprints
   const completedSprints = sprints
-    .filter((s: any) => s.state === "completed")
+    .filter((s: any) => s.state === "closed")
     .sort((a: any, b: any) => b.sprintNumber - a.sprintNumber);
   const recentSprints = completedSprints.slice(0, 2);
   const avgVelocity = recentSprints.length > 0

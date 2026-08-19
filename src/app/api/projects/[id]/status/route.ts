@@ -200,7 +200,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (isAgile) {
     // For agile projects fetch sprint completion rate and budget burn
     const completedSprints = await prisma.sprint.findMany({
-      where: { projectId: id, state: "completed" },
+      where: { projectId: id, state: "closed" },
       orderBy: { sprintNumber: "desc" },
       take: 2,
     });

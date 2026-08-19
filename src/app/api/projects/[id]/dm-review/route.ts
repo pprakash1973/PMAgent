@@ -60,6 +60,8 @@ export async function GET(
     }
   }
 
+  const isAgile = project.deliveryMethod === "agile_scrum" || project.methodology === "agile_scrum";
+
   const [latestReport, allReports, risks, issues, milestones, artifacts, costEntries, scheduleTasks] = await Promise.all([
     prisma.statusReport.findFirst({
       where: { projectId: id },
@@ -131,6 +133,52 @@ export async function GET(
     // Tables not yet migrated — return empty arrays
   }
 
+  // Agile sprint data (only fetched for agile projects)
+  let agileData: {
+    avgVelocity: number | null;
+    avgReliability: number | null;
+    velTrend: "up" | "down" | "stable" | null;
+    activeSprint: { sprintNumber: number; label: string | null; goal: string | null; endDate: string } | null;
+    closedSprints: number;
+    openImpediments: number;
+  } | null = null;
+
+  if (isAgile) {
+    const [sprints, impedimentCount] = await Promise.all([
+      prisma.sprint.findMany({
+        where: { projectId: id, state: { in: ["active", "closed"] } },
+        orderBy: { sprintNumber: "asc" },
+        select: { sprintNumber: true, label: true, goal: true, state: true, endDate: true, committedPoints: true, acceptedPoints: true },
+      }),
+      prisma.impediment.count({ where: { projectId: id, resolvedAt: null } }),
+    ]);
+
+    const closed = sprints.filter(s => s.state === "closed");
+    const active = sprints.find(s => s.state === "active") ?? null;
+
+    const velocities = closed.map(s => s.acceptedPoints ?? 0);
+    const avgVelocity = velocities.length > 0 ? velocities.reduce((a, b) => a + b, 0) / velocities.length : null;
+
+    const rels = closed
+      .filter(s => (s.committedPoints ?? 0) > 0)
+      .map(s => Math.min(100, ((s.acceptedPoints ?? 0) / s.committedPoints!) * 100));
+    const avgReliability = rels.length > 0 ? rels.reduce((a, b) => a + b, 0) / rels.length : null;
+
+    const recent = closed.slice(-3).map(s => s.acceptedPoints ?? 0);
+    const velTrend: "up" | "down" | "stable" | null = recent.length >= 2
+      ? (Math.abs(recent[recent.length - 1] - recent[0]) < 1 ? "stable" : recent[recent.length - 1] >= recent[0] ? "up" : "down")
+      : null;
+
+    agileData = {
+      avgVelocity,
+      avgReliability,
+      velTrend,
+      activeSprint: active ? { sprintNumber: active.sprintNumber, label: active.label, goal: active.goal ?? null, endDate: active.endDate.toISOString() } : null,
+      closedSprints: closed.length,
+      openImpediments: impedimentCount,
+    };
+  }
+
   // EVM via shared utility — same formula as PM burndown endpoint
   const evm = computeEvm(scheduleTasks, costEntries, project.budget);
   const { totalAC: totalSpent, spi: liveSpi, cpi: liveCpi } = evm;
@@ -159,6 +207,7 @@ export async function GET(
       currentPhase: project.currentPhase,
       healthStatus: project.healthStatus,
       ragStatus,
+      deliveryMethod: isAgile ? "agile_scrum" : (project.deliveryMethod ?? "predictive"),
       accountName: project.account?.name ?? null,
       programName: project.program?.name ?? null,
       pmName: project.pmOwner.fullName,
@@ -236,5 +285,6 @@ export async function GET(
       cpi: r.healthScore?.cpi ?? null,
       compositeScore: r.healthScore?.compositeScore ?? null,
     })),
+    agile: agileData,
   });
 }

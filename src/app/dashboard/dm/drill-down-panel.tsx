@@ -12,9 +12,19 @@ type Evm = {
   eac: number | null; schedCompletionPct: number | null; taskCount: number;
 };
 
+type AgileReviewData = {
+  avgVelocity: number | null;
+  avgReliability: number | null;
+  velTrend: "up" | "down" | "stable" | null;
+  activeSprint: { sprintNumber: number; label: string | null; goal: string | null; endDate: string } | null;
+  closedSprints: number;
+  openImpediments: number;
+} | null;
+
 type ReviewData = {
   project: {
     id: string; name: string; currentPhase: string; healthStatus: string; ragStatus: string;
+    deliveryMethod?: string;
     accountName: string | null; programName: string | null; pmName: string;
     budget: number | null; currency: string; startDate: string | null; endDate: string | null;
   };
@@ -27,6 +37,7 @@ type ReviewData = {
   milestones: { id: string; name: string; dueDate: string; status: string }[];
   actionItems: { id: string; reference: string; title: string; priority: string; status: string; dueDate: string | null; raisedByName: string }[];
   reviewNotes: { id: string; reviewType: string; body: string; visibility: string; createdAt: string; authorName: string }[];
+  agile: AgileReviewData;
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -158,16 +169,102 @@ function RiskIssueRow({ description, owner, label, labelColor, pastDue }: {
   );
 }
 
-// ── Tab 1: Overview (PM-style EVM view) ─────────────────────────────────────
+// ── Tab 1a: Overview — Waterfall ────────────────────────────────────────────
+
+function WaterfallOverviewSection({ data }: { data: ReviewData }) {
+  const evm = data.evm;
+  const spi = evm?.spi ?? null;
+  const cpi = evm?.cpi ?? null;
+  const sv = evm ? evm.svHours : null;
+
+  return (
+    <Section title="Schedule Performance">
+      {evm && evm.taskCount > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const }}>
+            <KpiCard label="SPI" value={spi !== null ? spi.toFixed(2) : "—"} color={spiColor(spi)}
+              sub={spi !== null ? (spi >= 1 ? "On schedule" : spi >= 0.9 ? "Slight delay" : "Behind schedule") : "no data"} />
+            <KpiCard label="CPI" value={cpi !== null ? cpi.toFixed(2) : "—"} color={spiColor(cpi)}
+              sub={cpi !== null ? (cpi >= 1 ? "Within budget" : cpi >= 0.9 ? "Slight overrun" : "Over budget") : "no data"} />
+            {evm.schedCompletionPct !== null && (
+              <KpiCard label="Tasks Done" value={`${evm.schedCompletionPct}%`} color={UST_TEAL} sub={`of ${evm.taskCount} tasks`} />
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[
+              { label: "PV", value: fmtHours(evm.pvHours), sub: "Planned value" },
+              { label: "EV", value: fmtHours(evm.evHours), sub: "Earned value" },
+              { label: "SV", sub: "Schedule variance", value: sv !== null ? `${sv >= 0 ? "+" : ""}${fmtHours(sv)}` : "—" },
+            ].map(k => (
+              <div key={k.label} style={{ flex: 1, background: UST_WASH, border: `1px solid ${UST_BORDER}`, borderRadius: 8, padding: "10px 14px" }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: UST_PETROL }}>{k.value}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginTop: 2 }}>{k.label}</div>
+                <div style={{ fontSize: 11, color: "#64748b" }}>{k.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <Empty text="No schedule tasks — EVM data unavailable." />
+      )}
+    </Section>
+  );
+}
+
+// ── Tab 1b: Overview — Agile ────────────────────────────────────────────────
+
+function AgileOverviewSection({ data }: { data: ReviewData }) {
+  const ag = data.agile;
+  const proj = data.project;
+  const burnPct = data.burnPct;
+
+  const relColor = ag?.avgReliability !== null && ag?.avgReliability !== undefined
+    ? (ag.avgReliability < 60 ? "#cf3f3a" : ag.avgReliability < 80 ? "#c17d12" : "#158a5a")
+    : "#94a3b8";
+  const velColor = ag?.velTrend === "up" ? "#158a5a" : ag?.velTrend === "down" ? "#cf3f3a" : "#006E74";
+  const burnColor = burnPct !== null ? (burnPct > 100 ? "#cf3f3a" : burnPct > 85 ? "#c17d12" : "#158a5a") : "#94a3b8";
+
+  return (
+    <Section title="Agile Performance">
+      {ag && ag.closedSprints > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const }}>
+            <KpiCard label="Avg Velocity" value={ag.avgVelocity !== null ? `${ag.avgVelocity.toFixed(0)} pts` : "—"} color={velColor}
+              sub={ag.velTrend ? `Trend: ${ag.velTrend}` : `${ag.closedSprints} closed sprint${ag.closedSprints !== 1 ? "s" : ""}`} />
+            <KpiCard label="Commitment Reliability" value={ag.avgReliability !== null ? `${Math.round(ag.avgReliability)}%` : "—"} color={relColor}
+              sub={ag.avgReliability !== null ? (ag.avgReliability >= 80 ? "Consistent delivery" : ag.avgReliability >= 60 ? "Some carry-over" : "Over-committing") : "no data"} />
+            <KpiCard label="Budget Burn" value={burnPct !== null ? `${burnPct}%` : "—"} color={burnColor}
+              sub={proj.budget ? fmtMoney(data.totalSpent, proj.currency) + " of " + fmtMoney(proj.budget, proj.currency) : "No budget set"} />
+          </div>
+          {ag.activeSprint && (
+            <div style={{ background: "#f5f3ff", border: "1px solid #c4b5fd", borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 4 }}>
+                Active Sprint — S{ag.activeSprint.sprintNumber}{ag.activeSprint.label ? ` · ${ag.activeSprint.label}` : ""}
+              </div>
+              {ag.activeSprint.goal && <p style={{ margin: 0, fontSize: 13, color: "#1e293b" }}>{ag.activeSprint.goal}</p>}
+              <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Ends {fmtDate(ag.activeSprint.endDate)}</p>
+            </div>
+          )}
+          {ag.openImpediments > 0 && (
+            <div style={{ background: "#fff7f0", border: "1px solid #fdba74", borderRadius: 8, padding: "9px 13px", fontSize: 13, color: "#c17d12" }}>
+              ⚠ {ag.openImpediments} open impediment{ag.openImpediments !== 1 ? "s" : ""} — review with Scrum Master
+            </div>
+          )}
+        </div>
+      ) : (
+        <Empty text={ag ? "No closed sprints yet — velocity data unavailable." : "Agile metrics loading…"} />
+      )}
+    </Section>
+  );
+}
+
+// ── Tab 1: Overview ──────────────────────────────────────────────────────────
 
 function OverviewTab({ data }: { data: ReviewData }) {
   const proj = data.project;
   const rag = data.project.ragStatus ?? proj.healthStatus;
   const ragColor = healthColor(rag);
-  const evm = data.evm;
-  const spi = evm?.spi ?? null;
-  const cpi = evm?.cpi ?? null;
-  const sv = evm ? evm.svHours : null;
+  const isAgile = proj.deliveryMethod === "agile_scrum";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -184,6 +281,9 @@ function OverviewTab({ data }: { data: ReviewData }) {
         <span style={{ fontSize: 12, color: "#64748b" }}>
           {proj.currentPhase.replace(/_/g, " ")} · PM: <strong>{proj.pmName}</strong>
         </span>
+        {isAgile && (
+          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: "#f5f3ff", color: "#7c3aed", border: "1px solid #c4b5fd" }}>Agile Scrum</span>
+        )}
         {proj.accountName && (
           <span style={{ fontSize: 12, color: "#94a3b8" }}>{proj.accountName}</span>
         )}
@@ -197,64 +297,14 @@ function OverviewTab({ data }: { data: ReviewData }) {
           <InfoRow label="Budget" value={fmtMoney(proj.budget, proj.currency)} />
           <InfoRow label="Burn to date" value={data.burnPct !== null ? `${data.burnPct}%` : "—"} />
           <InfoRow label="Spent" value={fmtMoney(data.totalSpent, proj.currency)} />
-          {evm?.eac !== null && evm?.eac !== undefined && (
-            <InfoRow label="EAC" value={fmtMoney(evm.eac, proj.currency)} />
+          {!isAgile && data.evm?.eac !== null && data.evm?.eac !== undefined && (
+            <InfoRow label="EAC" value={fmtMoney(data.evm.eac, proj.currency)} />
           )}
         </div>
       </Section>
 
-      {/* Schedule EVM */}
-      <Section title="Schedule Performance">
-        {evm && evm.taskCount > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" as const }}>
-              <KpiCard
-                label="SPI"
-                value={spi !== null ? spi.toFixed(2) : "—"}
-                color={spiColor(spi)}
-                sub={spi !== null ? (spi >= 1 ? "On schedule" : spi >= 0.9 ? "Slight delay" : "Behind schedule") : "no data"}
-              />
-              <KpiCard
-                label="CPI"
-                value={cpi !== null ? cpi.toFixed(2) : "—"}
-                color={spiColor(cpi)}
-                sub={cpi !== null ? (cpi >= 1 ? "Within budget" : cpi >= 0.9 ? "Slight overrun" : "Over budget") : "no data"}
-              />
-              {evm.schedCompletionPct !== null && (
-                <KpiCard
-                  label="Tasks Done"
-                  value={`${evm.schedCompletionPct}%`}
-                  color={UST_TEAL}
-                  sub={`of ${evm.taskCount} tasks`}
-                />
-              )}
-            </div>
-
-            {/* PV / EV / SV row */}
-            <div style={{ display: "flex", gap: 10 }}>
-              {[
-                { label: "PV", value: fmtHours(evm.pvHours), sub: "Planned value" },
-                { label: "EV", value: fmtHours(evm.evHours), sub: "Earned value" },
-                {
-                  label: "SV", sub: "Schedule variance",
-                  value: sv !== null ? `${sv >= 0 ? "+" : ""}${fmtHours(sv)}` : "—",
-                },
-              ].map(k => (
-                <div key={k.label} style={{
-                  flex: 1, background: UST_WASH, border: `1px solid ${UST_BORDER}`,
-                  borderRadius: 8, padding: "10px 14px",
-                }}>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: UST_PETROL }}>{k.value}</div>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.05em", marginTop: 2 }}>{k.label}</div>
-                  <div style={{ fontSize: 11, color: "#64748b" }}>{k.sub}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <Empty text="No schedule tasks — EVM data unavailable." />
-        )}
-      </Section>
+      {/* Methodology-specific performance section */}
+      {isAgile ? <AgileOverviewSection data={data} /> : <WaterfallOverviewSection data={data} />}
     </div>
   );
 }

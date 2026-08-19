@@ -35,15 +35,15 @@ export async function GET(
     db.contract.findFirst({
       where: { projectId, status: "active" },
       orderBy: { createdAt: "desc" },
-    }),
+    }).catch(() => null),
     db.commercialSnapshot.findMany({
       where: { projectId },
       orderBy: { snapshotDate: "desc" },
       take: 12,
-    }),
-    db.costLedger.findMany({
+    }).catch(() => []),
+    prisma.costEntry.findMany({
       where: { projectId },
-      orderBy: { createdAt: "desc" },
+      orderBy: { date: "desc" },
       take: 20,
     }),
   ]);
@@ -95,16 +95,14 @@ export async function POST(
   }
 
   if (body.action === "add_ledger") {
-    const entry = await db.costLedger.create({
+    const entry = await prisma.costEntry.create({
       data: {
+        id: require("crypto").randomUUID(),
         projectId,
-        sprintId: body.sprintId,
-        entryType: body.entryType ?? "actual",
-        amount: body.amount,
-        currency: body.currency ?? "USD",
-        description: body.description,
-        confirmedBy: user.id,
-        pmConfirmed: true,
+        date: new Date(),
+        amount: Number(body.amount),
+        category: body.entryType ?? "labor",
+        description: body.description ?? null,
       },
     });
     return NextResponse.json(entry, { status: 201 });
