@@ -620,8 +620,8 @@ Return JSON with:
 Use deliverable-oriented decomposition: every element is a noun/noun-phrase outcome, never a verb or activity.
 Include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
 
-IMPORTANT — Role naming: ALL owner fields (phase, deliverable, and work-package level) MUST use generic numbered role names — never individual person names or team names.
-Use roles such as: "Project Manager", "Business Analyst 1", "Business Analyst 2", "Developer 1", "Developer 2", "Senior Developer 1", "QA Engineer 1", "QA Engineer 2", "Technical Lead", "Architect", "DevOps Engineer 1", "Scrum Master".
+IMPORTANT — Role naming: ALL owner fields (phase, deliverable, and work-package level) MUST use functional role titles — never individual person names, client-system-specific names, or numbered placeholders (e.g. "Developer 1" is NOT acceptable).
+Use functional titles appropriate to the project's domain. Core roles: Project Manager, Business Analyst, Technical Lead, Solution Architect, Senior Developer, Developer, QA Engineer, Test Manager, DevOps Engineer, Scrum Master. Specialist roles you MAY include where relevant: Process Analyst, Risk Manager, Change Manager, Data Analyst, Security Analyst, Integration Specialist, Business Process Owner, UAT Coordinator, Infrastructure Engineer, Compliance Analyst, Cloud Architect, UX Designer, Database Administrator. Add domain-specific specialist titles as needed — but never use product-name or system-name roles (e.g. "PACS Engineer", "SAP Consultant" — use "Integration Specialist" or "ERP Analyst" instead).
 
 IMPORTANT — Duration constraint: Use the startDate and endDate from the Project Context.
 Calibrate ALL estimatedDays values so the total WBS scope fits within this window.
@@ -678,12 +678,16 @@ Return JSON with:
 - schedulePerformanceIndex (string): SPI if data available, else "TBD"`,
 
     resource_plan: `Generate a Resource Management Plan.
-CRITICAL: All team member startDate/endDate values must align to the project's startDate/endDate from context. Use generic numbered role names (e.g. "Developer 1", "Business Analyst 1") — never fabricated individual names.
+CRITICAL RULES:
+1. The project context includes a wbsStructure field. Extract EVERY unique role that appears as an owner in the WBS phases, deliverables, and work packages. Every WBS role MUST appear in the teamDirectory — do not drop any.
+2. All team member startDate/endDate values must align to the project's startDate/endDate from context.
+3. Use the exact functional role titles from the WBS — never numbered placeholders (e.g. "Developer 1") and never client-system-specific names.
+4. Estimate allocationPercent and duration for each role based on the volume and nature of their WBS work packages.
 Return JSON with:
 - projectName (string)
 - teamDirectory (array of {
     id (string): R001, R002…
-    name (string): generic role name (e.g. "Developer 1", "Business Analyst 1")
+    name (string): use the functional role title as the name (e.g. "Business Analyst", "Risk Manager")
     role (string)
     department (string)
     skills (array of strings)

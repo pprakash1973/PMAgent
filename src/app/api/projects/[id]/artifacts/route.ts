@@ -127,16 +127,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     throw err;
   }
 
-  // ── RTM / EVM extra data ────────────────────────────────────────────────────
+  // ── RTM / EVM / Resource Plan extra data ────────────────────────────────────
   let scheduleTasks: { name: string; phase: string | null }[] = [];
   let wbsContent: unknown = null;
-  if (artifactType === "traceability_matrix") {
-    const [tasks, wbsArtifact] = await Promise.all([
-      prisma.scheduleTask.findMany({ where: { projectId: id }, select: { name: true, phase: true }, take: 100 }),
-      prisma.artifact.findFirst({ where: { projectId: id, artifactType: "wbs" }, select: { content: true } }),
-    ]);
-    scheduleTasks = tasks;
+  if (artifactType === "traceability_matrix" || artifactType === "resource_plan") {
+    const wbsArtifact = await prisma.artifact.findFirst({
+      where: { projectId: id, artifactType: "wbs" },
+      select: { content: true },
+    });
+    if (artifactType === "resource_plan" && !wbsArtifact) {
+      return NextResponse.json(
+        { error: { code: "PREREQUISITE_MISSING", message: "The Work Breakdown Structure must be generated before the Resource Register. Please generate the WBS first." } },
+        { status: 400 }
+      );
+    }
     wbsContent = wbsArtifact?.content ?? null;
+    if (artifactType === "traceability_matrix") {
+      scheduleTasks = await prisma.scheduleTask.findMany({ where: { projectId: id }, select: { name: true, phase: true }, take: 100 });
+    }
   }
 
   let costEntries: { date: Date; amount: number; category: string }[] = [];
@@ -178,6 +186,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     description: project.description,
     milestones: project.milestones,
     ...(artifactType === "traceability_matrix" && { scheduleTasks, wbsStructure: wbsContent }),
+    ...(artifactType === "resource_plan" && { wbsStructure: wbsContent }),
     ...(artifactType === "evm_analysis" && {
       costEntries: costEntries.map((e) => ({
         date: e.date.toISOString().slice(0, 10),
