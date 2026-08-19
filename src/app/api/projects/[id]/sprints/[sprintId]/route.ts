@@ -16,15 +16,28 @@ const updateSchema = z.object({
   focusFactor: z.number().optional(),
 });
 
+async function authorizeSprint(projectId: string, sprintId: string, orgId: string) {
+  const db = prisma as any;
+  const sprint = await db.sprint.findUnique({ where: { id: sprintId }, select: { id: true, projectId: true } });
+  if (!sprint || sprint.projectId !== projectId) return null;
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { orgId: true } });
+  if (!project || project.orgId !== orgId) return null;
+  return sprint;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; sprintId: string }> }
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const user = session.user as any;
 
-  const { sprintId } = await params;
+  const { id, sprintId } = await params;
   const db = prisma as any;
+
+  if (!await authorizeSprint(id, sprintId, user.orgId))
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   const sprint = await db.sprint.findUnique({
     where: { id: sprintId },
@@ -54,12 +67,15 @@ export async function PATCH(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-  const { sprintId } = await params;
+  const { id, sprintId } = await params;
   const db = prisma as any;
+  const user = session.user as any;
+
+  if (!await authorizeSprint(id, sprintId, user.orgId))
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
   const body = await req.json();
   const data = updateSchema.parse(body);
-
-  const user = session.user as any;
 
   const updateData: Record<string, unknown> = { ...data };
 
@@ -87,8 +103,12 @@ export async function DELETE(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-  const { sprintId } = await params;
+  const { id, sprintId } = await params;
   const db = prisma as any;
+  const user = session.user as any;
+
+  if (!await authorizeSprint(id, sprintId, user.orgId))
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   const sprint = await db.sprint.findUnique({ where: { id: sprintId } });
   if (!sprint) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });

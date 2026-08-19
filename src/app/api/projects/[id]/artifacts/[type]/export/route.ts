@@ -30,14 +30,16 @@ export async function GET(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
+  const user = session.user as any;
   const { id, type } = await params;
 
   const [project, artifact] = await Promise.all([
-    prisma.project.findUnique({ where: { id }, select: { name: true } }),
+    prisma.project.findUnique({ where: { id }, select: { name: true, orgId: true } }),
     prisma.artifact.findFirst({ where: { projectId: id, artifactType: type } }),
   ]);
 
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  if (project.orgId !== user.orgId) return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
   if (!artifact?.content) return NextResponse.json({ error: "ARTIFACT_NOT_GENERATED" }, { status: 404 });
 
   const content = artifact.content as Record<string, unknown>;

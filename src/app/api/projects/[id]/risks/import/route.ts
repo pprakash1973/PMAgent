@@ -7,7 +7,11 @@ import { syncArtifactToTables } from "@/lib/artifact-sync";
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const user = session.user as any;
   const { id } = await params;
+
+  const project = await prisma.project.findUnique({ where: { id }, select: { orgId: true } });
+  if (!project || project.orgId !== user.orgId) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   const artifact = await prisma.artifact.findFirst({
     where: { projectId: id, artifactType: { in: ["risk_register", "raid_register"] } },

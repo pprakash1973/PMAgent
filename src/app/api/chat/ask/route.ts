@@ -4,16 +4,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { askPortfolio } from "@/lib/ai";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
 
-const PORTFOLIO_ROLES = ["delivery_manager", "delivery_head", "admin"];
+const PORTFOLIO_ROLES = ["dm", "dh", "pgm", "admin"];
+const MAX_QUESTION_LEN = 2000;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
   const user = session.user as any;
 
-  const { question } = await req.json();
+  // Rate limit: 30 AI questions per user per 10 minutes
+  const rl = checkRateLimit(`chat:${user.id}`, 30, 10 * 60 * 1000);
+  if (!rl.allowed) return NextResponse.json({ error: { code: "RATE_LIMITED" } }, { status: 429 });
+
+  const body = await req.json();
+  const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!question) return NextResponse.json({ error: { code: "MISSING_QUESTION" } }, { status: 400 });
+  if (question.length > MAX_QUESTION_LEN)
+    return NextResponse.json({ error: { code: "QUESTION_TOO_LONG", max: MAX_QUESTION_LEN } }, { status: 400 });
 
   const isPortfolioRole = PORTFOLIO_ROLES.includes(user.role);
 

@@ -21,15 +21,27 @@ const patchSchema = z.object({
   parentId: z.string().nullable().optional(),
 }).strict();
 
+async function authorizeBacklogItem(projectId: string, itemId: string, orgId: string) {
+  const db = prisma as any;
+  const item = await db.backlogItem.findUnique({ where: { id: itemId }, select: { id: true, projectId: true } });
+  if (!item || item.projectId !== projectId) return false;
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { orgId: true } });
+  return project?.orgId === orgId;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const user = session.user as any;
 
-  const { itemId } = await params;
+  const { id, itemId } = await params;
   const db = prisma as any;
+
+  if (!await authorizeBacklogItem(id, itemId, user.orgId))
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   const item = await db.backlogItem.findUnique({
     where: { id: itemId },
@@ -50,9 +62,12 @@ export async function PATCH(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-  const { itemId } = await params;
+  const { id, itemId } = await params;
   const db = prisma as any;
   const user = session.user as any;
+
+  if (!await authorizeBacklogItem(id, itemId, user.orgId))
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
   const body = await req.json();
   const data = patchSchema.parse(body);
@@ -103,9 +118,13 @@ export async function POST(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
-  const { itemId } = await params;
+  const { id, itemId } = await params;
   const db = prisma as any;
   const user = session.user as any;
+
+  if (!await authorizeBacklogItem(id, itemId, user.orgId))
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
   const body = await req.json().catch(() => ({}));
   const action = body.action as string;
 

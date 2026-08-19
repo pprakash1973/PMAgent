@@ -3,7 +3,9 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
+import { checkRateLimit } from "@/lib/rate-limiter";
 
 function addWorkingDays(start: Date, days: number): Date {
   const d = new Date(start);
@@ -26,13 +28,24 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  await params;
+  const user = session.user as any;
+  const { id } = await params;
+
+  // Verify project belongs to user's org
+  const project = await prisma.project.findUnique({ where: { id }, select: { orgId: true } });
+  if (!project || project.orgId !== user.orgId) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+
+  // Rate limit: 20 AI schedule commands per user per 10 minutes
+  const rl = checkRateLimit(`schedule-ai:${user.id}`, 20, 10 * 60 * 1000);
+  if (!rl.allowed) return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
 
   const body = await req.json();
   const { command, tasks } = body as { command: string; tasks: any[] };
 
   if (!command?.trim()) return NextResponse.json({ error: "command is required" }, { status: 400 });
+  if (command.length > 500) return NextResponse.json({ error: "command too long (max 500 chars)" }, { status: 400 });
   if (!Array.isArray(tasks) || tasks.length === 0) return NextResponse.json({ error: "tasks array is required" }, { status: 400 });
+  if (tasks.length > 300) return NextResponse.json({ error: "tasks array exceeds limit (max 300)" }, { status: 400 });
 
   const today = new Date().toISOString().slice(0, 10);
 
