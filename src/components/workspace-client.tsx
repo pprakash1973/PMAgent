@@ -6071,7 +6071,7 @@ function OverviewTab({ project }: { project: any }) {
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
 const PREDICTIVE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
-const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Resources", "Schedule", "Commercial", "Status Reporting"];
+const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
 
 const PREDICTIVE_NAV_GROUPS = [
   { section: "Project",        tabs: ["Overview", "Project Info"] },
@@ -6081,7 +6081,7 @@ const PREDICTIVE_NAV_GROUPS = [
 ];
 const AGILE_NAV_GROUPS = [
   { section: "Project",        tabs: ["Overview", "Project Info"] },
-  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Resources", "Sprints", "Schedule", "Commercial"] },
+  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Resources", "Sprints", "Schedule", "Cost"] },
   { section: "Risk & Quality", tabs: ["Risk", "Issues", "Registers"] },
   { section: "Reporting",      tabs: ["Status Reporting"] },
 ];
@@ -6382,8 +6382,8 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
           {tab === "Issues" && <IssuesTab project={project} />}
           {tab === "Resources" && <ResourcesTab project={project} />}
           {tab === "Schedule" && <ScheduleTab project={project} />}
-          {tab === "Cost" && <CostTab project={project} />}
-          {tab === "Commercial" && isAgile && <AgileCommercialTab project={project} />}
+          {tab === "Cost" && !isAgile && <CostTab project={project} />}
+          {tab === "Cost" && isAgile && <AgileCommercialTab project={project} />}
           {tab === "Registers" && <RegistersTab project={project} />}
           {tab === "Scope Control" && <ScopeControlTab project={project} />}
           {tab === "Status Reporting" && isAgile && <AgileStatusTab project={project} />}

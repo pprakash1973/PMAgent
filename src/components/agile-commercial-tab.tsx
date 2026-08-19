@@ -100,7 +100,7 @@ function AddLedgerForm({ projectId, onAdded }: { projectId: string; onAdded: () 
   );
 }
 
-// ── Commercial tab ────────────────────────────────────────────────────────────
+// ── Cost tab (agile) ──────────────────────────────────────────────────────────
 
 export function AgileCommercialTab({ project }: { project: any }) {
   const [data, setData] = useState<CommercialData | null>(null);
@@ -149,7 +149,7 @@ export function AgileCommercialTab({ project }: { project: any }) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Commercial Tracking</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Cost Tracking</h3>
           <p style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
             {modelLabel[cm]} · {currency}
             {bac > 0 && ` · BAC: ${formatCurrency(bac, currency)}`}
@@ -158,14 +158,14 @@ export function AgileCommercialTab({ project }: { project: any }) {
         <AddLedgerForm projectId={project.id} onAdded={load} />
       </div>
 
-      {/* Contract alert */}
-      {!contract && (
+      {/* Alert only when neither a contract nor a project budget is defined */}
+      {!contract && bac === 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
           background: C.amberLight, border: `1px solid #f0d9a0`, borderRadius: 10, fontSize: 12, color: C.amber,
         }}>
           <AlertTriangle size={14} />
-          No active contract record. Use the Contracts section to add contract details.
+          No budget defined. Set a project budget in Project Info to enable cost tracking.
         </div>
       )}
 
