@@ -109,13 +109,12 @@ export function AgileCommercialTab({ project }: { project: any }) {
 
   const load = useCallback(async () => {
     try {
-      const [cRes, mRes] = await Promise.all([
-        fetch(`/api/projects/${project.id}/commercial`),
-        fetch(`/api/projects/${project.id}/agile-metrics`),
+      const [cData, mData] = await Promise.all([
+        fetch(`/api/projects/${project.id}/commercial`).then(r => r.ok ? r.json() : null),
+        fetch(`/api/projects/${project.id}/agile-metrics`).then(r => r.ok ? r.json() : null),
       ]);
-      const [cData, mData] = await Promise.all([cRes.json(), mRes.json()]);
-      setData(cData);
-      setMetrics(mData);
+      if (cData) setData(cData);
+      if (mData) setMetrics(mData);
     } finally {
       setLoading(false);
     }

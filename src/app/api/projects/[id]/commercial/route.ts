@@ -31,24 +31,29 @@ export async function GET(
     select: { budget: true, commercialModel: true, deliveryMethod: true, currency: true },
   });
 
-  const [contract, snapshots, ledger] = await Promise.all([
+  const [contract, snapshots, ledger, costSum] = await Promise.all([
     db.contract.findFirst({
       where: { projectId, status: "active" },
       orderBy: { createdAt: "desc" },
     }).catch(() => null),
     db.commercialSnapshot.findMany({
       where: { projectId },
-      orderBy: { snapshotDate: "desc" },
+      orderBy: { snapshotAt: "desc" },
       take: 12,
     }).catch(() => []),
     prisma.costEntry.findMany({
       where: { projectId },
       orderBy: { date: "desc" },
       take: 20,
+      select: { id: true, date: true, amount: true, category: true, description: true, createdAt: true },
+    }),
+    prisma.costEntry.aggregate({
+      where: { projectId },
+      _sum: { amount: true },
     }),
   ]);
 
-  const totalActual = ledger.reduce((sum: number, l: any) => sum + l.amount, 0);
+  const totalActual = costSum._sum.amount ?? 0;
   const latest = snapshots[0] ?? null;
 
   return NextResponse.json({
