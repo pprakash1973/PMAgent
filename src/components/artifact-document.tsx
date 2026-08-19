@@ -122,7 +122,9 @@ export function ArtifactDocument({ artifactType, content, projectId }: Props) {
       </div>
       <div ref={docRef} className="bg-white border border-slate-200 rounded-md p-6 text-sm text-slate-800 space-y-4 max-h-[600px] overflow-y-auto">
         <h1 className="text-lg font-bold text-blue-900 border-b-2 border-blue-900 pb-2">{title}</h1>
-        <RenderValue value={content} depth={0} />
+        {artifactType === "project_charter"
+          ? <RenderCharter content={content} />
+          : <RenderValue value={content} depth={0} />}
       </div>
     </div>
   );
@@ -213,6 +215,207 @@ function Section({ label, value, depth }: { label: string; value: unknown; depth
     <div>
       <h2 className="text-sm font-bold text-blue-800 uppercase tracking-wide border-b border-blue-100 pb-1 mb-2">{label}</h2>
       <RenderValue value={value} depth={depth + 1} keyName={label.toLowerCase().replace(/\s/g, "")} />
+    </div>
+  );
+}
+
+// ── Project Charter — PMI 8-section renderer ──────────────────────────────────
+
+function FieldRow({ label, value }: { label: string; value: unknown }) {
+  if (value == null || value === "" || value === "—") return null;
+  return (
+    <div className="flex gap-2 text-xs mb-1">
+      <span className="font-semibold text-slate-600 min-w-[140px] shrink-0">{label}:</span>
+      <span className="text-slate-800">{String(value)}</span>
+    </div>
+  );
+}
+
+function CharterSection({ num, title, children }: { num: string; title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-bold text-blue-900 border-b-2 border-blue-100 pb-1">
+        {num}. {title}
+      </h2>
+      <div className="space-y-1.5 pl-1">{children}</div>
+    </div>
+  );
+}
+
+function CharterSubSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-2">
+      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function BulletList({ items }: { items: unknown[] }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <ul className="list-disc list-inside space-y-0.5 text-xs text-slate-700">
+      {items.map((item, i) => <li key={i}>{String(item)}</li>)}
+    </ul>
+  );
+}
+
+function MiniTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr>{headers.map((h) => <th key={h} className="bg-blue-900 text-white px-3 py-1.5 text-left font-semibold">{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => (
+            <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+              {row.map((cell, j) => <td key={j} className="px-3 py-1.5 border-b border-slate-200 align-top">{cell || "—"}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RenderCharter({ content }: { content: Record<string, unknown> }) {
+  const c = content as any;
+  const scope = c.scope ?? {};
+
+  return (
+    <div className="space-y-6">
+      {/* 1 — General Information */}
+      <CharterSection num="1" title="General Information">
+        <FieldRow label="Project Title"  value={c.projectTitle} />
+        <FieldRow label="Project Code"   value={c.projectCode} />
+        <FieldRow label="Version"        value={c.version} />
+        <FieldRow label="Date"           value={c.date} />
+        <FieldRow label="Start Date"     value={c.projectStartDate} />
+        <FieldRow label="End Date"       value={c.projectEndDate} />
+        <FieldRow label="Prepared By"    value={c.preparedBy} />
+        <FieldRow label="Approved By"    value={c.approvedBy} />
+        <FieldRow label="PM Authority"   value={c.pmAuthority} />
+      </CharterSection>
+
+      {/* 2 — Project Purpose & Business Case */}
+      <CharterSection num="2" title="Project Purpose & Business Case">
+        {c.projectDescription && <p className="text-xs text-slate-700 leading-relaxed">{c.projectDescription}</p>}
+        {c.businessCase && (
+          <CharterSubSection title="Business Case">
+            <p className="text-xs text-slate-700 leading-relaxed">{c.businessCase}</p>
+          </CharterSubSection>
+        )}
+      </CharterSection>
+
+      {/* 3 — Measurable Objectives (SMART) */}
+      <CharterSection num="3" title="Measurable Objectives (SMART)">
+        <BulletList items={Array.isArray(c.objectives) ? c.objectives : []} />
+        {Array.isArray(c.successCriteria) && c.successCriteria.length > 0 && (
+          <CharterSubSection title="Success Criteria">
+            <MiniTable
+              headers={["Criterion", "Measure", "Target"]}
+              rows={c.successCriteria.map((sc: any) => [String(sc.criterion ?? "—"), String(sc.measure ?? "—"), String(sc.target ?? "—")])}
+            />
+          </CharterSubSection>
+        )}
+      </CharterSection>
+
+      {/* 4 — Project Scope */}
+      <CharterSection num="4" title="Project Scope">
+        {Array.isArray(scope.inScope) && scope.inScope.length > 0 && (
+          <CharterSubSection title="In Scope">
+            <BulletList items={scope.inScope} />
+          </CharterSubSection>
+        )}
+        {Array.isArray(scope.outOfScope) && scope.outOfScope.length > 0 && (
+          <CharterSubSection title="Out Of Scope">
+            <BulletList items={scope.outOfScope} />
+          </CharterSubSection>
+        )}
+        {Array.isArray(c.deliverables) && c.deliverables.length > 0 && (
+          <CharterSubSection title="Key Deliverables">
+            <BulletList items={c.deliverables} />
+          </CharterSubSection>
+        )}
+      </CharterSection>
+
+      {/* 5 — Milestones & Timeline */}
+      <CharterSection num="5" title="Milestones & Timeline">
+        {Array.isArray(c.milestones) && c.milestones.length > 0 && (
+          <MiniTable
+            headers={["Milestone", "Target Date", "Description"]}
+            rows={c.milestones.map((m: any) => [String(m.name ?? "—"), String(m.targetDate ?? "—"), String(m.description ?? "—")])}
+          />
+        )}
+      </CharterSection>
+
+      {/* 6 — Resources & Budget */}
+      <CharterSection num="6" title="Resources & Budget">
+        {c.budget && typeof c.budget === "object" && (
+          <CharterSubSection title="Budget">
+            {Object.entries(c.budget as object).map(([k, v]) => v != null ? (
+              <FieldRow key={k} label={formatKey(k)} value={v} />
+            ) : null)}
+          </CharterSubSection>
+        )}
+        {Array.isArray(c.stakeholders) && c.stakeholders.length > 0 && (
+          <CharterSubSection title="Key Stakeholders">
+            {(() => {
+              const shKeys = ["name", "role", "organization", "power", "interest", "engagementLevel", "notes"];
+              const presentKeys = shKeys.filter((k) => c.stakeholders.some((s: any) => s[k] != null && String(s[k]) !== "—" && String(s[k]) !== ""));
+              return (
+                <MiniTable
+                  headers={presentKeys.map(formatKey)}
+                  rows={c.stakeholders.map((s: any) => presentKeys.map((k) => String(s[k] ?? "—")))}
+                />
+              );
+            })()}
+          </CharterSubSection>
+        )}
+      </CharterSection>
+
+      {/* 7 — Risks, Assumptions & Constraints */}
+      <CharterSection num="7" title="Risks, Assumptions & Constraints">
+        {Array.isArray(c.risks) && c.risks.length > 0 && (
+          <CharterSubSection title="Risks">
+            <BulletList items={c.risks} />
+          </CharterSubSection>
+        )}
+        {Array.isArray(c.assumptions) && c.assumptions.length > 0 && (
+          <CharterSubSection title="Assumptions">
+            <BulletList items={c.assumptions} />
+          </CharterSubSection>
+        )}
+        {Array.isArray(c.constraints) && c.constraints.length > 0 && (
+          <CharterSubSection title="Constraints">
+            <BulletList items={c.constraints} />
+          </CharterSubSection>
+        )}
+        {Array.isArray(c.conflicts) && c.conflicts.length > 0 && (
+          <CharterSubSection title="Conflicts & Open Items">
+            <BulletList items={c.conflicts} />
+          </CharterSubSection>
+        )}
+      </CharterSection>
+
+      {/* 8 — Sign-off / Approvals */}
+      <CharterSection num="8" title="Sign-off / Approvals">
+        {c.approvalRequirements && (
+          <p className="text-xs text-slate-700 leading-relaxed mb-2">{c.approvalRequirements}</p>
+        )}
+        {Array.isArray(c.approvalSignatures) && c.approvalSignatures.length > 0 && (
+          <MiniTable
+            headers={["Role", "Name", "Signature", "Date"]}
+            rows={c.approvalSignatures.map((sig: any) => [
+              String(sig.role ?? "—"),
+              String(sig.name ?? "—"),
+              "___________________________",
+              "___________________________",
+            ])}
+          />
+        )}
+      </CharterSection>
     </div>
   );
 }
