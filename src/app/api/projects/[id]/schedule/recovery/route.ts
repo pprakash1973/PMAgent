@@ -47,7 +47,7 @@ export async function POST(
   }
 
   const spi = pv > 0 ? Math.round((ev / pv) * 100) / 100 : null;
-  if (spi === null || spi >= 0.8) {
+  if (spi === null || spi >= 0.7) {
     return NextResponse.json({ error: "SPI_OK" }, { status: 400 });
   }
 

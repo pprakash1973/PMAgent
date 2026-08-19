@@ -1237,7 +1237,13 @@ function IssuesTab({ project }: { project: any }) {
 // ── Recovery panel ─────────────────────────────────────────────────────────────
 
 type RecoveryStep = { title: string; action: string; effort: string; impact: string };
-type RecoveryPlan = { headline: string; steps: RecoveryStep[]; estimatedRecovery: string };
+type RecoveryPlan = {
+  headline: string;
+  steps: RecoveryStep[];
+  estimatedRecovery: string;
+  assumptions: string[];
+  conflicts: string[];
+};
 
 function effortColor(e: string) {
   if (e === "Low") return { color: C.green, bg: C.greenLight };
@@ -1250,118 +1256,185 @@ function RecoveryPanel({ projectId, spi }: { projectId: string; spi: number }) {
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState<RecoveryPlan | null>(null);
   const [err, setErr] = useState("");
+  const PETROL = "#003C51";
 
   async function load() {
     if (plan) { setOpen(true); return; }
-    setOpen(true);
-    setLoading(true);
-    setErr("");
+    setOpen(true); setLoading(true); setErr("");
     try {
       const res = await fetch(`/api/projects/${projectId}/schedule/recovery`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
       setPlan(data);
-    } catch (e: any) {
-      setErr(e.message);
-    }
+    } catch (e: any) { setErr(e.message); }
     setLoading(false);
   }
 
+  // Gauge geometry — semicircle over the top, left=SPI 0, right=SPI 1.5
+  // Zone boundary points pre-computed: cx=80, cy=92, r=66
+  // zone07 @ angle 96°: (73.1, 26.4)  zone09 @ angle 72°: (100.4, 29.2)
+  const toRad = (d: number) => d * Math.PI / 180;
+  const spiAng = 180 * (1 - Math.min(spi, 1.5) / 1.5);
+  const needleX = (80 + 61 * Math.cos(toRad(spiAng))).toFixed(1);
+  const needleY = (92 - 61 * Math.sin(toRad(spiAng))).toFixed(1);
+
   return (
     <div style={{ marginBottom: 18 }}>
-      {/* Alert banner */}
+      {/* Header strip */}
       <div style={{
-        display: "flex", alignItems: "center", gap: 12,
-        padding: "12px 16px", background: C.redLight,
-        border: `1px solid ${C.red}40`, borderRadius: open ? "12px 12px 0 0" : 12,
+        display: "flex", alignItems: "center", gap: 14, padding: "13px 20px",
+        background: PETROL, borderRadius: open ? "12px 12px 0 0" : 12,
       }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: "50%", background: C.red,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(207,63,58,.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+            <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="#ff7875" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.red }}>Schedule at risk — SPI {spi.toFixed(2)}</div>
-          <div style={{ fontSize: 12.5, color: C.text2, marginTop: 1 }}>
-            Project is significantly behind schedule. SPI below 0.80 requires corrective action.
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", letterSpacing: "-.01em" }}>Schedule at Risk</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, background: "#cf3f3a", color: "#fff", borderRadius: 6, padding: "2px 9px" }}>SPI {spi.toFixed(2)}</span>
+          </div>
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.6)" }}>
+            SPI below 0.70 — immediate corrective action required
           </div>
         </div>
-        <button
-          onClick={load}
-          style={{
-            height: 34, padding: "0 16px",
-            background: C.red, color: "#fff",
-            border: "none", borderRadius: 8,
-            font: `700 12.5px var(--font-inter),'Inter',sans-serif`, cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 7, flexShrink: 0,
-          }}
-        >
-          ⚡ Go To Green
-        </button>
-        {open && <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 19, color: C.text3, padding: "0 4px" }}>×</button>}
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          {!open && (
+            <button onClick={load} style={{
+              height: 35, padding: "0 16px", background: C.primary, color: "#fff",
+              border: "none", borderRadius: 8, font: `600 13px ${C.FF}`, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 7,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              Go to Green
+            </button>
+          )}
+          {open && (
+            <button onClick={() => setOpen(false)} style={{ background: "rgba(255,255,255,.1)", border: "none", cursor: "pointer", color: "#fff", fontSize: 18, borderRadius: 6, width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"/></svg>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Recovery plan panel */}
+      {/* Expanded panel */}
       {open && (
-        <div style={{
-          border: `1px solid ${C.red}40`, borderTop: "none",
-          borderRadius: "0 0 12px 12px",
-          background: "#fffcfc", padding: "18px 20px",
-        }}>
+        <div style={{ border: "1.5px solid rgba(0,60,81,.18)", borderTop: "none", borderRadius: "0 0 12px 12px", background: "#f8fafb", overflow: "hidden" }}>
           {loading && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, color: C.text3, fontSize: 14 }}>
-              <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #ccc", borderTopColor: C.red, borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
-              Analysing schedule and generating recovery plan…
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "22px 24px", color: C.text2, fontSize: 14 }}>
+              <span style={{ width: 18, height: 18, border: "2.5px solid #dde2e8", borderTopColor: PETROL, borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+              Analysing schedule and generating recovery plan...
             </div>
           )}
-          {err && <div style={{ fontSize: 14, color: C.red }}>{err}</div>}
+          {err && <div style={{ fontSize: 14, color: C.red, padding: "16px 24px" }}>{err}</div>}
           {plan && (
             <>
-              {/* Headline */}
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18 }}>
-                <span style={{ color: C.primary, fontSize: 17, flexShrink: 0 }}>✦</span>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".05em", color: C.primary, textTransform: "uppercase" as const, marginBottom: 4 }}>AI Recovery Assessment</div>
-                  <p style={{ fontSize: 14, color: C.text, lineHeight: 1.6, margin: 0 }}>{plan.headline}</p>
+              {/* AI headline */}
+              <div style={{ padding: "16px 24px", background: "#fff", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: C.primary, marginBottom: 5 }}>AI Recovery Assessment</div>
+                <p style={{ fontSize: 14.5, color: C.text, lineHeight: 1.65, margin: 0, fontStyle: "italic" as const }}>"{plan.headline}"</p>
+              </div>
+
+              {/* Gauge + steps */}
+              <div style={{ display: "flex" }}>
+                {/* Left: SPI dial */}
+                <div style={{ width: 180, flexShrink: 0, padding: "20px 12px 20px 20px", background: "#fff", borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 12 }}>
+                  <svg width="140" height="88" viewBox="0 0 160 100">
+                    {/* Grey track */}
+                    <path d="M 14 92 A 66 66 0 0 0 146 92" fill="none" stroke="#e8edf2" strokeWidth="9" strokeLinecap="round"/>
+                    {/* Red zone 0.00–0.70 */}
+                    <path d="M 14 92 A 66 66 0 0 0 73.1 26.4" fill="none" stroke="#cf3f3a" strokeWidth="9" strokeLinecap="butt" opacity="0.9"/>
+                    {/* Amber zone 0.70–0.90 */}
+                    <path d="M 73.1 26.4 A 66 66 0 0 0 100.4 29.2" fill="none" stroke="#c17d12" strokeWidth="9" strokeLinecap="butt" opacity="0.9"/>
+                    {/* Green zone 0.90+ */}
+                    <path d="M 100.4 29.2 A 66 66 0 0 0 146 92" fill="none" stroke="#158a5a" strokeWidth="9" strokeLinecap="round" opacity="0.9"/>
+                    {/* Needle */}
+                    <line x1="80" y1="92" x2={needleX} y2={needleY} stroke={PETROL} strokeWidth="2.5" strokeLinecap="round"/>
+                    <circle cx="80" cy="92" r="5" fill={PETROL}/>
+                    <circle cx="80" cy="92" r="2.5" fill="#fff"/>
+                    {/* Value */}
+                    <text x="80" y="70" textAnchor="middle" fontSize="20" fontWeight="700" fill="#cf3f3a" fontFamily="monospace">{spi.toFixed(2)}</text>
+                    <text x="80" y="82" textAnchor="middle" fontSize="9" fill="#8a909c" letterSpacing="1.5">SPI</text>
+                  </svg>
+                  <div style={{ fontSize: 10.5, color: C.text3, lineHeight: 1.9, width: "100%" }}>
+                    {[
+                      { color: "#cf3f3a", label: "0.00-0.70 Critical" },
+                      { color: "#c17d12", label: "0.70-0.90 At risk" },
+                      { color: "#158a5a", label: "0.90+     On track" },
+                    ].map(({ color, label }) => (
+                      <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }}/>
+                        <span style={{ fontFamily: "monospace", fontSize: 10 }}>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right: step cards */}
+                <div style={{ flex: 1, padding: "16px 20px 16px 16px", minWidth: 0 }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: C.text3, marginBottom: 10 }}>Recovery Steps</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {plan.steps.map((s, i) => {
+                      const effortC = effortColor(s.effort);
+                      const impactC = effortColor(s.impact);
+                      return (
+                        <div key={i} style={{
+                          background: "#fff", border: `1px solid ${C.border}`,
+                          borderLeft: `3px solid ${C.primary}`, borderRadius: "0 10px 10px 0",
+                          padding: "11px 13px",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 5 }}>
+                            <div style={{ width: 20, height: 20, borderRadius: "50%", background: PETROL, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff", flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.35 }}>{s.title}</div>
+                          </div>
+                          <div style={{ fontSize: 12, color: C.text2, lineHeight: 1.55, marginBottom: 7 }}>{s.action}</div>
+                          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" as const }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 600, color: effortC.color, background: effortC.bg, borderRadius: 4, padding: "1.5px 6px" }}>Effort: {s.effort}</span>
+                            <span style={{ fontSize: 10.5, fontWeight: 600, color: impactC.color, background: impactC.bg, borderRadius: 4, padding: "1.5px 6px" }}>Impact: {s.impact}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              {/* Steps */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-                {plan.steps.map((s, i) => {
-                  const effortC = effortColor(s.effort);
-                  const impactC = effortColor(s.impact);
-                  return (
-                    <div key={i} style={{
-                      display: "flex", gap: 14,
-                      padding: "13px 15px",
-                      background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10,
-                    }}>
-                      <div style={{
-                        width: 26, height: 26, borderRadius: "50%", background: C.primary,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        font: `700 12px 'IBM Plex Mono'`, color: "#fff", flexShrink: 0, marginTop: 1,
-                      }}>{i + 1}</div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 4 }}>{s.title}</div>
-                        <div style={{ fontSize: 13.5, color: C.text2, lineHeight: 1.5 }}>{s.action}</div>
-                        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: effortC.color, background: effortC.bg, borderRadius: 5, padding: "2px 8px" }}>Effort: {s.effort}</span>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: impactC.color, background: impactC.bg, borderRadius: 5, padding: "2px 8px" }}>Impact: {s.impact}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+              {/* Recovery estimate */}
+              <div style={{ padding: "14px 24px", background: "#fff", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: "50%", background: C.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke={C.primary} strokeWidth="2"/>
+                    <path d="M12 6v6l4 2" stroke={C.primary} strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: C.text3, marginBottom: 2 }}>Estimated Recovery</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: C.primary }}>{plan.estimatedRecovery}</div>
+                </div>
               </div>
 
-              {/* Recovery estimate */}
-              <div style={{ padding: "10px 14px", background: C.primaryLight, border: `1px solid ${C.primaryBorder}`, borderRadius: 9, fontSize: 13.5, color: C.primary }}>
-                <strong>Estimated recovery:</strong> {plan.estimatedRecovery}
-              </div>
+              {/* Assumptions & conflicts */}
+              {((plan.assumptions?.length ?? 0) > 0 || (plan.conflicts?.length ?? 0) > 0) && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderTop: `1px solid ${C.border}` }}>
+                  {(plan.assumptions?.length ?? 0) > 0 && (
+                    <div style={{ padding: "14px 16px 14px 24px", borderRight: `1px solid ${C.border}` }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: C.primary, marginBottom: 7 }}>Assumptions</div>
+                      <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text2, lineHeight: 1.7 }}>
+                        {plan.assumptions.map((a, i) => <li key={i} style={{ marginBottom: 2 }}>{a}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {(plan.conflicts?.length ?? 0) > 0 && (
+                    <div style={{ padding: "14px 24px 14px 16px", background: "#fffdf7" }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const, color: C.amber, marginBottom: 7 }}>Risks & Conflicts</div>
+                      <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: C.text2, lineHeight: 1.7 }}>
+                        {plan.conflicts.map((c, i) => <li key={i} style={{ marginBottom: 2 }}>{c}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -2247,7 +2320,7 @@ function ScheduleTab({ project }: { project: any }) {
             ))}
           </div>
 
-          {kpi?.spi != null && kpi.spi < 0.8 && <RecoveryPanel projectId={project.id} spi={kpi.spi} />}
+          {kpi?.spi != null && kpi.spi < 0.7 && <RecoveryPanel projectId={project.id} spi={kpi.spi} />}
 
           {/* ── Summary strip ── */}
           {(() => {
