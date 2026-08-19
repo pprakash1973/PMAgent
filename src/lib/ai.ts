@@ -617,16 +617,23 @@ Return JSON with:
 - approvalRequirements (string)`,
 
     wbs: `Generate a Work Breakdown Structure.
-Use deliverable-oriented decomposition: every element is a noun/noun-phrase outcome, never a verb or activity.
-Include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
 
-IMPORTANT — Role naming: ALL owner fields (phase, deliverable, and work-package level) MUST use functional role titles — never individual person names, client-system-specific names, or numbered placeholders (e.g. "Developer 1" is NOT acceptable).
-Use functional titles appropriate to the project's domain. Core roles: Project Manager, Business Analyst, Technical Lead, Solution Architect, Senior Developer, Developer, QA Engineer, Test Manager, DevOps Engineer, Scrum Master. Specialist roles you MAY include where relevant: Process Analyst, Risk Manager, Change Manager, Data Analyst, Security Analyst, Integration Specialist, Business Process Owner, UAT Coordinator, Infrastructure Engineer, Compliance Analyst, Cloud Architect, UX Designer, Database Administrator. Add domain-specific specialist titles as needed — but never use product-name or system-name roles (e.g. "PACS Engineer", "SAP Consultant" — use "Integration Specialist" or "ERP Analyst" instead).
+RULE 1 — Deliverable-oriented decomposition: every element is a noun/noun-phrase outcome (a thing produced), never a verb or activity (e.g. "Tested Application" not "Test Application").
 
-IMPORTANT — Duration constraint: Use the startDate and endDate from the Project Context.
-Calibrate ALL estimatedDays values so the total WBS scope fits within this window.
-The sum of all work-package estimatedDays must not exceed the total working days (Mon–Fri) between startDate and endDate.
-Never generate estimatedDays that would cause the schedule to run beyond the project end date.
+RULE 2 — 100% Rule (mandatory at every level):
+  - The phases must collectively cover 100% of the total project scope — no scope gap, no scope outside the project.
+  - The deliverables within each phase must collectively cover 100% of that phase's scope.
+  - The work packages within each deliverable must collectively cover 100% of that deliverable's scope.
+  Never add scope that does not belong to the parent; never omit scope that does.
+
+RULE 3 — Mandatory phase: include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
+
+RULE 4 — Role naming: ALL owner fields MUST use functional role titles — never individual person names, client-system-specific names, or numbered placeholders.
+  Core roles: Project Manager, Business Analyst, Technical Lead, Solution Architect, Senior Developer, Developer, QA Engineer, Test Manager, DevOps Engineer, Scrum Master.
+  Specialist roles where relevant: Process Analyst, Risk Manager, Change Manager, Data Analyst, Security Analyst, Integration Specialist, Business Process Owner, UAT Coordinator, Infrastructure Engineer, Compliance Analyst, Cloud Architect, UX Designer, Database Administrator.
+  Never use product-specific names (e.g. "PACS Engineer", "SAP Consultant" — use "Integration Specialist" or "ERP Analyst" instead).
+
+RULE 5 — Duration constraint: calibrate ALL estimatedDays so the total WBS scope fits within the project startDate–endDate window. The sum of all work-package estimatedDays must not exceed the total working days (Mon–Fri) in that window.
 
 Return JSON with:
 - projectName (string)
@@ -634,18 +641,18 @@ Return JSON with:
   {
     id (string): "1.1", "1.2" …
     name (string): deliverable-oriented phase name
-    owner (string): generic numbered role name (e.g. "Technical Lead")
+    owner (string): functional role title (e.g. "Technical Lead")
     deliverables (array):
       {
         id (string): "1.1.1" …
         name (string): deliverable name
-        owner (string): generic numbered role name
+        owner (string): functional role title
         workPackages (array):
           {
             id (string): "1.1.1.1" …
             name (string): work package name
             estimatedDays (number)
-            owner (string): generic numbered role name (e.g. "Developer 1", "Business Analyst 1")
+            owner (string): functional role title (e.g. "Developer", "Business Analyst")
             dependencies (array of strings): WBS codes this work package depends on — omit or leave empty if none
           }
       }
