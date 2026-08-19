@@ -32,6 +32,36 @@ function engLabel(s: string) {
   return map[s] ?? s.replace(/_/g, " ");
 }
 
+function methLabel(methodology: string | null, deliveryMethod: string | null) {
+  const m = methodology ?? "";
+  const d = deliveryMethod ?? "";
+  if (m === "agile_scrum" || d === "agile_scrum") return "Agile Scrum";
+  if (m === "milestone_based" || m === "waterfall") return "Waterfall";
+  if (m === "predictive") return "Predictive";
+  if (m === "hybrid")     return "Hybrid";
+  if (m === "kanban")     return "Kanban";
+  if (m === "safe")       return "SAFe";
+  if (m === "lean")       return "Lean";
+  return m ? m.replace(/_/g, " ") : "Waterfall";
+}
+
+function methStyle(methodology: string | null, deliveryMethod: string | null): { color: string; background: string; border: string } {
+  const m = methodology ?? "";
+  const d = deliveryMethod ?? "";
+  if (m === "agile_scrum" || d === "agile_scrum")
+    return { color: "#5b21b6", background: "#ede9fe", border: "#c4b5fd" };
+  if (m === "hybrid")
+    return { color: "#065f46", background: "#d1fae5", border: "#6ee7b7" };
+  if (m === "kanban")
+    return { color: "#9a3412", background: "#ffedd5", border: "#fdba74" };
+  if (m === "safe")
+    return { color: "#1e3a8a", background: "#dbeafe", border: "#93c5fd" };
+  if (m === "lean")
+    return { color: "#14532d", background: "#dcfce7", border: "#86efac" };
+  // predictive / waterfall / milestone_based / default
+  return { color: "#1e40af", background: "#eff6ff", border: "#bfdbfe" };
+}
+
 const healthOrder: Record<string, number> = { red: 0, amber: 1, green: 2 };
 
 export default async function DashboardPage() {
@@ -149,7 +179,7 @@ export default async function DashboardPage() {
                     {p.name}
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" as const }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: "#6B7E8A" }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                         <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5M16 4v5"/>
@@ -165,6 +195,17 @@ export default async function DashboardPage() {
                     <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4, ...tag }}>
                       {ragLabel(p.healthStatus ?? "green")}
                     </span>
+                    {(() => {
+                      const ms = methStyle(p.methodology, p.deliveryMethod);
+                      return (
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 4,
+                          color: ms.color, background: ms.background, border: `1px solid ${ms.border}`,
+                        }}>
+                          {methLabel(p.methodology, p.deliveryMethod)}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
 
