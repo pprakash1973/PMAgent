@@ -6071,7 +6071,7 @@ function OverviewTab({ project }: { project: any }) {
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
 const PREDICTIVE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
-const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Schedule", "Commercial", "Status Reporting"];
+const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Resources", "Schedule", "Commercial", "Status Reporting"];
 
 const PREDICTIVE_NAV_GROUPS = [
   { section: "Project",        tabs: ["Overview", "Project Info"] },
@@ -6081,8 +6081,8 @@ const PREDICTIVE_NAV_GROUPS = [
 ];
 const AGILE_NAV_GROUPS = [
   { section: "Project",        tabs: ["Overview", "Project Info"] },
-  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Sprints", "Schedule", "Commercial"] },
-  { section: "Risk & Quality", tabs: ["Risk", "Issues"] },
+  { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Resources", "Sprints", "Schedule", "Commercial"] },
+  { section: "Risk & Quality", tabs: ["Risk", "Issues", "Registers"] },
   { section: "Reporting",      tabs: ["Status Reporting"] },
 ];
 

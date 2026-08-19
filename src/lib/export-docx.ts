@@ -147,11 +147,153 @@ function buildGenericDoc(title: string, content: any): (Paragraph | Table)[] {
   return children;
 }
 
+// ── project charter — PMI 8-section renderer ──────────────────────────────────
+
+function buildCharterDoc(content: any): (Paragraph | Table)[] {
+  const children: (Paragraph | Table)[] = [
+    AI_DISCLAIMER_PARAGRAPH,
+    heading("Project Charter"),
+    spacer(),
+  ];
+
+  // 1 — General Information
+  children.push(heading("1. General Information", HeadingLevel.HEADING_2));
+  if (content.projectTitle)     children.push(fieldRow("Project Title",  safeStr(content.projectTitle)));
+  if (content.projectCode)      children.push(fieldRow("Project Code",   safeStr(content.projectCode)));
+  if (content.version)          children.push(fieldRow("Version",        safeStr(content.version)));
+  if (content.date)             children.push(fieldRow("Date",           safeStr(content.date)));
+  if (content.projectStartDate) children.push(fieldRow("Start Date",     safeStr(content.projectStartDate)));
+  if (content.projectEndDate)   children.push(fieldRow("End Date",       safeStr(content.projectEndDate)));
+  if (content.preparedBy)       children.push(fieldRow("Prepared By",    safeStr(content.preparedBy)));
+  if (content.approvedBy)       children.push(fieldRow("Approved By",    safeStr(content.approvedBy)));
+  if (content.pmAuthority)      children.push(fieldRow("PM Authority",   safeStr(content.pmAuthority)));
+  children.push(spacer());
+
+  // 2 — Project Purpose & Business Case
+  children.push(heading("2. Project Purpose & Business Case", HeadingLevel.HEADING_2));
+  if (content.projectDescription) children.push(para(safeStr(content.projectDescription)));
+  if (content.businessCase) {
+    children.push(heading("Business Case", HeadingLevel.HEADING_3));
+    children.push(para(safeStr(content.businessCase)));
+  }
+  children.push(spacer());
+
+  // 3 — Measurable Objectives (SMART)
+  children.push(heading("3. Measurable Objectives (SMART)", HeadingLevel.HEADING_2));
+  if (Array.isArray(content.objectives)) {
+    for (const obj of content.objectives) children.push(bullet(safeStr(obj)));
+  }
+  if (Array.isArray(content.successCriteria) && content.successCriteria.length > 0) {
+    children.push(heading("Success Criteria", HeadingLevel.HEADING_3));
+    const scKeys = ["criterion", "measure", "target"];
+    children.push(dataTable(
+      ["Criterion", "Measure", "Target"],
+      content.successCriteria.map((sc: any) => scKeys.map((k) => safeStr(sc[k])))
+    ));
+  }
+  children.push(spacer());
+
+  // 4 — Project Scope
+  children.push(heading("4. Project Scope", HeadingLevel.HEADING_2));
+  const scope = content.scope ?? {};
+  if (Array.isArray(scope.inScope) && scope.inScope.length > 0) {
+    children.push(heading("In Scope", HeadingLevel.HEADING_3));
+    for (const item of scope.inScope) children.push(bullet(safeStr(item)));
+  }
+  if (Array.isArray(scope.outOfScope) && scope.outOfScope.length > 0) {
+    children.push(heading("Out Of Scope", HeadingLevel.HEADING_3));
+    for (const item of scope.outOfScope) children.push(bullet(safeStr(item)));
+  }
+  if (Array.isArray(content.deliverables) && content.deliverables.length > 0) {
+    children.push(heading("Key Deliverables", HeadingLevel.HEADING_3));
+    for (const d of content.deliverables) children.push(bullet(safeStr(d)));
+  }
+  children.push(spacer());
+
+  // 5 — Milestones & Timeline
+  children.push(heading("5. Milestones & Timeline", HeadingLevel.HEADING_2));
+  if (Array.isArray(content.milestones) && content.milestones.length > 0) {
+    children.push(dataTable(
+      ["Milestone", "Target Date", "Description"],
+      content.milestones.map((m: any) => [safeStr(m.name), safeStr(m.targetDate), safeStr(m.description)])
+    ));
+  }
+  children.push(spacer());
+
+  // 6 — Resources & Budget
+  children.push(heading("6. Resources & Budget", HeadingLevel.HEADING_2));
+  const budget = content.budget ?? {};
+  if (Object.keys(budget).length > 0) {
+    children.push(heading("Budget", HeadingLevel.HEADING_3));
+    for (const [k, v] of Object.entries(budget)) {
+      if (v != null) {
+        children.push(fieldRow(
+          k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()),
+          safeStr(v)
+        ));
+      }
+    }
+  }
+  if (Array.isArray(content.stakeholders) && content.stakeholders.length > 0) {
+    children.push(heading("Key Stakeholders", HeadingLevel.HEADING_3));
+    const shKeys = ["name", "role", "organization", "power", "interest", "engagementLevel", "notes"];
+    const presentKeys = shKeys.filter((k) => content.stakeholders.some((s: any) => s[k] != null && safeStr(s[k]) !== "—"));
+    children.push(dataTable(
+      presentKeys.map((k) => k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase())),
+      content.stakeholders.map((s: any) => presentKeys.map((k) => safeStr(s[k])))
+    ));
+  }
+  children.push(spacer());
+
+  // 7 — Risks, Assumptions & Constraints
+  children.push(heading("7. Risks, Assumptions & Constraints", HeadingLevel.HEADING_2));
+  if (Array.isArray(content.risks) && content.risks.length > 0) {
+    children.push(heading("Risks", HeadingLevel.HEADING_3));
+    for (const r of content.risks) children.push(bullet(safeStr(r)));
+  }
+  if (Array.isArray(content.assumptions) && content.assumptions.length > 0) {
+    children.push(heading("Assumptions", HeadingLevel.HEADING_3));
+    for (const a of content.assumptions) children.push(bullet(safeStr(a)));
+  }
+  if (Array.isArray(content.constraints) && content.constraints.length > 0) {
+    children.push(heading("Constraints", HeadingLevel.HEADING_3));
+    for (const c of content.constraints) children.push(bullet(safeStr(c)));
+  }
+  if (Array.isArray(content.conflicts) && content.conflicts.length > 0) {
+    children.push(heading("Conflicts & Open Items", HeadingLevel.HEADING_3));
+    for (const c of content.conflicts) children.push(bullet(safeStr(c)));
+  }
+  children.push(spacer());
+
+  // 8 — Sign-off / Approvals
+  children.push(heading("8. Sign-off / Approvals", HeadingLevel.HEADING_2));
+  if (content.approvalRequirements) {
+    children.push(para(safeStr(content.approvalRequirements)));
+    children.push(spacer());
+  }
+  if (Array.isArray(content.approvalSignatures) && content.approvalSignatures.length > 0) {
+    children.push(dataTable(
+      ["Role", "Name", "Signature", "Date"],
+      content.approvalSignatures.map((sig: any) => [
+        safeStr(sig.role),
+        safeStr(sig.name),
+        "___________________________",
+        "___________________________",
+      ])
+    ));
+  }
+  children.push(spacer());
+
+  return children;
+}
+
 // ── main dispatcher ───────────────────────────────────────────────────────────
 
 export async function buildDocx(artifactType: string, content: any): Promise<Buffer> {
   const title = artifactType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  const children = buildGenericDoc(title, content);
+  const children = artifactType === "project_charter"
+    ? buildCharterDoc(content)
+    : buildGenericDoc(title, content);
 
   const doc = new Document({
     styles: {

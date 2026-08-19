@@ -626,14 +626,23 @@ RULE 2 — 100% Rule (mandatory at every level):
   - The work packages within each deliverable must collectively cover 100% of that deliverable's scope.
   Never add scope that does not belong to the parent; never omit scope that does.
 
-RULE 3 — Mandatory phase: include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
+RULE 3 — Mandatory phase:
+  - For WATERFALL: include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
+  - For AGILE/SCRUM: replace "Project Management" with an "Agile Governance & Scrum Ceremonies" phase owned by the Scrum Master. This phase MUST include deliverables and work packages for:
+      Product Backlog (Product Backlog Refinement Sessions, Definition of Done Document, User Story Map)
+      Sprint Cadence (Sprint Planning Meetings, Sprint Review Presentations, Sprint Retrospective Outputs, Daily Scrum Facilitation)
+      Agile Reporting (Sprint Velocity Reports, Burndown Charts, Release Burnup Charts)
+      Project Administration (Project Charter, Risk Register, Stakeholder Register, Lessons Learned)
+    The Scrum Master must be the owner of Sprint Cadence deliverables; the Product Owner owns the Product Backlog.
 
 RULE 4 — Role naming: ALL owner fields MUST use functional role titles — never individual person names, client-system-specific names, or numbered placeholders.
-  Core roles: Project Manager, Business Analyst, Technical Lead, Solution Architect, Senior Developer, Developer, QA Engineer, Test Manager, DevOps Engineer, Scrum Master.
+  Core roles: Project Manager, Product Owner, Scrum Master, Business Analyst, Technical Lead, Solution Architect, Senior Developer, Developer, QA Engineer, Test Manager, DevOps Engineer.
   Specialist roles where relevant: Process Analyst, Risk Manager, Change Manager, Data Analyst, Security Analyst, Integration Specialist, Business Process Owner, UAT Coordinator, Infrastructure Engineer, Compliance Analyst, Cloud Architect, UX Designer, Database Administrator.
   Never use product-specific names (e.g. "PACS Engineer", "SAP Consultant" — use "Integration Specialist" or "ERP Analyst" instead).
 
 RULE 5 — Duration constraint: calibrate ALL estimatedDays so the total WBS scope fits within the project startDate–endDate window. The sum of all work-package estimatedDays must not exceed the total working days (Mon–Fri) in that window.
+
+RULE 6 — Agile phases: For AGILE/SCRUM projects, structure phases around Sprint releases or feature epics, NOT traditional waterfall phases (no "Design → Build → Test → Deploy" sequence). Use outcome-oriented phase names such as "Foundation Sprint Outputs", "Core Feature Releases", "Integration & Performance Releases", "UAT & Go-Live Release". Each sprint-phase deliverable represents a potentially shippable increment.
 
 Return JSON with:
 - projectName (string)
