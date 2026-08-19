@@ -1,14 +1,21 @@
 /**
  * Post-generation guardrail enforcement for status reports.
  *
- * assertStatusIntegrity — GR-11 mechanical threshold check (DEF-002).
- * computeHealthScore    — deterministic composite health metric (DEF-006).
+ * assertStatusIntegrity    — GR-11 mechanical threshold check (DEF-002).
+ * computeHealthScore       — deterministic composite health metric for waterfall/predictive (DEF-006).
+ * computeAgileHealthScore  — deterministic composite health metric for agile/scrum projects.
  *
- * Formula for computeHealthScore (documented per AC-6.1 / AC-6.2):
+ * Waterfall formula (computeHealthScore):
  *   Schedule (35 pts): spi≥1.0→35, ≥0.95→32, ≥0.85→24, ≥0.70→14, <0.70→5, null→25 (neutral)
  *   Cost     (30 pts): cpi≥1.0→30, ≥0.95→27, ≥0.90→21, ≥0.75→12, <0.75→3, null→22 (neutral)
  *   Overdue  (20 pts): 0→20, 1-2→14, 3-5→7, >5→0
  *   Risks    (15 pts): 0→15, 1-2→11, 3-5→6, >5→2
+ *
+ * Agile formula (computeAgileHealthScore):
+ *   Sprint completion (35 pts): avg accepted/committed ≥0.9→35, ≥0.75→27, ≥0.60→18, ≥0.40→10, <0.40→3, null→25
+ *   Budget burn      (30 pts): burn%≤80→30, ≤90→24, ≤100→15, ≤110→7, >110→0, null→22
+ *   Impediments      (20 pts): 0→20, 1-2→15, 3-5→8, >5→0
+ *   Risks            (15 pts): 0→15, 1-2→11, 3-5→6, >5→2
  *   Total max = 100
  */
 

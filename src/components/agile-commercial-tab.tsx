@@ -130,9 +130,10 @@ export function AgileCommercialTab({ project }: { project: any }) {
   );
 
   const cm = project.commercialModel ?? data?.project?.commercialModel ?? "fixed_price";
-  const bac = data?.project?.budget ?? 0;
+  // Use project budget from props first (loaded by workspace), fall back to API data
+  const bac: number = (project.budget as number | null) ?? data?.project?.budget ?? 0;
   const actual = data?.totalActual ?? 0;
-  const currency = data?.project?.currency ?? "USD";
+  const currency = (project.currency as string | null) ?? data?.project?.currency ?? "USD";
   const evm = metrics?.evm;
   const contract = data?.contract;
 
@@ -158,16 +159,7 @@ export function AgileCommercialTab({ project }: { project: any }) {
         <AddLedgerForm projectId={project.id} onAdded={load} />
       </div>
 
-      {/* Alert only when neither a contract nor a project budget is defined */}
-      {!contract && bac === 0 && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
-          background: C.amberLight, border: `1px solid #f0d9a0`, borderRadius: 10, fontSize: 12, color: C.amber,
-        }}>
-          <AlertTriangle size={14} />
-          No budget defined. Set a project budget in Project Info to enable cost tracking.
-        </div>
-      )}
+      {/* No alert — budget tile shows "Set in Project Info" when bac=0 */}
 
       {/* Key metrics */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -176,13 +168,12 @@ export function AgileCommercialTab({ project }: { project: any }) {
           value={formatCurrency(actual, currency)}
           color={C.text}
         />
-        {bac > 0 && (
-          <MetricCard
-            label="Budget (BAC)"
-            value={formatCurrency(bac, currency)}
-            color={C.text}
-          />
-        )}
+        <MetricCard
+          label="Budget (BAC)"
+          value={bac > 0 ? formatCurrency(bac, currency) : "Not set"}
+          color={bac > 0 ? C.text : C.text3}
+          sub={bac === 0 ? "Set in Project Info" : undefined}
+        />
         {cm !== "time_and_materials" && bac > 0 && (
           <MetricCard
             label="Budget Consumed"
