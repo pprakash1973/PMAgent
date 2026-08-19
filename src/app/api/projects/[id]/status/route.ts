@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateStatusSummary } from "@/lib/ai";
-import { assertStatusIntegrity, computeHealthScore } from "@/lib/status-integrity";
+import { assertStatusIntegrity, computeHealthScore, computeAgileHealthScore } from "@/lib/status-integrity";
 import { z } from "zod";
 
 // Bounds user-supplied status input — arbitrary keys allowed for question answers,
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Strip previewResult from the stored payload — it's a transport-only field
   const { previewResult: cachedPreview, ...rawInput } = parsed.data;
 
-  const [project, openRiskCount] = await Promise.all([
+  const [project, openRiskCount, openImpedimentCount] = await Promise.all([
     prisma.project.findUnique({
       where: { id },
       include: {
@@ -87,6 +87,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }),
     // Accurate risk count — not capped by the take:5 used for context (BUG-2)
     prisma.risk.count({ where: { projectId: id, status: "open" } }),
+    prisma.impediment.count({ where: { projectId: id, resolvedAt: null } }),
   ]);
   if (!project) return NextResponse.json({ error: { code: "NOT_FOUND" } }, { status: 404 });
 
@@ -194,12 +195,42 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   // WP-5 (DEF-006): Health score computed deterministically from measured inputs
-  const healthScore = computeHealthScore({
-    spi:          computedSpi,
-    cpi:          computedCpi,
-    overdueTasks: liveEVM?.overdueTasks ?? 0,
-    openRisks:    openRiskCount,        // use accurate count, not the take:5 sample (BUG-2)
-  });
+  const isAgile = project!.deliveryMethod === "agile_scrum" || project!.methodology === "agile_scrum";
+  let healthScore: number;
+  if (isAgile) {
+    // For agile projects fetch sprint completion rate and budget burn
+    const completedSprints = await prisma.sprint.findMany({
+      where: { projectId: id, state: "completed" },
+      orderBy: { sprintNumber: "desc" },
+      take: 2,
+    });
+    let avgCompletionRate: number | null = null;
+    if (completedSprints.length > 0) {
+      const validSprints = completedSprints.filter(s => (s.committedPoints ?? s.plannedCapacityPoints ?? 0) > 0);
+      if (validSprints.length > 0) {
+        avgCompletionRate = validSprints.reduce((sum, s) => {
+          const committed = s.committedPoints ?? s.plannedCapacityPoints ?? 0;
+          return sum + (committed > 0 ? (s.acceptedPoints ?? 0) / committed : 0);
+        }, 0) / validSprints.length;
+      }
+    }
+    const bac = project!.budget ?? 0;
+    const totalActual = costEntries.reduce((s, e) => s + e.amount, 0);
+    const burnPct = bac > 0 ? (totalActual / bac) * 100 : null;
+    healthScore = computeAgileHealthScore({
+      avgCompletionRate,
+      burnPct,
+      openImpediments: openImpedimentCount,
+      openRisks: openRiskCount,
+    });
+  } else {
+    healthScore = computeHealthScore({
+      spi:          computedSpi,
+      cpi:          computedCpi,
+      overdueTasks: liveEVM?.overdueTasks ?? 0,
+      openRisks:    openRiskCount,
+    });
+  }
 
   // Preview mode: return AI result without touching the DB
   if (preview) {

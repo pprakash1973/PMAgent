@@ -230,7 +230,26 @@ export async function generateStatusQuestions(
   projectContext: Record<string, unknown>
 ): Promise<StatusQuestion[]> {
   const config = await resolveModel("status_questions");
-  const system = `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
+  const isAgile = projectContext.methodology === "agile_scrum" || projectContext.deliveryMethod === "agile_scrum";
+
+  const system = isAgile
+    ? `You are a senior PMO AI conducting a weekly sprint health check for a Scrum Product Owner / PM.
+Generate exactly 10 targeted questions for an AGILE/SCRUM project based on its current context.
+
+Rules:
+- Use agile/scrum terminology — DO NOT use EVM terms like SPI, CPI, Earned Value, Planned Value.
+- Categories to cover: Sprint Goal, Sprint Velocity, Backlog Health, Impediments, Budget Burn, Stakeholder Sentiment, Team Performance, Quality/DoD, Accomplishments, Next Sprint Plan
+- Make questions SPECIFIC to the project's context (industry, phase, open risks, sprint state)
+- Always include one Accomplishments question and one Next Sprint Plan question
+- For EVERY question generate 4–6 suggested answers specific and realistic for this project
+- Types:
+  - "chips": PM picks ONE (single-select). Use for sprint goal status, velocity assessment, budget burn status.
+  - "multi-chips": PM picks ONE OR MORE. Use for accomplishments, impediments, backlog changes, plans.
+  - "select": dropdown for simple categorical choices (RAG, yes/no)
+  - "number": numeric input for velocity points, impediment count, stories completed
+- Set allowCustom: true when narrative answers are expected
+- Return JSON: { "questions": [ { "id": 1, "category": "...", "question": "...", "type": "chips|multi-chips|select|number", "suggestedAnswers": ["...", "..."], "allowCustom": true|false, "required": true, "placeholder": "..." } ] }`
+    : `You are a senior PMO AI conducting a weekly project health check for a Project Manager.
 Generate exactly 10 targeted questions based on the project's current context.
 
 Rules:

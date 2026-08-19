@@ -112,3 +112,48 @@ export function computeHealthScore(params: {
 
   return Math.round(Math.min(100, Math.max(0, scheduleScore + costScore + overdueScore + riskScore)));
 }
+
+/**
+ * Deterministic health score 0–100 for agile/scrum projects.
+ * Uses sprint completion rate, budget burn, impediments, and risks instead of EVM metrics.
+ */
+export function computeAgileHealthScore(params: {
+  avgCompletionRate: number | null;  // avg accepted/committed across last N sprints
+  burnPct: number | null;            // actual / budget * 100
+  openImpediments: number;
+  openRisks: number;
+}): number {
+  const { avgCompletionRate, burnPct, openImpediments, openRisks } = params;
+
+  let sprintScore = 25;
+  if (avgCompletionRate !== null) {
+    if (avgCompletionRate >= 0.9)       sprintScore = 35;
+    else if (avgCompletionRate >= 0.75) sprintScore = 27;
+    else if (avgCompletionRate >= 0.6)  sprintScore = 18;
+    else if (avgCompletionRate >= 0.4)  sprintScore = 10;
+    else                                sprintScore = 3;
+  }
+
+  let budgetScore = 22;
+  if (burnPct !== null) {
+    if (burnPct <= 80)       budgetScore = 30;
+    else if (burnPct <= 90)  budgetScore = 24;
+    else if (burnPct <= 100) budgetScore = 15;
+    else if (burnPct <= 110) budgetScore = 7;
+    else                     budgetScore = 0;
+  }
+
+  let impedScore: number;
+  if (openImpediments === 0)      impedScore = 20;
+  else if (openImpediments <= 2)  impedScore = 15;
+  else if (openImpediments <= 5)  impedScore = 8;
+  else                            impedScore = 0;
+
+  let riskScore: number;
+  if (openRisks === 0)      riskScore = 15;
+  else if (openRisks <= 2)  riskScore = 11;
+  else if (openRisks <= 5)  riskScore = 6;
+  else                      riskScore = 2;
+
+  return Math.round(Math.min(100, Math.max(0, sprintScore + budgetScore + impedScore + riskScore)));
+}

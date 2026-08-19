@@ -5771,6 +5771,321 @@ function BaselineTab({ project }: { project: any }) {
   );
 }
 
+// ── Agile Overview tab ─────────────────────────────────────────────────────────
+
+function computeAgileScore(params: {
+  completionRate: number | null;   // acceptedPoints / committedPoints, 0-1
+  burnPct: number | null;          // actual / budget %, 0-∞
+  openImpediments: number;
+  openRisks: number;
+}): number {
+  const { completionRate, burnPct, openImpediments, openRisks } = params;
+
+  let sprintScore = 25; // neutral when no sprints completed
+  if (completionRate !== null) {
+    if (completionRate >= 0.9)      sprintScore = 35;
+    else if (completionRate >= 0.75) sprintScore = 27;
+    else if (completionRate >= 0.6)  sprintScore = 18;
+    else if (completionRate >= 0.4)  sprintScore = 10;
+    else                             sprintScore = 3;
+  }
+
+  let budgetScore = 22; // neutral when no budget set
+  if (burnPct !== null) {
+    if (burnPct <= 80)       budgetScore = 30;
+    else if (burnPct <= 90)  budgetScore = 24;
+    else if (burnPct <= 100) budgetScore = 15;
+    else if (burnPct <= 110) budgetScore = 7;
+    else                     budgetScore = 0;
+  }
+
+  let impedScore: number;
+  if (openImpediments === 0)      impedScore = 20;
+  else if (openImpediments <= 2)  impedScore = 15;
+  else if (openImpediments <= 5)  impedScore = 8;
+  else                            impedScore = 0;
+
+  let riskScore: number;
+  if (openRisks === 0)      riskScore = 15;
+  else if (openRisks <= 2)  riskScore = 11;
+  else if (openRisks <= 5)  riskScore = 6;
+  else                      riskScore = 2;
+
+  return Math.round(Math.min(100, Math.max(0, sprintScore + budgetScore + impedScore + riskScore)));
+}
+
+function AgileOverviewTab({ project }: { project: any }) {
+  const reports = (project.statusReports ?? []) as any[];
+  const latest  = reports[0] ?? null;
+  const storedHs = latest?.healthScore ?? null;
+
+  const [sprints,      setSprints]      = React.useState<any[]>([]);
+  const [impediments,  setImpediments]  = React.useState<any[]>([]);
+  const [commercial,   setCommercial]   = React.useState<any>(null);
+  const [backlogCount, setBacklogCount] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    fetch(`/api/projects/${project.id}/sprints`)
+      .then(r => r.ok ? r.json() : []).then(setSprints).catch(() => {});
+    fetch(`/api/projects/${project.id}/impediments`)
+      .then(r => r.ok ? r.json() : []).then(setImpediments).catch(() => {});
+    fetch(`/api/projects/${project.id}/commercial`)
+      .then(r => r.ok ? r.json() : null).then(setCommercial).catch(() => {});
+    fetch(`/api/projects/${project.id}/backlog`)
+      .then(r => r.ok ? r.json() : [])
+      .then((d: any[]) => setBacklogCount(Array.isArray(d) ? d.length : 0))
+      .catch(() => setBacklogCount(0));
+  }, [project.id]);
+
+  const risks  = (project.risks  ?? []) as any[];
+  const issues = (project.issues ?? []) as any[];
+
+  // Derive velocity from last 2 completed sprints
+  const completedSprints = sprints
+    .filter((s: any) => s.state === "completed")
+    .sort((a: any, b: any) => b.sprintNumber - a.sprintNumber);
+  const recentSprints = completedSprints.slice(0, 2);
+  const avgVelocity = recentSprints.length > 0
+    ? Math.round(recentSprints.reduce((s: number, sp: any) => s + (sp.acceptedPoints ?? 0), 0) / recentSprints.length)
+    : null;
+  const avgCompletionRate = recentSprints.length > 0
+    ? recentSprints.reduce((s: number, sp: any) => {
+        const committed = sp.committedPoints ?? sp.plannedCapacityPoints ?? 0;
+        return committed > 0 ? s + (sp.acceptedPoints ?? 0) / committed : s;
+      }, 0) / recentSprints.filter((sp: any) => (sp.committedPoints ?? sp.plannedCapacityPoints ?? 0) > 0).length
+    : null;
+
+  const activeSprint = sprints.find((s: any) => s.state === "active") ?? null;
+  const activeCommitted = activeSprint?.committedPoints ?? activeSprint?.plannedCapacityPoints ?? 0;
+  const activeAccepted  = activeSprint?.acceptedPoints ?? 0;
+  const activeCompletePct = activeCommitted > 0 ? Math.round((activeAccepted / activeCommitted) * 100) : null;
+
+  const bac    = (project.budget as number | null) ?? commercial?.project?.budget ?? 0;
+  const actual = commercial?.totalActual ?? 0;
+  const currency = (project.currency as string | null) ?? commercial?.project?.currency ?? "USD";
+  const burnPct = bac > 0 ? (actual / bac) * 100 : null;
+  const burnPctRound = burnPct !== null ? Math.round(burnPct) : null;
+
+  const openImpediments = impediments.filter((i: any) => i.status !== "resolved").length;
+  const openRisks = risks.length;
+  const highRisks = risks.filter((r: any) => ["high", "very_high"].includes(r.probability ?? "")).length;
+  const critIssues = issues.filter((i: any) => ["critical", "high"].includes(i.severity ?? "")).length;
+
+  const liveScore = computeAgileScore({
+    completionRate: avgCompletionRate,
+    burnPct: burnPctRound,
+    openImpediments,
+    openRisks,
+  });
+
+  const compositeScore: number | null = storedHs?.compositeScore ?? null;
+  const displayScore = compositeScore ?? liveScore;
+
+  const healthRag = project.healthStatus ?? "green";
+  const scoreC = displayScore < 50 ? C.red : displayScore < 70 ? C.amber : C.green;
+
+  const trendData = ([...reports] as any[]).reverse().map((r: any) => ({
+    label: r.reportDate ? new Date(r.reportDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" }) : "?",
+    score: (r.healthScore?.compositeScore ?? null) as number | null,
+  })).filter(d => d.score !== null);
+
+  const velocityChartData = completedSprints.slice(0, 6).reverse().map((s: any) => ({
+    label: `S${s.sprintNumber}`,
+    velocity: s.acceptedPoints ?? 0,
+    committed: s.committedPoints ?? s.plannedCapacityPoints ?? 0,
+  }));
+
+  const card = (children: React.ReactNode, style?: React.CSSProperties) => (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px 18px", ...style }}>
+      {children}
+    </div>
+  );
+
+  const chip = (label: string, value: string | number | null, sub: string, valueColor: string) => (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: "11px 14px" }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: valueColor, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>{value ?? "—"}</div>
+      <div style={{ fontSize: 9.5, fontWeight: 700, color: C.text3, textTransform: "uppercase" as const, letterSpacing: ".06em", marginTop: 4 }}>{label}</div>
+      <div style={{ fontSize: 10.5, color: C.text3, marginTop: 2, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+      {/* Row 1 — Health · Velocity · Budget Burn */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12 }}>
+
+        {card(<>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: ".05em" }}>Health Score</span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: ragBg(healthRag), color: ragColor(healthRag) }}>
+              {healthRag === "green" ? "On Track" : healthRag === "amber" ? "At Risk" : "Critical"}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 10 }}>
+            <span style={{ fontSize: 40, fontWeight: 700, color: scoreC, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{displayScore}</span>
+            <span style={{ fontSize: 14, color: C.text3 }}>/ 100</span>
+          </div>
+          <div style={{ height: 6, background: "#edf0f3", borderRadius: 99, marginBottom: 7 }}>
+            <div style={{ height: "100%", width: `${displayScore}%`, background: scoreC, borderRadius: 99 }} />
+          </div>
+          <div style={{ fontSize: 11, color: C.text3 }}>
+            {latest?.reportDate
+              ? `Last report: ${new Date(latest.reportDate).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}`
+              : "Live score — submit a status report to persist"}
+          </div>
+          <div style={{ marginTop: 8, padding: "6px 8px", background: C.surface2, borderRadius: 6, fontSize: 10, color: C.text3, lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 600 }}>How it&apos;s scored: </span>
+            Sprint completion <span style={{ fontWeight: 600 }}>35 pts</span> · Budget burn <span style={{ fontWeight: 600 }}>30 pts</span> · Open impediments <span style={{ fontWeight: 600 }}>20 pts</span> · Open risks <span style={{ fontWeight: 600 }}>15 pts</span>. Avg of last 2 completed sprints.
+          </div>
+        </>)}
+
+        {card(<>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Sprint Velocity</div>
+          <div style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", marginBottom: 4, color: avgVelocity === null ? C.text3 : C.primary }}>
+            {avgVelocity ?? "—"}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.text3 }}>Avg pts · last {recentSprints.length || "—"} sprint{recentSprints.length !== 1 ? "s" : ""}</div>
+          {avgCompletionRate !== null && (
+            <div style={{ fontSize: 11, marginTop: 6, color: avgCompletionRate >= 0.9 ? C.green : avgCompletionRate >= 0.7 ? C.amber : C.red }}>
+              {Math.round(avgCompletionRate * 100)}% committed pts delivered
+            </div>
+          )}
+          {avgVelocity === null && (
+            <div style={{ fontSize: 11, marginTop: 6, color: C.text3 }}>Complete a sprint to see velocity</div>
+          )}
+        </>)}
+
+        {card(<>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Budget Burn</div>
+          <div style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: "tabular-nums", marginBottom: 4,
+            color: burnPctRound === null ? C.text3 : burnPctRound > 100 ? C.red : burnPctRound > 85 ? C.amber : C.green }}>
+            {burnPctRound !== null ? `${burnPctRound}%` : "—"}
+          </div>
+          <div style={{ fontSize: 10.5, color: C.text3 }}>
+            {bac > 0 ? `${formatCurrency(actual, currency)} of ${formatCurrency(bac, currency)}` : "Set budget in Project Info"}
+          </div>
+          {burnPctRound !== null && (
+            <div style={{ marginTop: 8, height: 5, background: "#edf0f3", borderRadius: 99 }}>
+              <div style={{ height: "100%", width: `${Math.min(100, burnPctRound)}%`, borderRadius: 99,
+                background: burnPctRound > 100 ? C.red : burnPctRound > 85 ? C.amber : C.green }} />
+            </div>
+          )}
+        </>)}
+      </div>
+
+      {/* Row 2 — KPI chips */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 10 }}>
+        {chip("Active Sprint",
+          activeSprint ? `S${activeSprint.sprintNumber}` : "None",
+          activeSprint ? `Ends ${new Date(activeSprint.endDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}` : "No active sprint",
+          activeSprint ? C.primary : C.text3)}
+        {chip("Sprint Goal",
+          activeCompletePct !== null ? `${activeCompletePct}%` : "—",
+          activeCommitted > 0 ? `${activeAccepted}/${activeCommitted} pts accepted` : "No committed pts",
+          activeCompletePct !== null && activeCompletePct >= 80 ? C.green : activeCompletePct !== null ? C.amber : C.text3)}
+        {chip("Velocity",
+          avgVelocity !== null ? `${avgVelocity} pts` : "—",
+          recentSprints.length > 0 ? `avg last ${recentSprints.length} sprint${recentSprints.length !== 1 ? "s" : ""}` : "No completed sprints",
+          C.primary)}
+        {chip("Impediments",
+          openImpediments,
+          openImpediments === 0 ? "None open" : `${openImpediments} open`,
+          openImpediments > 3 ? C.red : openImpediments > 0 ? C.amber : C.green)}
+        {chip("Open Risks",
+          openRisks,
+          `${highRisks} high priority`,
+          openRisks > 5 ? C.red : openRisks > 2 ? C.amber : C.green)}
+        {chip("Open Issues",
+          issues.length,
+          `${critIssues} critical / high`,
+          issues.length > 3 ? C.red : issues.length > 1 ? C.amber : C.green)}
+        {chip("Backlog",
+          backlogCount ?? "…",
+          backlogCount === 0 ? "Empty backlog" : "Total items",
+          C.primary)}
+      </div>
+
+      {/* Row 3 — Health trend · Sprint velocity chart */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {card(<>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Health Trend</div>
+              <div style={{ fontSize: 11, color: C.text3 }}>{trendData.length} status report{trendData.length !== 1 ? "s" : ""}</div>
+            </div>
+            <span style={{ fontSize: 22, fontWeight: 700, color: scoreC }}>{displayScore}</span>
+          </div>
+          {trendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={140}>
+              <LineChart data={trendData} margin={{ top: 4, right: 4, bottom: 0, left: -30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" />
+                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.text3 }} tickLine={false} axisLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: C.text3 }} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.border}`, boxShadow: "0 4px 12px rgba(0,0,0,.08)" }} />
+                <ReferenceLine y={75} stroke={C.green} strokeDasharray="4 3" />
+                <Line type="monotone" dataKey="score" stroke={C.primary} strokeWidth={2.5} dot={{ r: 3, fill: C.primary }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>
+              Submit status reports to see the trend
+            </div>
+          )}
+        </>)}
+
+        {card(<>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 3 }}>Sprint Velocity</div>
+          <div style={{ fontSize: 11, color: C.text3, marginBottom: 10 }}>Committed vs Accepted story points per sprint</div>
+          {velocityChartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={140}>
+              <BarChart data={velocityChartData} margin={{ top: 0, right: 0, bottom: 0, left: -30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f2f5" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.text2 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: C.text3 }} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.border}` }} />
+                <Bar dataKey="committed" name="Committed" fill="#c7d2fe" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="velocity"  name="Accepted"  fill={C.primary} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>
+              Complete sprints to see velocity history
+            </div>
+          )}
+        </>)}
+      </div>
+
+      {/* Row 4 — Active sprint strip */}
+      {activeSprint && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Zap size={14} color={C.primary} />
+            <span style={{ fontSize: 12, color: C.text3 }}>Active sprint:</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: C.text, flex: 1 }}>
+              S{activeSprint.sprintNumber}{activeSprint.label ? ` — ${activeSprint.label}` : ""}{activeSprint.goal ? ` · ${activeSprint.goal}` : ""}
+            </span>
+            {activeCompletePct !== null && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: activeCompletePct >= 80 ? C.green : C.amber }}>
+                {activeCompletePct}% complete
+              </span>
+            )}
+            <span style={{ fontSize: 11, color: C.text3 }}>
+              Ends {new Date(activeSprint.endDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+            </span>
+          </div>
+          {activeCommitted > 0 && (
+            <div style={{ marginTop: 8, height: 5, background: "#edf0f3", borderRadius: 99 }}>
+              <div style={{ height: "100%", width: `${Math.min(100, activeCompletePct ?? 0)}%`, borderRadius: 99,
+                background: (activeCompletePct ?? 0) >= 80 ? C.green : C.amber, transition: "width .4s" }} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Overview tab ───────────────────────────────────────────────────────────────
 
 function OverviewTab({ project }: { project: any }) {
@@ -6373,7 +6688,8 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
 
         {/* Tab content */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          {tab === "Overview" && <OverviewTab project={project} />}
+          {tab === "Overview" && !isAgile && <OverviewTab project={project} />}
+          {tab === "Overview" && isAgile && <AgileOverviewTab project={project} />}
           {tab === "Project Info" && <ProjectInfoTab project={project} />}
           {tab === "Artifacts" && <ArtifactsTab project={project} catalog={catalog} onNavigate={setTab} />}
           {tab === "Backlog" && <BacklogTab project={project} />}
