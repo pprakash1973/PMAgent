@@ -10,9 +10,19 @@ import { ScheduleRecoverySchema } from "@/lib/schemas/schedule-recovery.schema";
 import { NlProjectSchema } from "@/lib/schemas/nl-project.schema";
 import { extractJson } from "@/lib/extract-json";
 
-// Re-exported for routes that call Anthropic APIs directly (streaming, tool use, etc.)
-// These are not routed through the provider abstraction.
-export const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Lazy-initialised Anthropic client — avoids eager module-load so the key is
+// never present in startup error traces or process dumps when it's misconfigured.
+let _anthropic: Anthropic | null = null;
+function getAnthropicClient(): Anthropic {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not configured");
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+}
+export const anthropic = new Proxy({} as Anthropic, {
+  get(_, prop) { return (getAnthropicClient() as any)[prop]; },
+});
 
 // Guards every JSON-producing AI call against silent truncation and schema violations (AC-7.2).
 function parseAIJson(text: string, stopReason: string, label: string): Record<string, unknown>;

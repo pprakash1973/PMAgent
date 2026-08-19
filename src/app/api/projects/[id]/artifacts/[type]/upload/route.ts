@@ -98,6 +98,23 @@ export async function POST(
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
 
+  const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+  if (file.size > MAX_FILE_BYTES) {
+    return NextResponse.json(
+      { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed is 10 MB.` },
+      { status: 413 }
+    );
+  }
+
+  const ALLOWED_EXTENSIONS = new Set(["pdf", "docx", "xlsx", "xls", "pptx", "csv", "txt"]);
+  const fileExt = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!ALLOWED_EXTENSIONS.has(fileExt)) {
+    return NextResponse.json(
+      { error: `File type .${fileExt} is not supported. Allowed: ${[...ALLOWED_EXTENSIONS].join(", ")}` },
+      { status: 415 }
+    );
+  }
+
   let extractedText: string;
   try {
     extractedText = await extractFileText(file);

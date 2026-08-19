@@ -120,9 +120,17 @@ export async function POST(req: NextRequest) {
     // Generate unique code if not provided
     const code = data.code || data.name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) + "-" + Date.now().toString(36).toUpperCase();
 
-    // Resolve pmOwnerId: DM/DH can specify a PM; PM and admin default to self
+    // Resolve pmOwnerId: DM/DH can specify a PM; PM and admin default to self.
+    // Verify the target PM belongs to the same org (prevents cross-tenant assignment).
     let pmOwnerId = user.id;
     if ((user.role === "pgm" || user.role === "dh" || user.role === "admin") && data.pmOwnerId) {
+      const targetPm = await prisma.user.findUnique({
+        where: { id: data.pmOwnerId },
+        select: { orgId: true, status: true },
+      });
+      if (!targetPm || targetPm.orgId !== user.orgId || targetPm.status !== "active") {
+        return NextResponse.json({ error: { code: "FORBIDDEN", message: "PM must belong to the same organization" } }, { status: 403 });
+      }
       pmOwnerId = data.pmOwnerId;
     }
 

@@ -16,7 +16,10 @@ function createPrisma(): PrismaClient {
   const { Pool } = require("pg");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaPg } = require("@prisma/adapter-pg");
-  const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  // Validate the server certificate when SSL is in use (fixes MITM risk).
+  // Skip SSL entirely for plain local Postgres URLs that omit sslmode.
+  const usesSsl = url.includes("sslmode=") || url.includes("neon.tech") || url.includes(".azure.com") || url.includes("railway.app");
+  const pool = new Pool({ connectionString: url, ssl: usesSsl ? { rejectUnauthorized: true } : undefined });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter } as any);
 }
