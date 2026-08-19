@@ -3708,12 +3708,9 @@ function ScopeControlTab({ project }: { project: any }) {
     ? ((latestBaseline.snapshot as any[]) ?? []).map((r: any) => r.requirementKey)
     : [];
 
-  // A doc is locked only if at least one of its requirements is captured in the current baseline.
-  // Timestamp comparison was too broad — it blocked deletion of docs whose reqs were never baselined.
-  const baselineReqKeys = new Set(blSnapshot);
-  function isDocLocked(doc: any): boolean {
-    if (!latestBaseline || baselineReqKeys.size === 0) return false;
-    return reqs.some(r => r.sourceDocId === doc.id && baselineReqKeys.has(r.requirementKey));
+  // Once any scope baseline exists, all source documents are locked — they are the audit trail.
+  function isDocLocked(_doc: any): boolean {
+    return !!latestBaseline;
   }
 
   const activeReqs = reqs.filter(r => r.isActive && r.status !== "rejected");
