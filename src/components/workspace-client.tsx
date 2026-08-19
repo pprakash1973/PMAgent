@@ -5899,6 +5899,10 @@ function OverviewTab({ project }: { project: any }) {
           <div style={{ fontSize: 11, color: C.text3 }}>
             {latest?.reportDate ? `Last report: ${new Date(latest.reportDate).toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric" })}` : "No status report submitted yet"}
           </div>
+          <div style={{ marginTop: 8, padding: "6px 8px", background: C.surface2, borderRadius: 6, fontSize: 10, color: C.text3, lineHeight: 1.5 }}>
+            <span style={{ fontWeight: 600, letterSpacing: ".03em" }}>How it&apos;s scored: </span>
+            Schedule / SPI <span style={{ fontWeight: 600 }}>35 pts</span> · Cost / CPI <span style={{ fontWeight: 600 }}>30 pts</span> · Overdue tasks <span style={{ fontWeight: 600 }}>20 pts</span> · Open risks <span style={{ fontWeight: 600 }}>15 pts</span>. Recalculated each time a status report is submitted.
+          </div>
         </>)}
 
         {card(<>
