@@ -328,6 +328,7 @@ model Project {
   assistantConversations AssistantConversation[]
   advisories         Advisory[]
   actionItems        ActionItem[]
+  decisions          Decision[]
   dmReviewNotes      DmReviewNote[]
   pmbSnapshots       PmbSnapshot[]
   comparisonRuns     ComparisonRun[]
@@ -736,6 +737,30 @@ model Issue {
   updatedAt   DateTime  @updatedAt
 
   project Project @relation(fields: [projectId], references: [id])
+}
+
+model Decision {
+  id          String    @id @default(cuid())
+  projectId   String
+  decisionId  String?   // D-001, D-002 …
+  title       String
+  rationale   String?
+  madeBy      String?
+  madeAt      DateTime  @default(now())
+  reviewAt    DateTime?
+  status      String    @default("open")  // open | agreed | superseded
+  linkedRef   String?   // free-text milestone label or CR number
+  linkedType  String?   // "milestone" | "cr"
+  sprintId    String?   // agile: sprint ID (no FK — avoids back-relation noise)
+  sprintLabel String?   // agile: "Sprint 6" — denormalised for display
+  category    String?   // Architecture | Scope | Process | Tooling | Team | Other
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, status])
+  @@map("decisions")
 }
 
 model ChangeRequest {

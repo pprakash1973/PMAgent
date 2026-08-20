@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   FileText, ShieldAlert, AlertCircle, Users, CalendarDays,
   CircleDollarSign, Layers, BarChart2, GitCompare, Zap, Briefcase, Info,
-  BookOpen, TrendingUp, Plus, Trash2, CheckCircle,
+  BookOpen, TrendingUp, Plus, Trash2, CheckCircle, ClipboardList,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
@@ -20,6 +20,7 @@ import { BaselineSummaryCard, BaselineVerifyPanel } from "@/components/baseline-
 import { BacklogTab, SprintsTab } from "@/components/agile-workspace";
 import { AgileCommercialTab } from "@/components/agile-commercial-tab";
 import { AgileStatusTab } from "@/components/agile-status-tab";
+import { DecisionsTab } from "@/components/decisions-tab";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_FORMAT } from "@/lib/utils";
 import { useCopilot } from "@/components/copilot/CopilotContext";
 
@@ -6386,19 +6387,19 @@ function OverviewTab({ project }: { project: any }) {
 
 // ── Main workspace ─────────────────────────────────────────────────────────────
 
-const PREDICTIVE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
-const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Resources", "Schedule", "Cost", "Status Reporting"];
+const PREDICTIVE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Risk", "Issues", "Decisions", "Resources", "Schedule", "Cost", "Status Reporting"];
+const AGILE_TABS = ["Overview", "Project Info", "Scope Control", "Artifacts", "Registers", "Sprints", "Risk", "Issues", "Decisions", "Resources", "Schedule", "Cost", "Status Reporting"];
 
 const PREDICTIVE_NAV_GROUPS = [
   { section: "Project",        tabs: ["Overview", "Project Info"] },
   { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Resources", "Schedule", "Cost"] },
-  { section: "Risk & Quality", tabs: ["Risk", "Issues", "Registers"] },
+  { section: "Risk & Quality", tabs: ["Risk", "Issues", "Decisions", "Registers"] },
   { section: "Reporting",      tabs: ["Status Reporting", "Baseline"] },
 ];
 const AGILE_NAV_GROUPS = [
   { section: "Project",        tabs: ["Overview", "Project Info"] },
   { section: "Delivery",       tabs: ["Scope Control", "Artifacts", "Resources", "Sprints", "Schedule", "Cost"] },
-  { section: "Risk & Quality", tabs: ["Risk", "Issues", "Registers"] },
+  { section: "Risk & Quality", tabs: ["Risk", "Issues", "Decisions", "Registers"] },
   { section: "Reporting",      tabs: ["Status Reporting"] },
 ];
 
@@ -6409,6 +6410,7 @@ const TAB_META: Record<string, { icon: React.ReactNode }> = {
   "Sprints":          { icon: <Zap size={14} /> },
   "Risk":             { icon: <ShieldAlert size={14} /> },
   "Issues":           { icon: <AlertCircle size={14} /> },
+  "Decisions":        { icon: <ClipboardList size={14} /> },
   "Resources":        { icon: <Users size={14} /> },
   "Schedule":         { icon: <CalendarDays size={14} /> },
   "Cost":             { icon: <CircleDollarSign size={14} /> },
@@ -6697,6 +6699,7 @@ export function WorkspaceClient({ project, catalog }: { project: any; catalog: a
           {tab === "Sprints" && <SprintsTab project={project} />}
           {tab === "Risk" && <RiskTab project={project} />}
           {tab === "Issues" && <IssuesTab project={project} />}
+          {tab === "Decisions" && <DecisionsTab project={project} />}
           {tab === "Resources" && <ResourcesTab project={project} />}
           {tab === "Schedule" && <ScheduleTab project={project} />}
           {tab === "Cost" && !isAgile && <CostTab project={project} />}
