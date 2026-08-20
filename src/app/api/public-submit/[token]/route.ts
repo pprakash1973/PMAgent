@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
+import { computeAllowedTaskIds } from "@/lib/submit-validation";
 
 // GET /api/public-submit/[token]
 // Returns a self-contained HTML page — no Next.js layout, no auth providers.
@@ -49,39 +50,26 @@ export async function GET(
   // ── Resolve tasks ─────────────────────────────────────────────────────────────
   const cycleTaskIds: string[] = Array.isArray(record.cycle.taskIds) ? record.cycle.taskIds as string[] : [];
 
-  const assignments = await prisma.taskAssignment.findMany({
-    where: { resourceId: record.resourceId, projectId: record.projectId },
-    select: { taskId: true },
+  // Only show tasks this resource is authorised to submit for this cycle.
+  // Never falls back to the full project task list (prevents info disclosure).
+  const allowedTaskIds = await computeAllowedTaskIds({
+    projectId: record.projectId,
+    resourceId: record.resourceId,
+    cycleTaskIds,
   });
-  const directTasks = await prisma.scheduleTask.findMany({
-    where: { resourceId: record.resourceId, projectId: record.projectId },
-    select: { id: true },
-  });
-  const resourceTaskIds = new Set([
-    ...assignments.map((a) => a.taskId),
-    ...directTasks.map((t) => t.id),
-  ]);
 
-  let taskFilter: string[] | undefined;
-  if (cycleTaskIds.length > 0 && resourceTaskIds.size > 0) {
-    taskFilter = cycleTaskIds.filter((id) => resourceTaskIds.has(id));
-    if (taskFilter.length === 0) taskFilter = cycleTaskIds;
-  } else if (cycleTaskIds.length > 0) {
-    taskFilter = cycleTaskIds;
-  } else if (resourceTaskIds.size > 0) {
-    taskFilter = Array.from(resourceTaskIds);
-  }
-
-  const tasks = await prisma.scheduleTask.findMany({
-    where: { projectId: record.projectId, ...(taskFilter ? { id: { in: taskFilter } } : {}) },
-    orderBy: { sortOrder: "asc" },
-  });
+  const tasks = allowedTaskIds.size === 0
+    ? []
+    : await prisma.scheduleTask.findMany({
+        where: { projectId: record.projectId, id: { in: Array.from(allowedTaskIds) } },
+        orderBy: { sortOrder: "asc" },
+      });
 
   const startStr = new Date(record.cycle.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const endStr = new Date(record.cycle.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
   const cyclePeriod = `${startStr} – ${endStr}`;
 
-  const tasksJson = JSON.stringify(tasks.map(t => ({
+  const tasksJson = escapeJsonForScript(JSON.stringify(tasks.map(t => ({
     id: t.id,
     wbsCode: t.wbsCode,
     name: t.name,
@@ -90,7 +78,7 @@ export async function GET(
     percentComplete: t.percentComplete,
     baselineStart: new Date(t.baselineStart).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
     baselineFinish: new Date(t.baselineFinish).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
-  })));
+  }))));
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -278,6 +266,16 @@ function htmlResponse(html: string) {
     status: 200,
     headers: { "Content-Type": "text/html; charset=utf-8" },
   });
+}
+
+// Escape a JSON string for safe embedding inside an inline <script> block.
+// Prevents a task name containing "</script>" (or U+2028/U+2029) from breaking
+// out of the script context — a stored-XSS vector.
+function escapeJsonForScript(json: string): string {
+  return json
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
 }
 
 function escHtml(str: string | null | undefined): string {

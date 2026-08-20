@@ -54,10 +54,19 @@ export async function getSmtpConfig(): Promise<SmtpConfig> {
   const user = map["smtp.user"] || process.env.GMAIL_USER || "";
   const rawPass = map["smtp.password"] || process.env.GMAIL_APP_PASSWORD || "";
 
-  // Decrypt password if it looks like our cipher format (iv:tag:data)
+  // Decrypt password if it looks like our cipher format (iv:tag:data).
+  // On failure, throw a clear error rather than silently using the ciphertext
+  // as the password (which would cause confusing SMTP auth failures).
   let password = rawPass;
-  if (rawPass.split(":").length === 3 && ENCRYPTION_KEY) {
-    try { password = decryptValue(rawPass); } catch { /* use raw */ }
+  if (rawPass.split(":").length === 3) {
+    if (!ENCRYPTION_KEY) {
+      throw new Error("SMTP password is encrypted but ENCRYPTION_KEY is not set on the server. Configure ENCRYPTION_KEY to send email.");
+    }
+    try {
+      password = decryptValue(rawPass);
+    } catch {
+      throw new Error("Failed to decrypt the stored SMTP password (ENCRYPTION_KEY may have changed). Re-save the email password in Admin → Email Configuration.");
+    }
   }
 
   const fromAddress = map["smtp.fromAddress"] || process.env.GMAIL_USER || user;

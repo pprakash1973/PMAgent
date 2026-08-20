@@ -3,6 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
+import { submissionsPayloadSchema, computeAllowedTaskIds } from "@/lib/submit-validation";
 
 // GET /api/submit/[token] — validate token and return task info (no auth)
 export async function GET(
@@ -36,38 +38,23 @@ export async function GET(
   // Cycle-level task filter (PM selected specific tasks when creating the cycle)
   const cycleTaskIds: string[] = Array.isArray(record.cycle.taskIds) ? record.cycle.taskIds as string[] : [];
 
-  // Resource-level task filter (explicit assignments + direct resource link)
-  const assignments = await prisma.taskAssignment.findMany({
-    where: { resourceId: record.resourceId, projectId: record.projectId },
-    select: { taskId: true },
+  // Only expose tasks this resource is authorised to see for this cycle.
+  // Never falls back to the full project task list (prevents info disclosure).
+  const allowedTaskIds = await computeAllowedTaskIds({
+    projectId: record.projectId,
+    resourceId: record.resourceId,
+    cycleTaskIds,
   });
-  const directTasks = await prisma.scheduleTask.findMany({
-    where: { resourceId: record.resourceId, projectId: record.projectId },
-    select: { id: true },
-  });
-  const resourceTaskIds = new Set([
-    ...assignments.map((a) => a.taskId),
-    ...directTasks.map((t) => t.id),
-  ]);
 
-  // Intersect: cycle selection ∩ resource assignments (or union if no assignments)
-  let taskFilter: string[] | undefined;
-  if (cycleTaskIds.length > 0 && resourceTaskIds.size > 0) {
-    taskFilter = cycleTaskIds.filter((id) => resourceTaskIds.has(id));
-    if (taskFilter.length === 0) taskFilter = cycleTaskIds; // fall back to cycle selection
-  } else if (cycleTaskIds.length > 0) {
-    taskFilter = cycleTaskIds;
-  } else if (resourceTaskIds.size > 0) {
-    taskFilter = Array.from(resourceTaskIds);
-  }
-
-  const tasks = await prisma.scheduleTask.findMany({
-    where: {
-      projectId: record.projectId,
-      ...(taskFilter ? { id: { in: taskFilter } } : {}),
-    },
-    orderBy: { sortOrder: "asc" },
-  });
+  const tasks = allowedTaskIds.size === 0
+    ? []
+    : await prisma.scheduleTask.findMany({
+        where: {
+          projectId: record.projectId,
+          id: { in: Array.from(allowedTaskIds) },
+        },
+        orderBy: { sortOrder: "asc" },
+      });
 
   return NextResponse.json({
     tokenId: record.id,
@@ -86,6 +73,13 @@ export async function POST(
   const { token } = await params;
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
+  // Rate limit by token (single-use anyway) and by client IP, to stop a leaked
+  // token being hammered to corrupt task data before it flips to "submitted".
+  const rlToken = checkRateLimit(`submit:${tokenHash}`, 10, 10 * 60 * 1000);
+  if (!rlToken.allowed) return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
+  const rlIp = checkRateLimit(`submit-ip:${getClientIp(req.headers)}`, 30, 10 * 60 * 1000);
+  if (!rlIp.allowed) return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
+
   const record = await prisma.collectionToken.findUnique({
     where: { tokenHash },
   });
@@ -101,20 +95,31 @@ export async function POST(
     return NextResponse.json({ error: "Collection cycle is closed" }, { status: 403 });
   }
 
-  const body = await req.json();
-  const { submissions } = body as {
-    submissions: Array<{
-      taskId: string;
-      hoursWorked: number;
-      percentComplete: number;
-      etcHours?: number;
-      disposition: string;
-      notes?: string;
-    }>;
-  };
+  // Validate the payload shape and bounds (rejects negative/NaN/Infinity/oversized
+  // values and unknown disposition strings).
+  const body = await req.json().catch(() => null);
+  const parsed = submissionsPayloadSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid submission data", details: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) },
+      { status: 400 }
+    );
+  }
+  const { submissions } = parsed.data;
 
-  if (!Array.isArray(submissions) || submissions.length === 0) {
-    return NextResponse.json({ error: "submissions array required" }, { status: 400 });
+  // Authorization: the resource may only submit for tasks they own in this cycle.
+  const cycleTaskIds: string[] = Array.isArray(cycle.taskIds) ? cycle.taskIds as string[] : [];
+  const allowedTaskIds = await computeAllowedTaskIds({
+    projectId: record.projectId,
+    resourceId: record.resourceId,
+    cycleTaskIds,
+  });
+  const unauthorized = submissions.filter((s) => !allowedTaskIds.has(s.taskId));
+  if (unauthorized.length > 0) {
+    return NextResponse.json(
+      { error: "You are not assigned to one or more of the submitted tasks." },
+      { status: 403 }
+    );
   }
 
   // Write to append-only ledger

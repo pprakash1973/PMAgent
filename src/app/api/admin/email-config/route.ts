@@ -51,7 +51,15 @@ export async function PUT(req: NextRequest) {
 
     // Skip masked placeholder — don't overwrite actual password
     if (key === "smtp.password" && value === "••••••••") continue;
-    if (key === "smtp.password" && value && process.env.ENCRYPTION_KEY) {
+    if (key === "smtp.password" && value) {
+      // Never store the SMTP password in plaintext. Refuse to save if the
+      // encryption key is missing rather than silently persisting a secret.
+      if (!process.env.ENCRYPTION_KEY) {
+        return NextResponse.json(
+          { error: "Server is missing ENCRYPTION_KEY, so the SMTP password can't be stored securely. Set ENCRYPTION_KEY (64 hex chars) on the server and try again." },
+          { status: 500 }
+        );
+      }
       value = encryptValue(value);
     }
 
@@ -98,7 +106,22 @@ export async function POST(req: NextRequest) {
     if (!resolvedPassword) {
       const dbPass = await prisma.systemSetting.findUnique({ where: { key: "smtp.password" } });
       if (dbPass?.value) {
-        try { resolvedPassword = decryptValue(dbPass.value); } catch { resolvedPassword = dbPass.value; }
+        // Stored value is either our cipher format (iv:tag:data) or legacy plaintext.
+        const looksEncrypted = dbPass.value.split(":").length === 3;
+        if (looksEncrypted) {
+          try {
+            resolvedPassword = decryptValue(dbPass.value);
+          } catch {
+            // Do NOT fall back to using the ciphertext as the password — surface
+            // the real problem so the admin can re-enter and re-save the secret.
+            return NextResponse.json({
+              ok: false,
+              error: "The stored SMTP password could not be decrypted (ENCRYPTION_KEY may have changed). Re-enter the App Password above and save it again.",
+            });
+          }
+        } else {
+          resolvedPassword = dbPass.value;
+        }
       }
     }
   }
