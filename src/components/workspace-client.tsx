@@ -5445,12 +5445,190 @@ function CostBurndownChart({ series, currency, budget }: { series: any[]; curren
   );
 }
 
+// ── Monthly spend bar chart ────────────────────────────────────────────────────
+function CostMonthlyChart({ entries, currency, budget }: { entries: any[]; currency: string; budget?: number | null }) {
+  if (!entries.length) return null;
+
+  // Group entries by YYYY-MM, then by category within month
+  const CATS = ["labor", "infrastructure", "travel", "licenses", "other"];
+  const CAT_COLORS: Record<string, string> = {
+    labor: "#006E74", infrastructure: "#3b82f6", travel: "#f59e0b",
+    licenses: "#8b5cf6", other: "#9ca3af",
+  };
+
+  const monthMap: Record<string, Record<string, number>> = {};
+  for (const e of entries) {
+    const mo = e.date.slice(0, 7);
+    if (!monthMap[mo]) monthMap[mo] = {};
+    const cat = e.category ?? "other";
+    monthMap[mo][cat] = (monthMap[mo][cat] ?? 0) + e.amount;
+  }
+  const months = Object.keys(monthMap).sort();
+  const monthTotals = months.map((m) => Object.values(monthMap[m]).reduce((s, v) => s + v, 0));
+  const maxVal = Math.max(...monthTotals, 1);
+
+  const W = 560; const H = 230; const PAD = { top: 14, right: 16, bottom: 52, left: 68 };
+  const inner = { w: W - PAD.left - PAD.right, h: H - PAD.top - PAD.bottom };
+  const barW = Math.max(8, Math.min(40, (inner.w / months.length) * 0.65));
+  const tickCount = 4;
+  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) => (maxVal * i) / tickCount);
+  function yOf(v: number) { return PAD.top + inner.h - (v / maxVal) * inner.h; }
+  function xOf(i: number) { return PAD.left + (i + 0.5) * (inner.w / months.length); }
+
+  // Monthly budget line (budget / number of project months)
+  const monthlyBudget = budget && months.length > 0 ? budget / months.length : null;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", display: "block" }}>
+      {/* Y grid + labels */}
+      {yTicks.map((v, i) => (
+        <g key={i}>
+          <line x1={PAD.left} x2={W - PAD.right} y1={yOf(v)} y2={yOf(v)} stroke={C.border} strokeWidth={0.5} />
+          <text x={PAD.left - 5} y={yOf(v) + 4} textAnchor="end" fontSize={9} fill={C.text3}>
+            {fmt$(v, currency).replace(/\.00$/, "")}
+          </text>
+        </g>
+      ))}
+      {/* Stacked bars */}
+      {months.map((m, i) => {
+        let yBase = PAD.top + inner.h;
+        const activeCats = CATS.filter((c) => (monthMap[m][c] ?? 0) > 0);
+        return (
+          <g key={m}>
+            {activeCats.map((cat) => {
+              const val = monthMap[m][cat] ?? 0;
+              const bh = (val / maxVal) * inner.h;
+              yBase -= bh;
+              return (
+                <rect key={cat} x={xOf(i) - barW / 2} y={yBase} width={barW} height={bh}
+                  fill={CAT_COLORS[cat] ?? C.text3} opacity={0.85} rx={2} />
+              );
+            })}
+            <text x={xOf(i)} y={H - PAD.bottom + 13} textAnchor="middle" fontSize={8.5} fill={C.text3}>
+              {m.slice(5)}
+            </text>
+            <text x={xOf(i)} y={yOf(monthTotals[i]) - 3} textAnchor="middle" fontSize={8} fill={C.text2} fontWeight={600}>
+              {monthTotals[i] > 0 ? fmt$(monthTotals[i], currency).replace(/\.00$/, "") : ""}
+            </text>
+          </g>
+        );
+      })}
+      {/* Avg monthly budget line */}
+      {monthlyBudget && (
+        <>
+          <line x1={PAD.left} x2={W - PAD.right} y1={yOf(monthlyBudget)} y2={yOf(monthlyBudget)}
+            stroke={C.primary} strokeWidth={1.5} strokeDasharray="5 3" />
+          <text x={W - PAD.right + 2} y={yOf(monthlyBudget) + 4} fontSize={8} fill={C.primary} textAnchor="start">Avg/mo</text>
+        </>
+      )}
+      {/* Legend */}
+      {CATS.filter((c) => entries.some((e) => (e.category ?? "other") === c)).map((c, i) => (
+        <g key={c} transform={`translate(${PAD.left + i * 95}, ${H - 16})`}>
+          <rect x={0} y={-6} width={10} height={10} fill={CAT_COLORS[c]} rx={2} />
+          <text x={14} y={4} fontSize={8.5} fill={C.text2}>{c.charAt(0).toUpperCase() + c.slice(1)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+// ── Category breakdown view ────────────────────────────────────────────────────
+function CostCategoryView({ entries, currency, budget, summary }: { entries: any[]; currency: string; budget?: number | null; summary?: any }) {
+  if (!entries.length) return null;
+
+  const CATS = ["labor", "infrastructure", "travel", "licenses", "other"];
+  const CAT_COLORS: Record<string, string> = {
+    labor: "#006E74", infrastructure: "#3b82f6", travel: "#f59e0b",
+    licenses: "#8b5cf6", other: "#9ca3af",
+  };
+  const total = entries.reduce((s, e) => s + e.amount, 0);
+  const bycat: Record<string, number> = {};
+  for (const e of entries) {
+    const c = e.category ?? "other";
+    bycat[c] = (bycat[c] ?? 0) + e.amount;
+  }
+  const rows = CATS.filter((c) => bycat[c] > 0).map((c) => ({
+    cat: c, amount: bycat[c],
+    pctSpend: total > 0 ? (bycat[c] / total) * 100 : 0,
+    pctBudget: budget && budget > 0 ? (bycat[c] / budget) * 100 : null,
+  }));
+
+  const remaining = budget != null ? Math.max(0, budget - total) : null;
+  const burntPct = budget && budget > 0 ? Math.min(100, (total / budget) * 100) : null;
+  const barColor = burntPct == null ? "#006E74" : burntPct <= 75 ? "#16a34a" : burntPct <= 95 ? "#d97706" : "#dc2626";
+  const cpi = summary?.cpi;
+  const eac = summary?.eac;
+  const etc = summary?.etc;
+
+  return (
+    <div style={{ padding: "4px 0" }}>
+      {/* Budget progress bar */}
+      {budget != null && budget > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase", letterSpacing: ".05em" }}>Budget Utilisation</span>
+            <span style={{ fontSize: 11, color: C.text2 }}>{fmt$(total, currency)} of {fmt$(budget, currency)} ({burntPct?.toFixed(1)}%)</span>
+          </div>
+          <div style={{ height: 14, background: C.surface2, borderRadius: 7, overflow: "hidden", border: `1px solid ${C.border}` }}>
+            <div style={{ height: "100%", width: `${burntPct ?? 0}%`, background: barColor, borderRadius: 7, transition: "width .4s" }} />
+          </div>
+          {remaining != null && (
+            <div style={{ fontSize: 11, color: C.text3, marginTop: 4, textAlign: "right" }}>
+              {fmt$(remaining, currency)} remaining
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* EVM KPIs row */}
+      {(cpi != null || eac != null || etc != null) && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {[
+            { label: "CPI", value: cpi != null ? cpi.toFixed(2) : "—", good: cpi != null && cpi >= 1, warn: cpi != null && cpi >= 0.9 && cpi < 1 },
+            { label: "EAC", value: eac != null ? fmt$(eac, currency) : "—", good: eac != null && budget != null && eac <= budget, warn: false },
+            { label: "ETC", value: etc != null ? fmt$(etc, currency) : "—", good: false, warn: false },
+          ].map((k) => (
+            <div key={k.label} style={{ flex: 1, padding: "7px 10px", background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 7, textAlign: "center" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: k.good ? "#16a34a" : k.warn ? "#d97706" : C.text }}>{k.value}</div>
+              <div style={{ fontSize: 10, color: C.text3, marginTop: 2, fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: ".04em" }}>{k.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Category table */}
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.text2, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>Spend by Category</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {rows.map((r) => (
+          <div key={r.cat}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: CAT_COLORS[r.cat] ?? C.text3, display: "inline-block", flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>{r.cat.charAt(0).toUpperCase() + r.cat.slice(1)}</span>
+              </div>
+              <div style={{ display: "flex", gap: 14, fontSize: 12, color: C.text2 }}>
+                <span style={{ fontWeight: 600, color: C.text }}>{fmt$(r.amount, currency)}</span>
+                <span style={{ color: C.text3 }}>{r.pctSpend.toFixed(1)}% of spend</span>
+                {r.pctBudget != null && <span style={{ color: C.text3 }}>{r.pctBudget.toFixed(1)}% of budget</span>}
+              </div>
+            </div>
+            <div style={{ height: 6, background: C.surface2, borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${r.pctSpend}%`, background: CAT_COLORS[r.cat] ?? C.text3, borderRadius: 3 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CostTab({ project }: { project: any }) {
   const { openPanel } = useCopilot();
 
   // ── data ──
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [chartView, setChartView] = useState<"evm" | "monthly" | "breakdown">("evm");
 
   // ── form ──
   const [adding, setAdding] = useState(false);
@@ -5597,7 +5775,19 @@ function CostTab({ project }: { project: any }) {
           {/* ── Chart ── */}
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
             <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: C.text }}>Cost Burndown — PV / EV / AC</span>
+              {/* View toggle pills */}
+              <div style={{ display: "flex", gap: 4 }}>
+                {(["evm", "monthly", "breakdown"] as const).map((v) => {
+                  const labels: Record<string, string> = { evm: "EVM Lines", monthly: "Monthly Bars", breakdown: "Breakdown" };
+                  const active = chartView === v;
+                  return (
+                    <button key={v} onClick={() => setChartView(v)}
+                      style={{ fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: `1px solid ${active ? TEAL_BORDER : C.border}`, background: active ? TEAL_BG : "transparent", color: active ? TEAL : C.text2, cursor: "pointer", fontWeight: active ? 700 : 500 }}>
+                      {labels[v]}
+                    </button>
+                  );
+                })}
+              </div>
               <div style={{ marginLeft: "auto", display: "flex", gap: 5, flexWrap: "wrap" as const }}>
                 {QUICK_ACTIONS.map((qa) => (
                   <button
@@ -5613,12 +5803,18 @@ function CostTab({ project }: { project: any }) {
             <div style={{ padding: "14px 16px 10px" }}>
               {loading ? (
                 <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>Loading…</div>
-              ) : data?.series?.length ? (
-                <CostBurndownChart series={data.series} currency={currency} budget={project.budget ?? null} />
+              ) : chartView === "evm" ? (
+                data?.series?.length
+                  ? <CostBurndownChart series={data.series} currency={currency} budget={project.budget ?? null} />
+                  : <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>No cost data yet. Add entries to see the burndown.</div>
+              ) : chartView === "monthly" ? (
+                data?.entries?.length
+                  ? <CostMonthlyChart entries={data.entries} currency={currency} budget={project.budget ?? null} />
+                  : <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>No cost entries yet.</div>
               ) : (
-                <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>
-                  No cost data yet. Add entries to see the burndown.
-                </div>
+                data?.entries?.length
+                  ? <CostCategoryView entries={data.entries} currency={currency} budget={project.budget ?? null} summary={data.summary} />
+                  : <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: C.text3, fontSize: 13 }}>No cost entries yet.</div>
               )}
             </div>
           </div>
