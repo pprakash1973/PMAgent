@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from "recharts";
+import { DrillDownPanel } from "@/app/dashboard/dm/drill-down-panel";
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 export interface DhProject {
@@ -239,7 +240,7 @@ function EscCard({ esc, onAck, onResolve, done }: {
 }
 
 // ── Red project row (no drill-down) ───────────────────────────────────────────────
-function RedRow({ p }: { p: DhProject }) {
+function RedRow({ p, onReview }: { p: DhProject; onReview?: (id: string) => void }) {
   const rc = ragColor(p.rag);
   const mg = METHODOLOGY_GROUPS[dmkey(p)] ?? METHODOLOGY_GROUPS.predictive;
   const isAgile = dmkey(p) === "agile_scrum";
@@ -321,9 +322,20 @@ function RedRow({ p }: { p: DhProject }) {
             )}
           </div>
         </div>
-        <div style={{ textAlign: "right" as const, flexShrink: 0 }}>
-          <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Budget used</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: p.budPct > 85 ? C.red : p.budPct > 70 ? C.amber : C.green, fontFamily: C.FM }}>{p.budPct}%</div>
+        <div style={{ display: "flex", flexDirection: "column" as const, alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
+          <div style={{ textAlign: "right" as const }}>
+            <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Budget used</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: p.budPct > 85 ? C.red : p.budPct > 70 ? C.amber : C.green, fontFamily: C.FM }}>{p.budPct}%</div>
+          </div>
+          {onReview && (
+            <button onClick={() => onReview(p.id)} style={{
+              fontSize: 11.5, fontWeight: 600, color: C.teal, background: "#e8f5f6",
+              border: `1px solid #b2dde0`, borderRadius: 7, padding: "5px 12px",
+              cursor: "pointer", fontFamily: C.FF, whiteSpace: "nowrap" as const,
+            }}>
+              Review ›
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -554,7 +566,7 @@ function OverviewSection({ projects, escalations }: { projects: DhProject[]; esc
 }
 
 // ── Health tab ────────────────────────────────────────────────────────────────────
-function HealthSection({ projects }: { projects: DhProject[] }) {
+function HealthSection({ projects, onReview }: { projects: DhProject[]; onReview: (id: string) => void }) {
   const [clusterFilter, setClusterFilter] = useState("__all__");
   const [clientFilter, setClientFilter] = useState("__all__");
 
@@ -588,7 +600,7 @@ function HealthSection({ projects }: { projects: DhProject[] }) {
         <div style={{ fontSize: 13, color: C.inkFaint, fontStyle: "italic", padding: "8px 0 4px", fontFamily: C.FF }}>None in this band</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {rows.map(p => <RedRow key={p.id} p={p} />)}
+          {rows.map(p => <RedRow key={p.id} p={p} onReview={onReview} />)}
         </div>
       )}
     </div>
@@ -1019,6 +1031,7 @@ export default function DhDashboardClient({
   const [resolveTarget, setResolveTarget] = useState<DhEscalation | null>(null);
   const [ackedIds, setAckedIds] = useState<Set<string>>(new Set());
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+  const [reviewId, setReviewId] = useState<string | null>(null);
 
   const openEscs = escalations.filter(e =>
     !resolvedIds.has(e.id) &&
@@ -1099,10 +1112,13 @@ export default function DhDashboardClient({
       )}
 
       {/* ── Health ── */}
-      {tab === "health" && <HealthSection projects={projects} />}
+      {tab === "health" && <HealthSection projects={projects} onReview={setReviewId} />}
 
       {/* ── Metrics ── */}
       {tab === "metrics" && <MetricsTilesSection projects={projects} clusterHealth={clusterHealth} wfTrends={wfTrends} agileTrends={agileTrends} />}
+
+      {/* Project review panel */}
+      {reviewId && <DrillDownPanel projectId={reviewId} onClose={() => setReviewId(null)} />}
 
       {/* Resolve modal */}
       {resolveTarget && (
