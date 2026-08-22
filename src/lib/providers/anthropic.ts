@@ -16,17 +16,11 @@ async function getClient(): Promise<Anthropic> {
   return client;
 }
 
-// Claude 5 family and extended-thinking models have deprecated the temperature parameter
-function supportsTemperature(model: string): boolean {
-  return !/-5(?:[-_]|$)/.test(model) && !model.includes("fable");
-}
-
 export async function callAnthropic(opts: LLMCallOptions): Promise<LLMResponse> {
   const client = await getClient();
   const message = await client.messages.create({
     model: opts.model,
     max_tokens: opts.maxTokens,
-    ...(supportsTemperature(opts.model) && { temperature: opts.temperature ?? 0 }),
     system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
     messages: opts.messages,
   });
@@ -45,7 +39,6 @@ export async function streamAnthropic(opts: LLMCallOptions): Promise<LLMResponse
   const stream = client.messages.stream({
     model: opts.model,
     max_tokens: opts.maxTokens,
-    ...(supportsTemperature(opts.model) && { temperature: opts.temperature ?? 0 }),
     system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
     messages: opts.messages,
   });

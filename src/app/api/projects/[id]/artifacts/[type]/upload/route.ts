@@ -174,7 +174,6 @@ Merge the uploaded data into the artifact JSON, making sure every addition and e
   const message = await anthropic.messages.create({
     model: artifactConfig.model,
     max_tokens: 16000,
-    temperature: 0,
     system: systemPrompt,
     messages: [{ role: "user", content: userMessage }],
   });
