@@ -344,6 +344,89 @@ function BandSection({ label, dotColor, projects, collapsed: initialCollapsed, o
   );
 }
 
+// ── Methodology mix strip + per-method KPIs ───────────────────────────────────────
+function MethodologyMixStrip({ rows }: { rows: TriageRow[] }) {
+  const total = rows.length || 1;
+  const groups = (Object.entries(METHODOLOGY_GROUPS) as [string, typeof METHODOLOGY_GROUPS[string]][]).map(([key, cfg]) => {
+    const mp = rows.filter(r => mkey(r) === key);
+    if (mp.length === 0) return null;
+    const red   = mp.filter(r => r.band === "red").length;
+    const amber = mp.filter(r => r.band === "amber").length;
+    const green = mp.filter(r => r.band === "green").length;
+    const pct   = Math.round((mp.length / total) * 100);
+    // Per-methodology KPIs
+    const isAgile = key === "agile_scrum";
+    const withVel = mp.filter(r => r.velocity !== null);
+    const withRel = mp.filter(r => r.commitmentReliability !== null);
+    const avgVel = withVel.length ? Math.round(withVel.reduce((s, r) => s + (r.velocity ?? 0), 0) / withVel.length) : null;
+    const avgRel = withRel.length ? Math.round(withRel.reduce((s, r) => s + (r.commitmentReliability ?? 0), 0) / withRel.length) : null;
+    const withSpi = mp.filter(r => r.spi !== null);
+    const withCpi = mp.filter(r => r.cpi !== null);
+    const avgSpi = withSpi.length ? withSpi.reduce((s, r) => s + (r.spi ?? 0), 0) / withSpi.length : null;
+    const avgCpi = withCpi.length ? withCpi.reduce((s, r) => s + (r.cpi ?? 0), 0) / withCpi.length : null;
+    return { key, cfg, count: mp.length, pct, red, amber, green, isAgile, avgVel, avgRel, avgSpi, avgCpi };
+  }).filter((g): g is NonNullable<typeof g> => g !== null);
+
+  if (groups.length < 2) return null;
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px", marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.ink3, fontFamily: C.FF }}>Methodology Mix</span>
+        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{rows.length} projects</span>
+      </div>
+      {/* Stacked bar */}
+      <div style={{ height: 8, borderRadius: 99, overflow: "hidden", display: "flex", marginBottom: 14 }}>
+        {groups.map(g => (
+          <div key={g.key} style={{ width: `${g.pct}%`, background: g.cfg.color, minWidth: 4 }} title={`${g.cfg.label}: ${g.count}`} />
+        ))}
+      </div>
+      {/* Per-method tiles */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" as const }}>
+        {groups.map(g => (
+          <div key={g.key} style={{ flex: 1, minWidth: 160, background: g.cfg.bg, border: `1.5px solid ${g.cfg.border}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: g.cfg.color }} />
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: g.cfg.color, fontFamily: C.FF }}>{g.cfg.shortLabel}</span>
+              <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF, marginLeft: "auto" }}>{g.count} projects</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              {g.red > 0   && <span style={{ fontSize: 10, fontWeight: 600, color: C.red,   background: C.redBg,   borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.red} crit</span>}
+              {g.amber > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: C.amber, background: C.amberBg, borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.amber} risk</span>}
+              {g.green > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: C.green, background: C.greenBg, borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.green} ok</span>}
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              {g.isAgile ? (
+                <>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg Velocity</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgVel !== null ? g.cfg.color : C.inkFaint, fontFamily: C.FM }}>{g.avgVel !== null ? `${g.avgVel} pts` : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg Reliability</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgRel !== null ? (g.avgRel < 60 ? C.red : g.avgRel < 80 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{g.avgRel !== null ? `${g.avgRel}%` : "—"}</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg SPI</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgSpi !== null ? (g.avgSpi < 0.85 ? C.red : g.avgSpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{g.avgSpi !== null ? g.avgSpi.toFixed(2) : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg CPI</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgCpi !== null ? (g.avgCpi < 0.85 ? C.red : g.avgCpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{g.avgCpi !== null ? g.avgCpi.toFixed(2) : "—"}</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Methodology section wrapper (attention queue) ─────────────────────────────────
 function MethodologySection({ methKey, bands, onReview, onEscalate, onAddAction, escalatedIds, addedActionsMap, filter }: {
   methKey: string;
@@ -735,24 +818,6 @@ function DeliveryMetrics({ data }: { data: TriageData }) {
   const onTimePct     = all.length > 0 ? Math.round(all.filter(p => p.spi !== null && (p.spi ?? 0) >= 0.85).length / all.length * 100) : null;
   const revenueAtRisk = all.filter(p => p.band !== "green").reduce((s, p) => s + (p.budget ?? 0), 0);
 
-  // Per-account aggregation
-  const accountMap = new Map<string, { name: string; red: number; amber: number; green: number; noData: number; total: number; budget: number; spiVals: number[]; cpiVals: number[] }>();
-  for (const p of all) {
-    const aid = p.accountId ?? "__none__";
-    const aname = p.accountName ?? "Unassigned";
-    if (!accountMap.has(aid)) accountMap.set(aid, { name: aname, red: 0, amber: 0, green: 0, noData: 0, total: 0, budget: 0, spiVals: [], cpiVals: [] });
-    const acc = accountMap.get(aid)!;
-    acc.total++;
-    acc.budget += p.budget ?? 0;
-    if (p.band === "red") acc.red++;
-    else if (p.band === "amber") acc.amber++;
-    else if (p.band === "green") acc.green++;
-    else acc.noData++;
-    if (p.spi !== null) acc.spiVals.push(p.spi);
-    if (p.cpi !== null) acc.cpiVals.push(p.cpi);
-  }
-  const accountTiles = [...accountMap.values()].sort((a, b) => b.red - a.red || b.amber - a.amber || a.name.localeCompare(b.name));
-
   type Tile = { label: string; value: string; sub: string; color: string; bg: string; border: string };
   const tiles: Tile[] = [
     { label: "Active Projects",   value: String(all.length),                                                           sub: "In your scope",              color: C.teal,    bg: "#e8f5f6",  border: "#b2dde0" },
@@ -853,58 +918,6 @@ function DeliveryMetrics({ data }: { data: TriageData }) {
         })}
       </div>
 
-      {/* Per-account breakdown tiles */}
-      {accountTiles.length > 0 && (
-        <>
-          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
-            By Account
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
-            {accountTiles.map(acc => {
-              const accAvgSpi = acc.spiVals.length ? acc.spiVals.reduce((a, b) => a + b, 0) / acc.spiVals.length : null;
-              const accAvgCpi = acc.cpiVals.length ? acc.cpiVals.reduce((a, b) => a + b, 0) / acc.cpiVals.length : null;
-              return (
-                <div key={acc.name} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, fontFamily: C.FF, marginBottom: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{acc.name}</div>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                    {[
-                      { v: acc.red,    l: "Critical", col: C.red,   bg: C.redBg },
-                      { v: acc.amber,  l: "At Risk",  col: C.amber, bg: C.amberBg },
-                      { v: acc.green,  l: "On Track", col: C.green, bg: C.greenBg },
-                    ].map(k => (
-                      <div key={k.l} style={{ flex: 1, textAlign: "center" as const, background: k.bg, borderRadius: 6, padding: "5px 4px" }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: k.col, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
-                        <div style={{ fontSize: 9, color: k.col, fontFamily: C.FF, marginTop: 2 }}>{k.l}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column" as const, gap: 5 }}>
-                    {accAvgSpi !== null && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>Avg SPI</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: spiColor(accAvgSpi), fontFamily: C.FM }}>{accAvgSpi.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {accAvgCpi !== null && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>Avg CPI</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: spiColor(accAvgCpi), fontFamily: C.FM }}>{accAvgCpi.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {acc.budget > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>Budget</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: C.ink, fontFamily: C.FM }}>{fmtMoney(acc.budget)}</span>
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF, marginTop: 2 }}>{acc.total} project{acc.total !== 1 ? "s" : ""}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -968,7 +981,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
         <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
 
           {/* Pulse cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14, marginBottom: 22 }}>
             <PulseCard title="Portfolio health" icon={
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2 6 4-14 2 8h6" stroke={C.ink3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             }>
@@ -1011,23 +1024,10 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
               </div>
             </PulseCard>
 
-            <PulseCard title="My commitments to PMs" icon={
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke={C.ink3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            }>
-              {[
-                { v: data.overdueActionItems, l: "Overdue — needs chasing", c: data.overdueActionItems > 0 ? C.red : C.inkFaint },
-                { v: totalActions, l: "Open action items total", c: totalActions > 0 ? C.amber : C.inkFaint },
-              ].map(r => (
-                <div key={r.l} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                  <span style={{ fontSize: 20, fontWeight: 700, color: r.c, fontFamily: C.FM, width: 30, textAlign: "right" as const }}>{r.v}</span>
-                  <span style={{ fontSize: 12.5, color: C.ink2, fontFamily: C.FF }}>{r.l}</span>
-                </div>
-              ))}
-              <div style={{ fontSize: 11.5, color: C.inkFaint, borderTop: `1px dashed ${C.borderSoft}`, paddingTop: 9, marginTop: 3, fontFamily: C.FF }}>
-                {uniqueAccounts} account{uniqueAccounts !== 1 ? "s" : ""} · {data.counts.total} projects
-              </div>
-            </PulseCard>
           </div>
+
+          {/* Methodology mix strip */}
+          <MethodologyMixStrip rows={allProjects} />
 
           {/* Search */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>

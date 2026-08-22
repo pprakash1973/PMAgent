@@ -27,6 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       owner: body.owner,
       mitigation: body.mitigation,
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+      requirementRef: body.requirementRef || "General",
     },
   });
   return NextResponse.json(risk, { status: 201 });

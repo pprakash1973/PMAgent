@@ -79,8 +79,8 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   milestone_plan:        "milestones (array of {id, name, plannedDate, forecastDate, status, owner, deliverables, description})",
   resource_plan:         "teamDirectory (array of {id, name, role, department, skills, allocationPercent, startDate, endDate, dailyRate, currency, notes}), resourceCalendar, skillsMatrix, resourceConstraints, trainingNeeds",
   cost_plan:             "currency, estimatingMethod, laborEstimates (array of {role, resource, phase, estimatedDays, dailyRate, totalCost}), nonLaborCosts, totalBudget, contingencyReserve, managementReserve, bac, fundingRequirements",
-  raid_register:         "risks (array of {id, description, probability, impact, status, owner, mitigation}), assumptions (array), issues (array of {id, description, severity, status, owner, resolution, dueDate}), dependencies (array)",
-  risk_register:         "risks (array of {id, statement, category, probability, impact, riskScore, owner, responseActions, status})",
+  raid_register:         "risks (array of {id, description, probability, impact, status, owner, mitigation, requirementRef}), assumptions (array), issues (array of {id, description, severity, status, owner, resolution, dueDate}), dependencies (array)",
+  risk_register:         "risks (array of {id, statement, category, probability, impact, riskScore, owner, responseActions, status, requirementRef})",
   communication_plan:    "stakeholderComms (array of {stakeholder, information, format, frequency, owner, channel})",
   raci_matrix:           "activities (array of {id, activity, phase, assignments (object keyed by role: R|A|C|I)}), roles (array of strings)",
   quality_plan:          "qualityObjectives, qualityStandards (array), qualityActivities (array of {activity, phase, owner, tool, acceptance}), metrics (array)",
@@ -143,7 +143,8 @@ export async function generateArtifact(
   requirements?: string,
   evidenceContext?: EvidenceContext,
   templateOverride?: ArtifactTemplateOverride,
-  onToken?: (text: string) => void
+  onToken?: (text: string) => void,
+  maxTokensOverride?: number
 ): Promise<Record<string, unknown>> {
   const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext, templateOverride);
   const config = await resolveModel("artifact");
@@ -154,7 +155,7 @@ export async function generateArtifact(
 
   const userContent = content.map((b) => b.text).join("\n\n");
   const evidenceText = evidenceContext?.hasEvidence ? formatEvidenceForPrompt(evidenceContext) : undefined;
-  const maxTokens = ARTIFACT_TOKEN_BUDGET[artifactType] ?? 6000;
+  const maxTokens = maxTokensOverride ?? ARTIFACT_TOKEN_BUDGET[artifactType] ?? 6000;
 
   const response = await streamLLM(
     {
@@ -779,11 +780,11 @@ Return JSON with:
     category (string): Technical | Schedule | Cost | Resource | External | Organizational | Quality
     statement (string): "If [cause], then [event], causing [effect]" — cause→event→effect format
     probability (string): Very Low | Low | Medium | High | Very High
-    probabilityScore (number): 1-5
+    probabilityScore (number): 1-10
     impact (string): Very Low | Low | Medium | High | Very High
-    impactScore (number): 1-5
-    riskScore (number): probabilityScore × impactScore
-    severity (string): Low (1-4) | Medium (5-9) | High (10-19) | Critical (20-25)
+    impactScore (number): 1-10
+    riskScore (number): probabilityScore × impactScore (max 100)
+    severity (string): Low (1-15) | Medium (16-35) | High (36-59) | Critical (60-100)
     type (string): Threat | Opportunity
     strategy (string): for Threat: Avoid/Transfer/Mitigate/Escalate/Accept; for Opportunity: Exploit/Share/Enhance/Escalate/Accept
     responseActions (array of strings)
@@ -792,6 +793,7 @@ Return JSON with:
     trigger (string): condition that indicates risk is occurring
     status (string): Open | In Progress | Closed | Occurred | Accepted
     dueDate (string)
+    requirementRef (string): If the project context includes scopeRequirements, trace this risk to the most relevant requirement key (e.g. "REQ-001", "FR-12"). Use "General" only if the risk is not traceable to any specific requirement.
   })
 - assumptions (array of {
     id (string): A001…
@@ -835,11 +837,11 @@ Return JSON with:
     statement (string): "If [cause], then [event], causing [effect]" — ALWAYS use cause→event→effect format
     type (string): Threat | Opportunity
     probability (string): Very Low | Low | Medium | High | Very High
-    probabilityScore (number): 1-5
+    probabilityScore (number): 1-10
     impact (string): Very Low | Low | Medium | High | Very High
-    impactScore (number): 1-5
-    riskScore (number): probabilityScore × impactScore
-    severity (string): Low (1-4) | Medium (5-9) | High (10-19) | Critical (20-25)
+    impactScore (number): 1-10
+    riskScore (number): probabilityScore × impactScore (max 100)
+    severity (string): Low (1-15) | Medium (16-35) | High (36-59) | Critical (60-100)
     velocity (string): Immediate | Short-term | Medium-term | Long-term
     strategy (string): Threats → Avoid/Transfer/Mitigate/Escalate/Accept; Opportunities → Exploit/Share/Enhance/Escalate/Accept
     responseActions (array of strings): specific, actionable steps
@@ -850,6 +852,7 @@ Return JSON with:
     residualRiskScore (number): P×I after response
     status (string): Open | In Progress | Closed | Occurred | Accepted
     dueDate (string)
+    requirementRef (string): If the project context includes scopeRequirements, trace this risk to the most relevant requirement key (e.g. "REQ-001", "FR-12"). Use "General" only if the risk is not traceable to any specific requirement.
   })
 - riskExposureSummary (object): {totalRisks, criticalCount, highCount, mediumCount, lowCount, topRisk (string)}`,
 

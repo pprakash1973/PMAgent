@@ -118,7 +118,12 @@ function ActionItemRow({ item, now }: { item: ActionItem; now: Date }) {
               </span>
             </div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {item.project.name}
+              <span style={{ fontWeight: 600, color: "#5b7a8a" }}>{item.project.name}</span>
+              {item.raisedBy?.fullName && (
+                <span style={{ marginLeft: 6, color: "#b0bec5" }}>
+                  · raised by <span style={{ color: "#006E74", fontWeight: 500 }}>{item.raisedBy.fullName}</span>
+                </span>
+              )}
             </div>
           </div>
         </div>

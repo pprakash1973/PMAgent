@@ -112,6 +112,7 @@ export async function syncArtifactToTables(
             ? r.responseActions.join("; ")
             : (r.mitigation ?? r.strategy ?? null),
           dueDate: safeDate(r.dueDate),
+          requirementRef: r.requirementRef ?? "General",
         })),
       });
       break;
@@ -155,6 +156,7 @@ export async function syncArtifactToTables(
             owner: r.owner ?? null,
             mitigation: r.mitigation ?? r.responseActions ?? null,
             dueDate: safeDate(r.dueDate),
+            requirementRef: r.requirementRef ?? "General",
           })),
         });
       }
@@ -198,7 +200,7 @@ export async function syncArtifactToTables(
 
 // ── Normalisation helpers ─────────────────────────────────────────────────────
 
-function normaliseProbImpact(val: any): string {
+export function normaliseProbImpact(val: any): string {
   if (!val) return "medium";
   const v = String(val).toLowerCase();
   if (v.includes("very high") || v.includes("critical")) return "very_high";

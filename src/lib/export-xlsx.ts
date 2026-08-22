@@ -33,7 +33,7 @@ function riskRegister(content: any): XLSX.WorkBook {
   // Sheet 1: Risk Register (PMBOK 11.2–11.4 full columns)
   const regHeaders = [
     "Risk ID", "Category", "Risk Title", "Risk Description (If…Then…Causing…)",
-    "Type", "Probability (1-5)", "Impact (1-5)", "Risk Score", "Risk Level",
+    "Type", "Probability (1-10)", "Impact (1-10)", "Risk Score", "Risk Level",
     "Risk Owner", "Response Strategy", "Response Actions",
     "Contingency Plan", "Trigger", "Residual Score",
     "Status", "Date Identified", "Review Date", "Notes",
@@ -64,12 +64,14 @@ function riskRegister(content: any): XLSX.WorkBook {
   addFreezeRow(regWs);
   XLSX.utils.book_append_sheet(wb, regWs, "Risk Register");
 
-  // Sheet 2: P×I Heat Map (5×5 grid)
-  const pxiData: string[][] = [["P\\I", "1-Very Low", "2-Low", "3-Medium", "4-High", "5-Very High"]];
-  const levelOf = (score: number) => score >= 15 ? "CRITICAL" : score >= 10 ? "HIGH" : score >= 5 ? "MEDIUM" : "LOW";
-  for (let p = 5; p >= 1; p--) {
-    const row: string[] = [`${p}-${p === 5 ? "Very High" : p === 4 ? "High" : p === 3 ? "Medium" : p === 2 ? "Low" : "Very Low"}`];
-    for (let i = 1; i <= 5; i++) {
+  // Sheet 2: P×I Heat Map (5×5 grid using 2/4/6/8/10 scale)
+  const pxiData: string[][] = [["P\\I", "2-Very Low", "4-Low", "6-Medium", "8-High", "10-Very High"]];
+  const levelOf = (score: number) => score >= 60 ? "CRITICAL" : score >= 36 ? "HIGH" : score >= 16 ? "MEDIUM" : "LOW";
+  const piVals = [10, 8, 6, 4, 2];
+  const piLabel: Record<number, string> = { 10: "Very High", 8: "High", 6: "Medium", 4: "Low", 2: "Very Low" };
+  for (const p of piVals) {
+    const row: string[] = [`${p}-${piLabel[p]}`];
+    for (const i of [2, 4, 6, 8, 10]) {
       const score = p * i;
       const riskIDs = risks
         .filter((r: any) => +safeStr(r.probabilityScore ?? r.probability) === p && +safeStr(r.impactScore ?? r.impact) === i)

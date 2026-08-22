@@ -822,7 +822,7 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   for (let p = 5; p >= 1; p--) {
     for (let im = 1; im <= 5; im++) {
       const score = p * im;
-      const hColor = score >= 15 ? heatColors[4] : score >= 10 ? heatColors[3] : score >= 5 ? heatColors[2] : heatColors[1];
+      const hColor = score >= 60 ? heatColors[4] : score >= 36 ? heatColors[3] : score >= 16 ? heatColors[2] : heatColors[1];
       const cx = hmX + (im - 1) * cellW; const cy = hmY + (5 - p) * cellH;
       s7.addShape(pptx.ShapeType.rect, { x: cx, y: cy, w: cellW - 0.04, h: cellH - 0.04, fill: { color: hColor }, line: { color: WHITE, width: 0.5 } });
       // Plot risks on the map

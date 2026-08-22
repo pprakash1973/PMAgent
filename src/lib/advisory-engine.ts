@@ -32,7 +32,7 @@ export interface ProjectState {
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
-const PI_NUM: Record<string, number> = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
+const PI_NUM: Record<string, number> = { very_low: 2, low: 4, medium: 6, high: 8, very_high: 10 };
 function riskScore(r: any) {
   return (PI_NUM[r.probability] ?? 3) * (PI_NUM[r.impact] ?? 3);
 }
@@ -226,10 +226,10 @@ function runRiskPack(state: ProjectState): AdvisoryCandidate[] {
     }
   }
 
-  // RA-22 — High-score risk (≥12) with no mitigation
+  // RA-22 — High-score risk (≥36) with no mitigation
   for (const r of openRisks) {
     const sc = riskScore(r);
-    if (sc >= 12 && (!r.mitigation || r.mitigation.trim().length < 5)) {
+    if (sc >= 36 && (!r.mitigation || r.mitigation.trim().length < 5)) {
       // Skip if RA-16 already fired for this risk
       const already = out.find(o => o.ruleId === "RA-16" && o.objectId === r.id);
       if (!already) {

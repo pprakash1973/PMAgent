@@ -662,12 +662,13 @@ function ArtifactsTab({ project, catalog, onNavigate }: { project: any; catalog:
 
 // ── Risk tab ────────────────────────────────────────────────────────────────────
 
-const PROB_SCORE: Record<string, number> = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
-const IMP_SCORE: Record<string, number>  = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
-function riskScore(r: any) { return (PROB_SCORE[r.probability] ?? 3) * (IMP_SCORE[r.impact] ?? 3); }
+const PROB_SCORE: Record<string, number> = { very_low: 2, low: 4, medium: 6, high: 8, very_high: 10 };
+const IMP_SCORE: Record<string, number>  = { very_low: 2, low: 4, medium: 6, high: 8, very_high: 10 };
+function riskScore(r: any) { return (PROB_SCORE[r.probability] ?? 6) * (IMP_SCORE[r.impact] ?? 6); }
 function scoreColor(s: number) {
-  if (s >= 15) return { color: C.red, bg: C.redLight };
-  if (s >= 9)  return { color: C.amber, bg: C.amberLight };
+  if (s >= 60) return { color: C.red, bg: C.redLight };
+  if (s >= 36) return { color: C.amber, bg: C.amberLight };
+  if (s >= 16) return { color: C.text2, bg: C.surface2 };
   return { color: C.green, bg: C.greenLight };
 }
 function piColor(v: string) {
@@ -686,11 +687,13 @@ function RiskTab({ project }: { project: any }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenMsg, setRegenMsg] = useState("");
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [adding, setAdding] = useState(false);
-  const [newForm, setNewForm] = useState({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "" });
+  const [newForm, setNewForm] = useState({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "", requirementRef: "General" });
   const [saving, setSaving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -708,7 +711,7 @@ function RiskTab({ project }: { project: any }) {
         projectName: project.name,
         kpiSnapshot: {
           risksOpen: data.filter((r: any) => r.status === "open" || r.status === "in_progress").length,
-          risksCritical: data.filter((r: any) => riskScore(r) >= 15).length,
+          risksCritical: data.filter((r: any) => riskScore(r) >= 60).length,
         },
       });
     }
@@ -726,6 +729,24 @@ function RiskTab({ project }: { project: any }) {
     setImporting(false);
   }
 
+  async function handleRegenerate() {
+    setRegenerating(true); setRegenMsg("");
+    try {
+      const res = await fetch(`/api/projects/${project.id}/risks/regenerate`, { method: "POST" });
+      let data: any = {};
+      try { data = await res.json(); } catch { data = { error: `Server error (${res.status})` }; }
+      if (res.ok) {
+        setRegenMsg(data.added > 0 ? `✓ Added ${data.added} new risk${data.added !== 1 ? "s" : ""} from baseline` : `✓ ${data.message}`);
+        await load();
+      } else {
+        setRegenMsg(`✗ ${data.error ?? "Regeneration failed"}`);
+      }
+    } catch (err: any) {
+      setRegenMsg(`✗ ${err?.message ?? "Network error — please try again"}`);
+    }
+    setRegenerating(false);
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!newForm.description.trim()) return;
@@ -733,7 +754,7 @@ function RiskTab({ project }: { project: any }) {
     const res = await fetch(`/api/projects/${project.id}/risks`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newForm),
     });
-    if (res.ok) { setAdding(false); setNewForm({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "" }); await load(); }
+    if (res.ok) { setAdding(false); setNewForm({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "", requirementRef: "General" }); await load(); }
     setSaving(null);
   }
 
@@ -753,7 +774,7 @@ function RiskTab({ project }: { project: any }) {
 
   function startEdit(r: any) {
     setEditId(r.id);
-    setEditForm({ description: r.description, category: r.category || "", probability: r.probability, impact: r.impact, owner: r.owner || "", mitigation: r.mitigation || "", status: r.status });
+    setEditForm({ description: r.description, category: r.category || "", probability: r.probability, impact: r.impact, owner: r.owner || "", mitigation: r.mitigation || "", status: r.status, requirementRef: r.requirementRef || "General" });
   }
   async function saveEdit() {
     if (!editId) return;
@@ -764,7 +785,7 @@ function RiskTab({ project }: { project: any }) {
   const filtered = useMemo(() => {
     return risks.filter(r => {
       const sc = riskScore(r);
-      const level = sc >= 15 ? "critical" : sc >= 9 ? "high" : sc >= 4 ? "medium" : "low";
+      const level = sc >= 60 ? "critical" : sc >= 36 ? "high" : sc >= 16 ? "medium" : "low";
       const matchLevel = levelFilter === "all" || level === levelFilter;
       const matchStatus = statusFilter === "all" || r.status === statusFilter;
       const matchSearch = !search || r.description?.toLowerCase().includes(search.toLowerCase()) || r.owner?.toLowerCase().includes(search.toLowerCase()) || r.category?.toLowerCase().includes(search.toLowerCase());
@@ -773,7 +794,7 @@ function RiskTab({ project }: { project: any }) {
   }, [risks, search, levelFilter, statusFilter]);
 
   const openCount = risks.filter(r => r.status === "open" || r.status === "in_progress").length;
-  const criticalCount = risks.filter(r => riskScore(r) >= 15).length;
+  const criticalCount = risks.filter(r => riskScore(r) >= 60).length;
   const mitigatedCount = risks.filter(r => r.status === "mitigated" || r.status === "closed").length;
 
   const AI_CHIPS = [
@@ -788,11 +809,13 @@ function RiskTab({ project }: { project: any }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
+      <style>{`@keyframes risk-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
         {[
           { label: "Total Risks", value: risks.length, sub: "All categories", color: C.primary, bg: C.primaryLight },
-          { label: "Critical / High", value: criticalCount, sub: "Score ≥ 15", color: C.red, bg: C.redLight },
+          { label: "Critical / High", value: criticalCount, sub: "Score ≥ 60", color: C.red, bg: C.redLight },
           { label: "Open", value: openCount, sub: "Awaiting mitigation", color: C.amber, bg: C.amberLight },
           { label: "Mitigated", value: mitigatedCount, sub: "Response in place", color: C.green, bg: C.greenLight },
         ].map(k => (
@@ -810,21 +833,62 @@ function RiskTab({ project }: { project: any }) {
         <button onClick={handleImport} disabled={importing} style={{ height: 30, padding: "0 12px", background: "rgba(0,110,116,.07)", color: C.primary, border: `1px solid rgba(0,110,116,.2)`, borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: importing ? "not-allowed" : "pointer", opacity: importing ? .7 : 1 }}>
           {importing ? "Importing…" : "↓ Import from Risk Register artifact"}
         </button>
+        <button onClick={handleRegenerate} disabled={regenerating} title="Runs AI against the current project baseline and appends any new risks — existing risks are not changed" style={{ height: 30, padding: "0 12px", display: "flex", alignItems: "center", gap: 6, background: regenerating ? "rgba(124,58,237,.13)" : "rgba(124,58,237,.07)", color: "#7C3AED", border: "1px solid rgba(124,58,237,.25)", borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: regenerating ? "not-allowed" : "pointer" }}>
+          {regenerating ? (
+            <>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: "risk-spin 1s linear infinite", flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity=".25" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              Analyzing baseline…
+            </>
+          ) : (
+            <>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M4 4v5h5M20 20v-5h-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M20 12A8 8 0 0 0 6.93 6.93M4 12a8 8 0 0 0 13.07 5.07" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              Regenerate Risks
+            </>
+          )}
+        </button>
         {importMsg && <span style={{ fontSize: 12, color: importMsg.startsWith("✓") ? C.green : C.red }}>{importMsg}</span>}
         <div style={{ flex: 1 }} />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search risks…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface2, color: C.text, width: 180 }} />
         <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text }}>
           <option value="all">All Levels</option>
-          <option value="critical">Critical (≥15)</option>
-          <option value="high">High (9–14)</option>
-          <option value="medium">Medium (4–8)</option>
-          <option value="low">Low (1–3)</option>
+          <option value="critical">Critical (≥60)</option>
+          <option value="high">High (36–59)</option>
+          <option value="medium">Medium (16–35)</option>
+          <option value="low">Low (1–15)</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text }}>
           <option value="all">All Status</option>
           {RISK_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
         </select>
       </div>
+
+      {/* Regenerate progress banner */}
+      {regenerating && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", background: "rgba(124,58,237,.06)", border: "1px solid rgba(124,58,237,.22)", borderRadius: 9 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: "risk-spin 1s linear infinite", flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" stroke="#7C3AED" strokeWidth="3" strokeOpacity=".2" />
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="#7C3AED" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#7C3AED" }}>Analyzing baseline and generating risks…</div>
+            <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>New risks will be appended below existing ones. Existing risks are not changed. This takes 20–30 seconds.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Regenerate result */}
+      {!regenerating && regenMsg && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 14px", background: regenMsg.startsWith("✓") ? "rgba(1,178,124,.08)" : "rgba(252,106,89,.08)", border: `1px solid ${regenMsg.startsWith("✓") ? "rgba(1,178,124,.28)" : "rgba(252,106,89,.28)"}`, borderRadius: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: regenMsg.startsWith("✓") ? C.green : C.red }}>{regenMsg}</span>
+          <button onClick={() => setRegenMsg("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "#94a3b8", lineHeight: 1, padding: 0 }}>✕</button>
+        </div>
+      )}
 
       {/* AI chips */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const, alignItems: "center" }}>
@@ -861,6 +925,10 @@ function RiskTab({ project }: { project: any }) {
               <label style={{ fontSize: 11.5, color: C.text3, display: "block", marginBottom: 3 }}>Owner</label>
               <input value={newForm.owner} onChange={e => setNewForm(f => ({ ...f, owner: e.target.value }))} placeholder="Name" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, background: C.surface2, color: C.text }} />
             </div>
+            <div>
+              <label style={{ fontSize: 11.5, color: C.text3, display: "block", marginBottom: 3 }}>Req. Traceability</label>
+              <input value={newForm.requirementRef} onChange={e => setNewForm(f => ({ ...f, requirementRef: e.target.value }))} placeholder="REQ-001 or General" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, background: C.surface2, color: C.text }} />
+            </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={{ fontSize: 11.5, color: C.text3, display: "block", marginBottom: 3 }}>Mitigation Plan</label>
               <input value={newForm.mitigation} onChange={e => setNewForm(f => ({ ...f, mitigation: e.target.value }))} placeholder="Response / mitigation strategy…" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, background: C.surface2, color: C.text }} />
@@ -876,8 +944,8 @@ function RiskTab({ project }: { project: any }) {
       {/* Table */}
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
         {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 90px 72px", gap: 8, padding: "8px 14px", background: C.surface2, fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.text3, borderBottom: `1px solid ${C.border}` }}>
-          <span>ID</span><span>Description</span><span>Category</span><span>Prob</span><span>Impact</span><span>Score</span><span>Owner</span><span>Status</span><span>Actions</span>
+        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 110px 90px 72px", gap: 8, padding: "8px 14px", background: C.surface2, fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.text3, borderBottom: `1px solid ${C.border}` }}>
+          <span>ID</span><span>Description</span><span>Category</span><span>Prob</span><span>Impact</span><span>Score</span><span>Owner</span><span>Req. Ref</span><span>Status</span><span>Actions</span>
         </div>
 
         {filtered.length === 0 && (
@@ -891,7 +959,7 @@ function RiskTab({ project }: { project: any }) {
           const scC = scoreColor(sc);
           const isEdit = editId === r.id;
           return (
-            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 90px 72px", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, alignItems: "center", fontSize: 13, background: i % 2 === 1 ? C.surface2 : C.surface }}>
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 110px 90px 72px", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, alignItems: "center", fontSize: 13, background: i % 2 === 1 ? C.surface2 : C.surface }}>
               <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, fontWeight: 600, color: C.text3 }}>{r.riskId || `R-${String(i + 1).padStart(3, "0")}`}</span>
 
               {isEdit ? (
@@ -930,6 +998,12 @@ function RiskTab({ project }: { project: any }) {
                 <input value={editForm.owner} onChange={e => setEditForm((f: any) => ({ ...f, owner: e.target.value }))} placeholder="Owner" style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 12, background: C.surface, color: C.text, width: "100%" }} />
               ) : (
                 <span style={{ fontSize: 12, color: r.owner ? C.text2 : C.text3, fontStyle: r.owner ? "normal" : "italic" as const }}>{r.owner || "To Be Assigned"}</span>
+              )}
+
+              {isEdit ? (
+                <input value={editForm.requirementRef} onChange={e => setEditForm((f: any) => ({ ...f, requirementRef: e.target.value }))} placeholder="REQ-001 or General" style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text, width: "100%" }} />
+              ) : (
+                <span style={{ fontSize: 11, color: r.requirementRef && r.requirementRef !== "General" ? C.primary : C.text3, fontFamily: r.requirementRef && r.requirementRef !== "General" ? "'IBM Plex Mono',monospace" : "inherit" }}>{r.requirementRef || "General"}</span>
               )}
 
               {isEdit ? (

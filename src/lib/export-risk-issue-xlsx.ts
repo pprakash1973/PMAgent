@@ -93,14 +93,14 @@ function riskLevelFill(level: string): { bg: string; fg: string } {
 
 // P×I score → fill color for heat map
 function heatFill(score: number): string {
-  if (score >= 15) return UST.red;
-  if (score >= 10) return UST.amber;
-  if (score >= 5)  return UST.tealLight;
+  if (score >= 60) return UST.red;
+  if (score >= 36) return UST.amber;
+  if (score >= 16) return UST.tealLight;
   return UST.greenBg;
 }
 
 function heatFg(score: number): string {
-  if (score >= 10) return UST.navyFg;
+  if (score >= 36) return UST.navyFg;
   return UST.darkFg;
 }
 
@@ -123,11 +123,12 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
 
   ws.columns = [
     { header: "Risk ID",          key: "id",          width: 10 },
+    { header: "Req. Traceability",key: "reqRef",      width: 20 },
     { header: "Category",         key: "category",    width: 16 },
     { header: "Type",             key: "type",        width: 10 },
     { header: "Risk Description", key: "statement",   width: 50 },
-    { header: "Probability (1-5)",key: "prob",        width: 14 },
-    { header: "Impact (1-5)",     key: "impact",      width: 12 },
+    { header: "Probability (1-10)",key: "prob",        width: 14 },
+    { header: "Impact (1-10)",    key: "impact",      width: 12 },
     { header: "Risk Score",       key: "score",       width: 12 },
     { header: "Risk Level",       key: "level",       width: 12 },
     { header: "Owner",            key: "owner",       width: 20 },
@@ -150,6 +151,7 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
     const level = safeStr(r.severity ?? r.riskLevel ?? "");
     const row = ws.addRow([
       safeStr(r.id),
+      safeStr(r.requirementRef ?? "General"),
       safeStr(r.category),
       safeStr(r.type ?? "Threat"),
       safeStr(r.statement ?? r.description),
@@ -170,10 +172,10 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
     applyBody(row, bg, true);
     row.height = 32;
 
-    // Color the Risk Level cell (col 8)
+    // Color the Risk Level cell (col 9, shifted +1 for new Req. Traceability column)
     if (level) {
       const lc = riskLevelFill(level);
-      const lCell = row.getCell(8);
+      const lCell = row.getCell(9);
       lCell.fill = fill(lc.bg);
       lCell.font = { bold: true, color: { argb: lc.fg }, size: 10 };
       lCell.alignment = { horizontal: "center", vertical: "middle" };
@@ -181,7 +183,7 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
     alt++;
   }
 
-  ws.autoFilter = { from: "A1", to: "Q1" };
+  ws.autoFilter = { from: "A1", to: "R1" };
 }
 
 function buildPxISheet(wb: ExcelJS.Workbook, risks: any[]) {
@@ -192,7 +194,7 @@ function buildPxISheet(wb: ExcelJS.Workbook, risks: any[]) {
     { width: 20 }, { width: 20 }, { width: 20 }, { width: 20 }, { width: 20 },
   ];
 
-  const impactLabels = ["", "1 — Very Low", "2 — Low", "3 — Medium", "4 — High", "5 — Very High"];
+  const impactLabels = ["", "2 — Very Low", "4 — Low", "6 — Medium", "8 — High", "10 — Very High"];
   const hRow = ws.addRow(impactLabels);
   hRow.eachCell((cell, col) => {
     cell.fill = fill(col === 1 ? UST.softBlack : UST.navy);
@@ -201,19 +203,20 @@ function buildPxISheet(wb: ExcelJS.Workbook, risks: any[]) {
   });
   hRow.height = 22;
 
+  const piValues = [10, 8, 6, 4, 2];
   const probLabels: Record<number, string> = {
-    5: "5 — Very High",
-    4: "4 — High",
-    3: "3 — Medium",
-    2: "2 — Low",
-    1: "1 — Very Low",
+    10: "10 — Very High",
+    8:  "8 — High",
+    6:  "6 — Medium",
+    4:  "4 — Low",
+    2:  "2 — Very Low",
   };
 
-  for (let p = 5; p >= 1; p--) {
+  for (const p of piValues) {
     const rowData: (string | number)[] = [probLabels[p]];
-    for (let i = 1; i <= 5; i++) {
+    for (const i of [2, 4, 6, 8, 10]) {
       const score = p * i;
-      const label = score >= 15 ? "CRITICAL" : score >= 10 ? "HIGH" : score >= 5 ? "MEDIUM" : "LOW";
+      const label = score >= 60 ? "CRITICAL" : score >= 36 ? "HIGH" : score >= 16 ? "MEDIUM" : "LOW";
       const ids = risks
         .filter((r) => +safeStr(r.probabilityScore ?? r.probability ?? 0) === p && +safeStr(r.impactScore ?? r.impact ?? 0) === i)
         .map((r) => safeStr(r.id))
@@ -228,9 +231,10 @@ function buildPxISheet(wb: ExcelJS.Workbook, risks: any[]) {
     row.getCell(1).font = { bold: true, color: { argb: UST.navyFg }, size: 10 };
     row.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
 
-    for (let i = 1; i <= 5; i++) {
+    for (let col = 0; col < 5; col++) {
+      const i = [2, 4, 6, 8, 10][col];
       const score = p * i;
-      const cell = row.getCell(i + 1);
+      const cell = row.getCell(col + 2);
       cell.fill = fill(heatFill(score));
       cell.font = { bold: true, color: { argb: heatFg(score) }, size: 10 };
       cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
@@ -246,10 +250,10 @@ function buildPxISheet(wb: ExcelJS.Workbook, risks: any[]) {
   // Legend
   ws.addRow([]);
   const legend = [
-    ["CRITICAL (≥15)", UST.red,      UST.navyFg],
-    ["HIGH (10–14)",   UST.amber,    UST.darkFg],
-    ["MEDIUM (5–9)",   UST.tealLight,UST.darkFg],
-    ["LOW (1–4)",      UST.greenBg,  UST.darkFg],
+    ["CRITICAL (≥60)",  UST.red,      UST.navyFg],
+    ["HIGH (36–59)",    UST.amber,    UST.darkFg],
+    ["MEDIUM (16–35)",  UST.tealLight,UST.darkFg],
+    ["LOW (1–15)",      UST.greenBg,  UST.darkFg],
   ] as [string, string, string][];
   for (const [label, bg, fg] of legend) {
     const row = ws.addRow([label, "", "", "", "", ""]);

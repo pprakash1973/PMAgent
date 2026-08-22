@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from "recharts";
+import { DrillDownPanel } from "@/app/dashboard/dm/drill-down-panel";
 
 // ── Types ────────────────────────────────────────────────────────────────────────
 export interface DhProject {
@@ -8,6 +9,7 @@ export interface DhProject {
   clientId: string; clientName: string;
   clusterId: string; clusterName: string; clusterType: string;
   programName: string; pmName: string;
+  dmId: string | null; dmName: string | null;
   rag: "red" | "amber" | "green";
   spi: number | null; cpi: number | null;
   deliveryMethod: string; // "predictive" | "agile_scrum" | "hybrid" — extensible
@@ -24,8 +26,13 @@ export interface TrendPoint {
   label: string; avgSpi: number | null; avgCpi: number | null; healthPct: number | null;
 }
 
+export interface AgileVelPoint {
+  label: string; avgVelocity: number | null; avgReliability: number | null;
+}
+
 export interface ClusterHealth {
   id: string; name: string; red: number; amber: number; green: number; total: number;
+  methodCounts: Record<string, number>;
 }
 
 export interface DhEscalation {
@@ -233,8 +240,10 @@ function EscCard({ esc, onAck, onResolve, done }: {
 }
 
 // ── Red project row (no drill-down) ───────────────────────────────────────────────
-function RedRow({ p }: { p: DhProject }) {
+function RedRow({ p, onReview }: { p: DhProject; onReview?: (id: string) => void }) {
   const rc = ragColor(p.rag);
+  const mg = METHODOLOGY_GROUPS[dmkey(p)] ?? METHODOLOGY_GROUPS.predictive;
+  const isAgile = dmkey(p) === "agile_scrum";
   return (
     <div style={{
       background: C.surface, border: `1px solid ${C.border}`,
@@ -246,6 +255,9 @@ function RedRow({ p }: { p: DhProject }) {
             <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: C.FF }}>{p.name}</span>
             <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: `${rc}18`, color: rc, border: `1px solid ${rc}30`, fontFamily: C.FF }}>
               {p.rag === "red" ? "Critical" : "At risk"}
+            </span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5, background: mg.bg, color: mg.color, border: `1px solid ${mg.border}`, fontFamily: C.FF }}>
+              {mg.shortLabel}
             </span>
           </div>
           <div style={{ fontSize: 12, color: C.ink3, marginBottom: 8, fontFamily: C.FF }}>
@@ -264,17 +276,34 @@ function RedRow({ p }: { p: DhProject }) {
             </svg>
             <span style={{ fontSize: 12.5, color: C.ink, lineHeight: 1.45, fontFamily: C.FF }}>{p.whyDiagnosis}</span>
           </div>
-          {/* Metric badges */}
+          {/* Metric badges — methodology-aware */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
-            {p.spi !== null && (
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: spiColor(p.spi), background: `${spiColor(p.spi)}18`, border: `1px solid ${spiColor(p.spi)}30`, borderRadius: 5, padding: "2px 8px", fontFamily: C.FM }}>
-                SPI {fmt2(p.spi)}
-              </span>
-            )}
-            {p.cpi !== null && (
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: spiColor(p.cpi), background: `${spiColor(p.cpi)}18`, border: `1px solid ${spiColor(p.cpi)}30`, borderRadius: 5, padding: "2px 8px", fontFamily: C.FM }}>
-                CPI {fmt2(p.cpi)}
-              </span>
+            {isAgile ? (
+              <>
+                {p.velocity !== null && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: mg.color, background: mg.bg, border: `1px solid ${mg.border}`, borderRadius: 5, padding: "2px 8px", fontFamily: C.FM }}>
+                    Velocity {p.velocity.toFixed(0)} pts
+                  </span>
+                )}
+                {p.commitmentReliability !== null && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: p.commitmentReliability < 60 ? C.red : p.commitmentReliability < 80 ? C.amber : C.green, background: p.commitmentReliability < 60 ? C.redBg : p.commitmentReliability < 80 ? C.amberBg : C.greenBg, border: `1px solid ${p.commitmentReliability < 60 ? C.redLine : p.commitmentReliability < 80 ? C.amberLine : C.greenLine}`, borderRadius: 5, padding: "2px 8px", fontFamily: C.FM }}>
+                    Reliability {Math.round(p.commitmentReliability)}%
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                {p.spi !== null && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: spiColor(p.spi), background: `${spiColor(p.spi)}18`, border: `1px solid ${spiColor(p.spi)}30`, borderRadius: 5, padding: "2px 8px", fontFamily: C.FM }}>
+                    SPI {fmt2(p.spi)}
+                  </span>
+                )}
+                {p.cpi !== null && (
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: spiColor(p.cpi), background: `${spiColor(p.cpi)}18`, border: `1px solid ${spiColor(p.cpi)}30`, borderRadius: 5, padding: "2px 8px", fontFamily: C.FM }}>
+                    CPI {fmt2(p.cpi)}
+                  </span>
+                )}
+              </>
             )}
             {p.criticalIssues > 0 && (
               <span style={{ fontSize: 11, fontWeight: 600, color: C.red, background: C.redBg, borderRadius: 5, padding: "2px 7px", fontFamily: C.FF }}>
@@ -293,10 +322,70 @@ function RedRow({ p }: { p: DhProject }) {
             )}
           </div>
         </div>
-        <div style={{ textAlign: "right" as const, flexShrink: 0 }}>
-          <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Budget used</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: p.budPct > 85 ? C.red : p.budPct > 70 ? C.amber : C.green, fontFamily: C.FM }}>{p.budPct}%</div>
+        <div style={{ display: "flex", flexDirection: "column" as const, alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
+          <div style={{ textAlign: "right" as const }}>
+            <div style={{ fontSize: 10, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Budget used</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: p.budPct > 85 ? C.red : p.budPct > 70 ? C.amber : C.green, fontFamily: C.FM }}>{p.budPct}%</div>
+          </div>
+          {onReview && (
+            <button onClick={() => onReview(p.id)} style={{
+              fontSize: 11.5, fontWeight: 600, color: C.teal, background: "#e8f5f6",
+              border: `1px solid #b2dde0`, borderRadius: 7, padding: "5px 12px",
+              cursor: "pointer", fontFamily: C.FF, whiteSpace: "nowrap" as const,
+            }}>
+              Review ›
+            </button>
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Methodology mix bar ────────────────────────────────────────────────────────────
+function MethodologyMixBar({ projects }: { projects: DhProject[] }) {
+  const total = projects.length || 1;
+  const groups = (Object.entries(METHODOLOGY_GROUPS) as [string, typeof METHODOLOGY_GROUPS[string]][]).map(([key, cfg]) => {
+    const mp = projects.filter(p => dmkey(p) === key);
+    if (mp.length === 0) return null;
+    return {
+      key, cfg, count: mp.length,
+      pct: Math.round((mp.length / total) * 100),
+      red: mp.filter(p => p.rag === "red").length,
+      amber: mp.filter(p => p.rag === "amber").length,
+      green: mp.filter(p => p.rag === "green").length,
+    };
+  }).filter((g): g is NonNullable<typeof g> => g !== null);
+
+  if (groups.length < 2) return null;
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.ink3, fontFamily: C.FF }}>Methodology Mix</span>
+        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{projects.length} projects</span>
+      </div>
+      <div style={{ height: 10, borderRadius: 99, overflow: "hidden", display: "flex", marginBottom: 12 }}>
+        {groups.map(g => (
+          <div key={g.key} style={{ width: `${g.pct}%`, background: g.cfg.color, minWidth: 4 }} title={`${g.cfg.label}: ${g.count}`} />
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" as const }}>
+        {groups.map(g => (
+          <div key={g.key} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 3, background: g.cfg.color, marginTop: 2, flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: g.cfg.color, fontFamily: C.FF }}>
+                {g.cfg.shortLabel} <span style={{ fontFamily: C.FM, fontWeight: 700 }}>{g.count}</span>
+              </div>
+              <div style={{ display: "flex", gap: 5, marginTop: 3, flexWrap: "wrap" as const }}>
+                {g.red > 0   && <span style={{ fontSize: 10, fontWeight: 600, color: C.red,   background: C.redBg,   border: `1px solid ${C.redLine}`,   borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.red} crit</span>}
+                {g.amber > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: C.amber, background: C.amberBg, border: `1px solid ${C.amberLine}`, borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.amber} risk</span>}
+                {g.green > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.greenLine}`, borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.green} ok</span>}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -362,6 +451,8 @@ function OverviewSection({ projects, escalations }: { projects: DhProject[]; esc
 
   return (
     <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
+      {/* Methodology mix */}
+      <MethodologyMixBar projects={projects} />
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 12, marginBottom: 20 }}>
         <KpiTile label="Avg SPI" value={avgSpi !== null ? avgSpi.toFixed(2) : null} sub="Schedule performance" color={avgSpi !== null && avgSpi < 0.85 ? C.red : avgSpi !== null && avgSpi < 0.95 ? C.amber : C.teal} bg={avgSpi !== null && avgSpi < 0.85 ? C.redBg : avgSpi !== null && avgSpi < 0.95 ? C.amberBg : C.greenBg} />
@@ -418,8 +509,17 @@ function OverviewSection({ projects, escalations }: { projects: DhProject[]; esc
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
-                    <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>SPI <span style={{ fontWeight: 700, color: spiColor(p.spi), fontFamily: C.FM }}>{p.spi !== null ? p.spi.toFixed(2) : "—"}</span></span>
-                    <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>CPI <span style={{ fontWeight: 700, color: spiColor(p.cpi), fontFamily: C.FM }}>{p.cpi !== null ? p.cpi.toFixed(2) : "—"}</span></span>
+                    {dmkey(p) === "agile_scrum" ? (
+                      <>
+                        <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>Vel <span style={{ fontWeight: 700, color: "#7c3aed", fontFamily: C.FM }}>{p.velocity !== null ? p.velocity.toFixed(0) : "—"}</span></span>
+                        <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>Rel <span style={{ fontWeight: 700, color: p.commitmentReliability !== null && p.commitmentReliability < 60 ? C.red : p.commitmentReliability !== null && p.commitmentReliability < 80 ? C.amber : C.green, fontFamily: C.FM }}>{p.commitmentReliability !== null ? `${Math.round(p.commitmentReliability)}%` : "—"}</span></span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>SPI <span style={{ fontWeight: 700, color: spiColor(p.spi), fontFamily: C.FM }}>{p.spi !== null ? p.spi.toFixed(2) : "—"}</span></span>
+                        <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>CPI <span style={{ fontWeight: 700, color: spiColor(p.cpi), fontFamily: C.FM }}>{p.cpi !== null ? p.cpi.toFixed(2) : "—"}</span></span>
+                      </>
+                    )}
                     <span style={{ fontSize: 11, color: C.ink3, fontFamily: C.FF }}>Budget <span style={{ fontWeight: 700, color: p.budPct > 85 ? C.red : C.ink, fontFamily: C.FM }}>{p.budPct}%</span></span>
                   </div>
                 </div>
@@ -465,118 +565,8 @@ function OverviewSection({ projects, escalations }: { projects: DhProject[]; esc
   );
 }
 
-// ── Delivery metrics section ───────────────────────────────────────────────────────
-function MetricsSection({ trends, projects, clusterHealth }: { trends: TrendPoint[]; projects: DhProject[]; clusterHealth: ClusterHealth[] }) {
-  const spiByCluster = clusterHealth.map(c => {
-    const clusterProjects = projects.filter(p => p.clusterId === c.id);
-    const vals = clusterProjects.map(p => p.spi).filter((v): v is number => v !== null);
-    return { name: c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name, avgSpi: vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null, projects: c.total };
-  }).filter(c => c.avgSpi !== null);
-
-  const cpiByCluster = clusterHealth.map(c => {
-    const clusterProjects = projects.filter(p => p.clusterId === c.id);
-    const vals = clusterProjects.map(p => p.cpi).filter((v): v is number => v !== null);
-    return { name: c.name.length > 12 ? c.name.slice(0, 10) + "…" : c.name, avgCpi: vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null };
-  }).filter(c => c.avgCpi !== null);
-
-  const chartCard = (title: string, sub: string, children: React.ReactNode) => (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: C.FF }}>{title}</div>
-        <div style={{ fontSize: 11, color: C.inkFaint, marginTop: 2, fontFamily: C.FF }}>{sub}</div>
-      </div>
-      {children}
-    </div>
-  );
-
-  const trendHasSpiData = trends.some(t => t.avgSpi !== null);
-  const trendHasCpiData = trends.some(t => t.avgCpi !== null);
-  const trendHasHealthData = trends.some(t => t.healthPct !== null);
-
-  return (
-    <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-        {/* SPI trend */}
-        {chartCard("Portfolio SPI Trend", "Schedule performance index — 6-month rolling", (
-          trendHasSpiData ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={trends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
-                <YAxis domain={[0.5, 1.05]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => v.toFixed(2)} />
-                <ReferenceLine y={0.85} stroke={C.amber} strokeDasharray="4 4" />
-                <ReferenceLine y={0.95} stroke={C.green} strokeDasharray="4 4" />
-                <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(2) : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
-                <Line type="monotone" dataKey="avgSpi" name="Avg SPI" stroke={C.teal} strokeWidth={2.5} dot={{ r: 3, fill: C.teal }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No trend data available yet</div>
-        ))}
-
-        {/* CPI trend */}
-        {chartCard("Portfolio CPI Trend", "Cost performance index — 6-month rolling", (
-          trendHasCpiData ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={trends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
-                <YAxis domain={[0.5, 1.05]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => v.toFixed(2)} />
-                <ReferenceLine y={0.85} stroke={C.amber} strokeDasharray="4 4" />
-                <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(2) : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
-                <Line type="monotone" dataKey="avgCpi" name="Avg CPI" stroke={C.blue} strokeWidth={2.5} dot={{ r: 3, fill: C.blue }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No trend data available yet</div>
-        ))}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {/* SPI by cluster */}
-        {chartCard("SPI by Cluster", "Average schedule performance per cluster", (
-          spiByCluster.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={spiByCluster} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
-                <XAxis dataKey="name" tick={{ fontSize: 10, fill: C.inkFaint }} />
-                <YAxis domain={[0, 1.1]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => v.toFixed(1)} />
-                <ReferenceLine y={0.85} stroke={C.amber} strokeDasharray="4 4" />
-                <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(2) : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
-                <Bar dataKey="avgSpi" name="Avg SPI" radius={[4, 4, 0, 0]}>
-                  {spiByCluster.map((entry, index) => (
-                    <Cell key={`spi-cell-${index}`} fill={(entry.avgSpi ?? 1) < 0.85 ? C.red : (entry.avgSpi ?? 1) < 0.95 ? C.amber : C.green} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No cluster data available yet</div>
-        ))}
-
-        {/* Health % trend */}
-        {chartCard("Portfolio Health % Trend", "% of projects on track — 6-month rolling", (
-          trendHasHealthData ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={trends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => `${v}%`} />
-                <ReferenceLine y={75} stroke={C.amber} strokeDasharray="4 4" />
-                <Tooltip formatter={(v) => typeof v === "number" ? `${v}%` : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
-                <Bar dataKey="healthPct" name="On Track %" radius={[4, 4, 0, 0]}>
-                  {trends.map((entry, index) => (
-                    <Cell key={`hp-cell-${index}`} fill={(entry.healthPct ?? 100) < 60 ? C.red : (entry.healthPct ?? 100) < 75 ? C.amber : C.green} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No health trend data available yet</div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── Health tab ────────────────────────────────────────────────────────────────────
-function HealthSection({ projects }: { projects: DhProject[] }) {
+function HealthSection({ projects, onReview }: { projects: DhProject[]; onReview: (id: string) => void }) {
   const [clusterFilter, setClusterFilter] = useState("__all__");
   const [clientFilter, setClientFilter] = useState("__all__");
 
@@ -610,7 +600,7 @@ function HealthSection({ projects }: { projects: DhProject[] }) {
         <div style={{ fontSize: 13, color: C.inkFaint, fontStyle: "italic", padding: "8px 0 4px", fontFamily: C.FF }}>None in this band</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {rows.map(p => <RedRow key={p.id} p={p} />)}
+          {rows.map(p => <RedRow key={p.id} p={p} onReview={onReview} />)}
         </div>
       )}
     </div>
@@ -667,7 +657,7 @@ function HealthSection({ projects }: { projects: DhProject[] }) {
 }
 
 // ── Metrics tiles tab ─────────────────────────────────────────────────────────────
-function MetricsTilesSection({ projects, clusterHealth }: { projects: DhProject[]; clusterHealth: ClusterHealth[] }) {
+function MetricsTilesSection({ projects, clusterHealth, wfTrends, agileTrends }: { projects: DhProject[]; clusterHealth: ClusterHealth[]; wfTrends: TrendPoint[]; agileTrends: AgileVelPoint[] }) {
   const [accountFilter, setAccountFilter] = useState("__all__");
 
   const clients = Array.from(new Map(projects.map(p => [p.clientId || "__none__", p.clientName || "Unassigned"])).entries());
@@ -821,6 +811,175 @@ function MetricsTilesSection({ projects, clusterHealth }: { projects: DhProject[
           })}
         </div>
 
+        {/* By Delivery Managers */}
+        {(() => {
+          const dmMap = new Map<string, { name: string; projects: DhProject[] }>();
+          for (const p of filtered) {
+            const key = p.dmId ?? "__unassigned__";
+            const label = p.dmName ?? "Unassigned";
+            if (!dmMap.has(key)) dmMap.set(key, { name: label, projects: [] });
+            dmMap.get(key)!.projects.push(p);
+          }
+          const dmTiles = [...dmMap.values()].sort((a, b) => {
+            const aRed = a.projects.filter(p => p.rag === "red").length;
+            const bRed = b.projects.filter(p => p.rag === "red").length;
+            const aAmber = a.projects.filter(p => p.rag === "amber").length;
+            const bAmber = b.projects.filter(p => p.rag === "amber").length;
+            return bRed - aRed || bAmber - aAmber || a.name.localeCompare(b.name);
+          });
+          if (dmTiles.length < 2) return null;
+          return (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
+                By Delivery Manager
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, marginBottom: 28 }}>
+                {dmTiles.map(dm => {
+                  const pp = dm.projects;
+                  const red   = pp.filter(p => p.rag === "red").length;
+                  const amber = pp.filter(p => p.rag === "amber").length;
+                  const green = pp.filter(p => p.rag === "green").length;
+                  const wfProjs   = pp.filter(p => dmkey(p) !== "agile_scrum");
+                  const agileProjs = pp.filter(p => dmkey(p) === "agile_scrum");
+                  const wfSpi  = wfProjs.map(p => p.spi).filter((v): v is number => v !== null);
+                  const wfCpi  = wfProjs.map(p => p.cpi).filter((v): v is number => v !== null);
+                  const avgSpi = wfSpi.length ? wfSpi.reduce((a, b) => a + b, 0) / wfSpi.length : null;
+                  const avgCpi = wfCpi.length ? wfCpi.reduce((a, b) => a + b, 0) / wfCpi.length : null;
+                  const aVel  = agileProjs.map(p => p.velocity).filter((v): v is number => v !== null);
+                  const aRel  = agileProjs.map(p => p.commitmentReliability).filter((v): v is number => v !== null);
+                  const avgVel = aVel.length ? aVel.reduce((a, b) => a + b, 0) / aVel.length : null;
+                  const avgRel = aRel.length ? aRel.reduce((a, b) => a + b, 0) / aRel.length : null;
+                  const budgets = pp.map(p => p.budget ?? 0).reduce((a, b) => a + b, 0);
+                  const fmtM = (v: number) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${(v / 1_000).toFixed(0)}K` : `$${v}`;
+                  const ragLine = red > 0 ? C.red : amber > 0 ? C.amber : C.green;
+                  return (
+                    <div key={dm.name} style={{ background: C.surface, border: `1px solid ${C.border}`, borderLeft: `5px solid ${ragLine}`, borderRadius: 13, padding: "16px 18px" }}>
+                      {/* Header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${ragLine}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke={ragLine} strokeWidth="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke={ragLine} strokeWidth="1.8" strokeLinecap="round"/></svg>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink, fontFamily: C.FF, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{dm.name}</div>
+                          <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{pp.length} project{pp.length !== 1 ? "s" : ""}{budgets > 0 ? ` · ${fmtM(budgets)}` : ""}</div>
+                        </div>
+                      </div>
+                      {/* Health breakdown */}
+                      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                        {[{ v: red, l: "Critical", c: C.red, bg: C.redBg }, { v: amber, l: "At Risk", c: C.amber, bg: C.amberBg }, { v: green, l: "On Track", c: C.green, bg: C.greenBg }].map(k => (
+                          <div key={k.l} style={{ flex: 1, textAlign: "center" as const, background: k.bg, borderRadius: 7, padding: "7px 4px" }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: k.c, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
+                            <div style={{ fontSize: 9.5, color: k.c, fontFamily: C.FF, marginTop: 3 }}>{k.l}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Metrics — split by methodology presence */}
+                      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" as const }}>
+                        {wfProjs.length > 0 && (
+                          <div style={{ flex: 1, minWidth: 80 }}>
+                            <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 4 }}>Waterfall ({wfProjs.length})</div>
+                            <div style={{ display: "flex", gap: 12 }}>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>SPI</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: avgSpi !== null ? (avgSpi < 0.85 ? C.red : avgSpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{avgSpi !== null ? fmt2(avgSpi) : "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>CPI</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: avgCpi !== null ? (avgCpi < 0.85 ? C.red : avgCpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{avgCpi !== null ? fmt2(avgCpi) : "—"}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {agileProjs.length > 0 && (
+                          <div style={{ flex: 1, minWidth: 80 }}>
+                            <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 4 }}>Agile ({agileProjs.length})</div>
+                            <div style={{ display: "flex", gap: 12 }}>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>Velocity</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: "#7c3aed", fontFamily: C.FM }}>{avgVel !== null ? `${avgVel.toFixed(0)} pts` : "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>Reliability</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: avgRel !== null ? (avgRel < 60 ? C.red : avgRel < 80 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{avgRel !== null ? `${Math.round(avgRel)}%` : "—"}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {/* Issues strip */}
+                      {(() => {
+                        const issues = pp.reduce((s, p) => s + p.criticalIssues, 0);
+                        const risks  = pp.reduce((s, p) => s + p.highRisks, 0);
+                        const actions = pp.reduce((s, p) => s + p.openActionItems, 0);
+                        if (issues + risks + actions === 0) return null;
+                        return (
+                          <div style={{ display: "flex", gap: 8, marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${C.borderSoft}`, flexWrap: "wrap" as const }}>
+                            {issues > 0  && <span style={{ fontSize: 10.5, color: C.red,   background: C.redBg,   borderRadius: 99, padding: "2px 8px", fontFamily: C.FF }}>{issues} critical issue{issues !== 1 ? "s" : ""}</span>}
+                            {risks > 0   && <span style={{ fontSize: 10.5, color: C.amber, background: C.amberBg, borderRadius: 99, padding: "2px 8px", fontFamily: C.FF }}>{risks} high risk{risks !== 1 ? "s" : ""}</span>}
+                            {actions > 0 && <span style={{ fontSize: 10.5, color: C.blue,  background: C.blueSoft,borderRadius: 99, padding: "2px 8px", fontFamily: C.FF }}>{actions} open action{actions !== 1 ? "s" : ""}</span>}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
+
+        {/* Trend charts */}
+        {(wfTrends.length > 0 || agileTrends.length > 0) && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
+              Trend Charts
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 28 }}>
+              {/* WF SPI trend */}
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: C.FF, marginBottom: 4 }}>Waterfall SPI Trend</div>
+                <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>Schedule performance — Waterfall projects only</div>
+                {wfTrends.some(t => t.avgSpi !== null) ? (
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={wfTrends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
+                      <YAxis domain={[0.5, 1.05]} tick={{ fontSize: 10, fill: C.inkFaint }} tickFormatter={v => v.toFixed(2)} />
+                      <ReferenceLine y={0.85} stroke={C.amber} strokeDasharray="4 4" />
+                      <ReferenceLine y={0.95} stroke={C.green} strokeDasharray="4 4" />
+                      <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(2) : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
+                      <Line type="monotone" dataKey="avgSpi" name="Avg SPI" stroke={C.teal} strokeWidth={2.5} dot={{ r: 3, fill: C.teal }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No Waterfall trend data yet</div>
+                )}
+              </div>
+              {/* Agile velocity trend */}
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: C.FF, marginBottom: 4 }}>Agile Velocity Trend</div>
+                <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>Avg accepted points per sprint — last 5 sprints</div>
+                {agileTrends.some(t => t.avgVelocity !== null) ? (
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={agileTrends} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.borderSoft} />
+                      <XAxis dataKey="label" tick={{ fontSize: 10, fill: C.inkFaint }} />
+                      <YAxis tick={{ fontSize: 10, fill: C.inkFaint }} />
+                      <Tooltip formatter={(v) => typeof v === "number" ? v.toFixed(0) + " pts" : String(v ?? "")} labelStyle={{ fontFamily: C.FF, fontSize: 11 }} contentStyle={{ fontSize: 11, fontFamily: C.FF }} />
+                      <Line type="monotone" dataKey="avgVelocity" name="Avg Velocity" stroke="#7c3aed" strokeWidth={2.5} dot={{ r: 3, fill: "#7c3aed" }} />
+                      {agileTrends.some(t => t.avgReliability !== null) && (
+                        <Line type="monotone" dataKey="avgReliability" name="Reliability %" stroke={C.amber} strokeWidth={1.5} dot={{ r: 2, fill: C.amber }} strokeDasharray="4 4" />
+                      )}
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: C.inkFaint, fontFamily: C.FF }}>No Agile sprint data yet</div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
         {/* Cluster breakdown tiles */}
         {clusterTiles.length > 0 && (
           <>
@@ -858,10 +1017,12 @@ function MetricsTilesSection({ projects, clusterHealth }: { projects: DhProject[
 
 // ── Main component ────────────────────────────────────────────────────────────────
 export default function DhDashboardClient({
-  projects, trends, userName, escalations, clusterHealth,
+  projects, trends, wfTrends, agileTrends, userName, escalations, clusterHealth,
 }: {
   projects: DhProject[];
   trends: TrendPoint[];
+  wfTrends: TrendPoint[];
+  agileTrends: AgileVelPoint[];
   userName: string;
   escalations: DhEscalation[];
   clusterHealth: ClusterHealth[];
@@ -870,6 +1031,7 @@ export default function DhDashboardClient({
   const [resolveTarget, setResolveTarget] = useState<DhEscalation | null>(null);
   const [ackedIds, setAckedIds] = useState<Set<string>>(new Set());
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+  const [reviewId, setReviewId] = useState<string | null>(null);
 
   const openEscs = escalations.filter(e =>
     !resolvedIds.has(e.id) &&
@@ -950,10 +1112,13 @@ export default function DhDashboardClient({
       )}
 
       {/* ── Health ── */}
-      {tab === "health" && <HealthSection projects={projects} />}
+      {tab === "health" && <HealthSection projects={projects} onReview={setReviewId} />}
 
       {/* ── Metrics ── */}
-      {tab === "metrics" && <MetricsTilesSection projects={projects} clusterHealth={clusterHealth} />}
+      {tab === "metrics" && <MetricsTilesSection projects={projects} clusterHealth={clusterHealth} wfTrends={wfTrends} agileTrends={agileTrends} />}
+
+      {/* Project review panel */}
+      {reviewId && <DrillDownPanel projectId={reviewId} onClose={() => setReviewId(null)} />}
 
       {/* Resolve modal */}
       {resolveTarget && (
