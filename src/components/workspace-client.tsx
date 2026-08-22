@@ -740,8 +740,8 @@ function RiskTab({ project }: { project: any }) {
       } else {
         setRegenMsg(`✗ ${data.error ?? "Regeneration failed"}`);
       }
-    } catch {
-      setRegenMsg("✗ Network error");
+    } catch (err: any) {
+      setRegenMsg(`✗ ${err?.message ?? "Network error — please try again"}`);
     }
     setRegenerating(false);
   }
@@ -808,6 +808,8 @@ function RiskTab({ project }: { project: any }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
+      <style>{`@keyframes risk-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
         {[
@@ -830,11 +832,26 @@ function RiskTab({ project }: { project: any }) {
         <button onClick={handleImport} disabled={importing} style={{ height: 30, padding: "0 12px", background: "rgba(0,110,116,.07)", color: C.primary, border: `1px solid rgba(0,110,116,.2)`, borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: importing ? "not-allowed" : "pointer", opacity: importing ? .7 : 1 }}>
           {importing ? "Importing…" : "↓ Import from Risk Register artifact"}
         </button>
-        <button onClick={handleRegenerate} disabled={regenerating} style={{ height: 30, padding: "0 12px", background: "rgba(124,58,237,.07)", color: "#7C3AED", border: "1px solid rgba(124,58,237,.2)", borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: regenerating ? "not-allowed" : "pointer", opacity: regenerating ? .7 : 1 }}>
-          {regenerating ? "Regenerating…" : "⟳ Regenerate Risks"}
+        <button onClick={handleRegenerate} disabled={regenerating} title="Runs AI against the current project baseline and appends any new risks — existing risks are not changed" style={{ height: 30, padding: "0 12px", display: "flex", alignItems: "center", gap: 6, background: regenerating ? "rgba(124,58,237,.13)" : "rgba(124,58,237,.07)", color: "#7C3AED", border: "1px solid rgba(124,58,237,.25)", borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: regenerating ? "not-allowed" : "pointer" }}>
+          {regenerating ? (
+            <>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: "risk-spin 1s linear infinite", flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity=".25" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+              Analyzing baseline…
+            </>
+          ) : (
+            <>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M4 4v5h5M20 20v-5h-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M20 12A8 8 0 0 0 6.93 6.93M4 12a8 8 0 0 0 13.07 5.07" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              Regenerate Risks
+            </>
+          )}
         </button>
         {importMsg && <span style={{ fontSize: 12, color: importMsg.startsWith("✓") ? C.green : C.red }}>{importMsg}</span>}
-        {regenMsg && <span style={{ fontSize: 12, color: regenMsg.startsWith("✓") ? C.green : C.red }}>{regenMsg}</span>}
         <div style={{ flex: 1 }} />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search risks…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface2, color: C.text, width: 180 }} />
         <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text }}>
@@ -849,6 +866,28 @@ function RiskTab({ project }: { project: any }) {
           {RISK_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace("_", " ")}</option>)}
         </select>
       </div>
+
+      {/* Regenerate progress banner */}
+      {regenerating && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 16px", background: "rgba(124,58,237,.06)", border: "1px solid rgba(124,58,237,.22)", borderRadius: 9 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: "risk-spin 1s linear infinite", flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" stroke="#7C3AED" strokeWidth="3" strokeOpacity=".2" />
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="#7C3AED" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#7C3AED" }}>Analyzing baseline and generating risks…</div>
+            <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>New risks will be appended below existing ones. Existing risks are not changed. This takes 20–30 seconds.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Regenerate result */}
+      {!regenerating && regenMsg && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "9px 14px", background: regenMsg.startsWith("✓") ? "rgba(1,178,124,.08)" : "rgba(252,106,89,.08)", border: `1px solid ${regenMsg.startsWith("✓") ? "rgba(1,178,124,.28)" : "rgba(252,106,89,.28)"}`, borderRadius: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: regenMsg.startsWith("✓") ? C.green : C.red }}>{regenMsg}</span>
+          <button onClick={() => setRegenMsg("")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: "#94a3b8", lineHeight: 1, padding: 0 }}>✕</button>
+        </div>
+      )}
 
       {/* AI chips */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const, alignItems: "center" }}>
