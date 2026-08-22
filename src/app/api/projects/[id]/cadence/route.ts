@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { requireProjectAccess } from "@/lib/project-access";
 
 const generateSchema = z.object({
   sprintLengthWeeks: z.number().min(1).max(8).default(2),
@@ -17,10 +17,10 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+
   const db = prisma as any;
 
   const config = await db.cadenceConfig.findFirst({
@@ -38,10 +38,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
     const { id: projectId } = await params;
+    const access = await requireProjectAccess(projectId);
+    if (access.error) return access.error;
+
     const db = prisma as any;
 
     let body: any;
@@ -134,6 +134,6 @@ export async function POST(
     return NextResponse.json({ created: created.length, sprints: created }, { status: 201 });
   } catch (e: any) {
     console.error("Cadence POST error:", e);
-    return NextResponse.json({ error: e.message ?? "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: "Could not create the cadence." }, { status: 500 });
   }
 }

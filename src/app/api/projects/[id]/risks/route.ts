@@ -1,25 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
+import { nextSequentialId } from "@/lib/sequential-id";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const risks = await prisma.risk.findMany({ where: { projectId: id }, orderBy: { createdAt: "desc" } });
   return NextResponse.json(risks);
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const body = await req.json();
-  const count = await prisma.risk.count({ where: { projectId: id } });
+  const existing = await prisma.risk.findMany({ where: { projectId: id }, select: { riskId: true } });
   const risk = await prisma.risk.create({
     data: {
       projectId: id,
-      riskId: `R-${String(count + 1).padStart(3, "0")}`,
+      riskId: nextSequentialId(existing.map((r) => r.riskId), "R"),
       description: body.description,
       category: body.category,
       probability: body.probability || "medium",

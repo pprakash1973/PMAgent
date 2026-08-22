@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { askPortfolio } from "@/lib/ai";
-import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 const PORTFOLIO_ROLES = ["dm", "dh", "pgm", "admin"];
 const MAX_QUESTION_LEN = 2000;

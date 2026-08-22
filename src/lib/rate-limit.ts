@@ -55,3 +55,33 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateLim
   bucket.count++;
   return { ok: true, retryAfterSec: 0, remaining: limit - bucket.count };
 }
+
+/**
+ * Alternate shape used by the auth, chat, submit and schedule-AI routes.
+ *
+ * This was previously a second, independent limiter in `rate-limiter.ts` with its own
+ * Map and a module-level `setInterval` sweep — a timer that never clears and keeps the
+ * event loop referenced. Both limiters now share the one store above; the signature is
+ * kept so those call sites did not have to change.
+ */
+export function checkRateLimit(
+  key: string,
+  maxRequests: number,
+  windowMs: number
+): { allowed: boolean; remaining: number; resetAt: number } {
+  const result = rateLimit(key, maxRequests, windowMs);
+  return {
+    allowed: result.ok,
+    remaining: result.remaining,
+    resetAt: Date.now() + result.retryAfterSec * 1000,
+  };
+}
+
+/** Best-effort client IP from proxy headers. Only meaningful behind a trusted proxy. */
+export function getClientIp(headers: Headers): string {
+  return (
+    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    headers.get("x-real-ip") ??
+    "unknown"
+  );
+}

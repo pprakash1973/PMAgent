@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 // Rough entropy estimate — rejects keyboard-walks and repeated patterns
 function passwordEntropy(p: string): number {
@@ -33,7 +33,6 @@ const schema = z.object({
     .refine((p) => !COMMON_PASSWORDS.has(p), "Password is too common")
     .refine((p) => passwordEntropy(p) >= 40, "Password is too weak — try a longer or more varied password"),
   orgName: z.string().min(2).max(100).optional(),
-  orgId: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -56,13 +55,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: { code: "EMAIL_TAKEN", message: "Email already registered" } }, { status: 409 });
     }
 
-    let orgId = data.orgId;
-    if (!orgId) {
-      const org = await prisma.organization.create({
-        data: { name: data.orgName || `${data.fullName}'s Org` },
-      });
-      orgId = org.id;
-    }
+    // Self-registration ALWAYS creates a new organization. Joining an existing org
+    // must go through the invitation flow (/api/auth/accept-invite), which proves the
+    // admin actually issued the invite. Accepting a caller-supplied orgId here let
+    // anyone self-provision an active "pm" account inside any tenant they could name.
+    const org = await prisma.organization.create({
+      data: { name: data.orgName || `${data.fullName}'s Org` },
+    });
+    const orgId = org.id;
 
     const passwordHash = await bcrypt.hash(data.password, 10);
 

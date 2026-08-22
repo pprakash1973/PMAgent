@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { requireProjectAccess } from "@/lib/project-access";
 
 const confirmSchema = z.object({
   actualToDate: z.number(),
@@ -20,10 +20,10 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+
   const db = prisma as any;
 
   const project = await db.project.findUnique({
@@ -70,12 +70,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+  const user = access.user;
+
   const db = prisma as any;
-  const user = session.user as any;
   const body = await req.json();
 
   // POST can be a snapshot confirmation or a ledger entry

@@ -1,9 +1,9 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import * as XLSX from "xlsx";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -384,10 +384,10 @@ function buildEvmSummary(wb: XLSX.WorkBook, project: any, evmSummary: any) {
 // ── route handler ─────────────────────────────────────────────────────────────
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
   const [project, costEntries, scheduleTasks] = await Promise.all([
     prisma.project.findUnique({ where: { id }, include: { milestones: { orderBy: { dueDate: "asc" } } } }),
     prisma.costEntry.findMany({ where: { projectId: id }, orderBy: { date: "asc" } }),

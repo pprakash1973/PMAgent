@@ -2,10 +2,20 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
 import { extractPdfText } from "@/lib/pdf";
+import { requireProjectAccess } from "@/lib/project-access";
+import { rateLimit } from "@/lib/rate-limit";
+
+// Matches the artifact uploader's ceiling. Both PDF and XLSX parsing allocate well
+// beyond the input size, so an unbounded upload is a memory-exhaustion vector.
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+// Each upload runs a paid extraction call, so bill it to the user like the other
+// LLM-backed routes rather than leaving it unmetered.
+const UPLOAD_LIMIT = 20;
+const UPLOAD_WINDOW_MS = 10 * 60 * 1000;
 
 // Doc class → points toward evidence readiness score
 const DOC_CLASS_POINTS: Record<string, number> = {
@@ -132,10 +142,18 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  const user = session.user as any;
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+  const user = access.user;
+
+  const limited = rateLimit(`requirements-upload:${user.id}`, UPLOAD_LIMIT, UPLOAD_WINDOW_MS);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many uploads. Please wait ${Math.ceil(limited.retryAfterSec / 60)} minute(s) and try again.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
 
   const project = await prisma.project.findUnique({ where: { id } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
@@ -143,6 +161,13 @@ export async function POST(
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB.` },
+      { status: 413 }
+    );
+  }
 
   const docClass = (formData.get("docClass") as string | null) ?? "other";
   const effectiveDateRaw = formData.get("effectiveDate") as string | null;
@@ -256,9 +281,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const docs = await prisma.requirementsDocument.findMany({
     where: { projectId: id, deletedAt: null },
@@ -271,9 +296,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const { searchParams } = new URL(req.url);
   const docId = searchParams.get("docId");

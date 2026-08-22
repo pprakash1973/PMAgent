@@ -2,17 +2,17 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { generateBaselineSummary } from "@/lib/baseline-copilot";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
   const { runId } = await req.json();
 
   if (!runId) return NextResponse.json({ error: "runId is required" }, { status: 400 });
@@ -21,6 +21,7 @@ export async function POST(
     const result = await generateBaselineSummary(runId, id);
     return NextResponse.json(result);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message ?? "Summary generation failed" }, { status: 502 });
+    console.error("[baseline-summary] failed:", err);
+    return NextResponse.json({ error: "Summary generation failed." }, { status: 502 });
   }
 }

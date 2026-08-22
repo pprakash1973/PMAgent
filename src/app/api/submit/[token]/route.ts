@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
-import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { submissionsPayloadSchema, computeAllowedTaskIds } from "@/lib/submit-validation";
 
 // GET /api/submit/[token] — validate token and return task info (no auth)

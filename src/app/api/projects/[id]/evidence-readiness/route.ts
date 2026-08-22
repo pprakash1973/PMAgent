@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 const DOC_CLASS_POINTS: Record<string, number> = {
   sow: 30, brd: 25, srs: 20, estimation: 15, proposal: 10, contract: 10, cr: 5, other: 5,
@@ -27,9 +27,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const docs = await prisma.requirementsDocument.findMany({
     where: { projectId: id, deletedAt: null, ingestionState: "ready" },

@@ -80,6 +80,7 @@ export async function POST(
     );
     return NextResponse.json(recovery);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("[schedule/recovery] failed:", err);
+    return NextResponse.json({ error: "Recovery plan generation failed." }, { status: 500 });
   }
 }

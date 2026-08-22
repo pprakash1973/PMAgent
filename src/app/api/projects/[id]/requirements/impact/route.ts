@@ -2,9 +2,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
+import { requireProjectAccess } from "@/lib/project-access";
 
 const DOC_CLASS_LABEL: Record<string, string> = {
   sow: "Statement of Work", brd: "Business Requirements Document",
@@ -29,10 +29,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
   const { documentIds } = await req.json();
 
   if (!Array.isArray(documentIds) || documentIds.length < 1) {

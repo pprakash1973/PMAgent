@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
+import { requireProjectAccess } from "@/lib/project-access";
 
 const createSchema = z.object({
   type: z.enum(["planning", "daily_standup", "review", "retrospective", "refinement", "other"]),
@@ -15,10 +15,10 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+
   const { searchParams } = new URL(req.url);
   const sprintId = searchParams.get("sprintId");
   const db = prisma as any;
@@ -38,10 +38,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+
   const db = prisma as any;
   const body = await req.json();
   const data = createSchema.parse(body);

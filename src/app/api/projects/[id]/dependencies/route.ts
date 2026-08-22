@@ -1,16 +1,16 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const items = await prisma.$queryRaw<any[]>`
     SELECT * FROM dependencies WHERE "projectId" = ${id}
     ORDER BY "sortOrder" ASC, "createdAt" ASC
@@ -22,9 +22,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const body = await req.json();
   const { description, type = "external", owner, dueDate } = body as {
     description?: string; type?: string; owner?: string; dueDate?: string;
@@ -49,9 +49,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const { dependencyId, description, type, owner, dueDate, status } = await req.json();
   if (!dependencyId) return NextResponse.json({ error: "dependencyId required" }, { status: 400 });
 
@@ -73,9 +73,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const { searchParams } = new URL(req.url);
   const dependencyId = searchParams.get("dependencyId");
   if (!dependencyId) return NextResponse.json({ error: "dependencyId required" }, { status: 400 });

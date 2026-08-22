@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { randomUUID } from "crypto";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; advId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id, advId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const body = await req.json();
   const { action, dismissalReason, deferUntil } = body as {
     action: "accept" | "dismiss" | "defer";

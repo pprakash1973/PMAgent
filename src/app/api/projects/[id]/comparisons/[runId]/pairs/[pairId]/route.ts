@@ -1,17 +1,17 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; runId: string; pairId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const { id, runId, pairId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+  const user = access.user;
 
-  const user = session.user as any;
-  const { runId, pairId } = await params;
   const db = prisma as any;
 
   const pair = await db.comparisonPair.findUnique({ where: { id: pairId }, select: { runId: true } });

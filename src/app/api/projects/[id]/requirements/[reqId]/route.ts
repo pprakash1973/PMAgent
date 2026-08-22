@@ -1,16 +1,16 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; reqId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id, reqId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const body = await req.json();
   const { action, statement } = body;

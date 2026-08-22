@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 const schema = z.object({
   token: z.string().min(1),
@@ -15,6 +16,16 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // Tokens are 256-bit, so this is not the control that stops guessing — it stops an
+  // unauthenticated endpoint from being used as free bcrypt work (cost 12 per call).
+  const rl = checkRateLimit(`accept-invite:${getClientIp(req.headers)}`, 20, 60 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: { code: "RATE_LIMITED", message: "Too many attempts. Try again later." } },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    );
+  }
+
   try {
     const body = await req.json();
     const { token, password } = schema.parse(body);

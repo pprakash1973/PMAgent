@@ -100,6 +100,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error("steering-deck export error:", err);
-    return NextResponse.json({ error: err.message || "Deck generation failed" }, { status: 500 });
+    return NextResponse.json({ error: "Deck generation failed." }, { status: 500 });
   }
 }

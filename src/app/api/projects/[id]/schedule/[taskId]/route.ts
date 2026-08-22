@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { refreshAdvisories } from "@/lib/refresh-advisories";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +51,10 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; taskId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id, taskId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
   const body = await req.json();
 
   const task = await prisma.scheduleTask.findFirst({
@@ -105,9 +105,9 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; taskId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id, taskId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const task = await prisma.scheduleTask.findFirst({ where: { id: taskId, projectId: id } });
   if (!task) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });

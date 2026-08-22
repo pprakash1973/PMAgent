@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin-auth";
 import { encryptValue, decryptValue, testSmtpConnection } from "@/lib/email-smtp";
 
 const CONFIG_KEYS = ["smtp.host", "smtp.port", "smtp.secure", "smtp.service",
@@ -10,9 +10,10 @@ const CONFIG_KEYS = ["smtp.host", "smtp.port", "smtp.secure", "smtp.service",
 
 // GET — return current config (DB values take precedence over env vars; password is masked)
 export async function GET(_req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  if ((session.user as any).role !== "admin") return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  // requireAdmin re-verifies role AND status against the DB. The inline check this
+  // replaced trusted the session alone, so a deactivated admin kept SMTP credential access.
+  const { error, user } = await requireAdmin();
+  if (error) return error;
 
   const settings = await prisma.systemSetting.findMany({ where: { key: { in: CONFIG_KEYS } } });
   const map = Object.fromEntries(settings.map((s) => [s.key, s.value]));
@@ -36,9 +37,10 @@ export async function GET(_req: NextRequest) {
 
 // PUT — save config (encrypts password)
 export async function PUT(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  if ((session.user as any).role !== "admin") return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  // requireAdmin re-verifies role AND status against the DB. The inline check this
+  // replaced trusted the session alone, so a deactivated admin kept SMTP credential access.
+  const { error, user } = await requireAdmin();
+  if (error) return error;
 
   const body = await req.json();
 
@@ -66,8 +68,8 @@ export async function PUT(req: NextRequest) {
     upserts.push(
       prisma.systemSetting.upsert({
         where: { key },
-        create: { key, value, updatedBy: session.user.id },
-        update: { value, updatedAt: new Date(), updatedBy: session.user.id },
+        create: { key, value, updatedBy: user!.id },
+        update: { value, updatedAt: new Date(), updatedBy: user!.id },
       })
     );
   }
@@ -80,9 +82,10 @@ export async function PUT(req: NextRequest) {
 // POST /api/admin/email-config — test SMTP with form values (no save required)
 // Accepts the form values directly so admin can test before saving.
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  if ((session.user as any).role !== "admin") return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+  // requireAdmin re-verifies role AND status against the DB. The inline check this
+  // replaced trusted the session alone, so a deactivated admin kept SMTP credential access.
+  const { error } = await requireAdmin();
+  if (error) return error;
 
   const body = await req.json();
   const { action } = body;
@@ -138,6 +141,8 @@ export async function POST(req: NextRequest) {
     const result = await testSmtpConnection({ service, host, port, secure, user, password: password2, fromName, fromAddress: user });
     return NextResponse.json(result);
   } catch (err) {
+    // SMTP errors are shown to an authenticated admin diagnosing their own mail setup,
+    // so the provider message is the useful part here and stays.
     return NextResponse.json({ ok: false, error: err instanceof Error ? err.message : "Connection failed" });
   }
 }

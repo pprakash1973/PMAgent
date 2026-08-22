@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -61,10 +61,10 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
 
   const tasks = await prisma.scheduleTask.findMany({
     where: { projectId: id },
@@ -81,9 +81,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const project = await prisma.project.findUnique({ where: { id } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });

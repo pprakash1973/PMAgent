@@ -1,13 +1,13 @@
 export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
   const project = await prisma.project.findUnique({
     where: { id },
     include: {
@@ -28,15 +28,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
+  const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   // PgM is read-only on project data — enforce server-side (B2)
-  const role = (session.user as any).role;
+  const role = access.user.role;
   if (role === "pgm" || role === "dh") {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Program Managers and Delivery Heads cannot edit project data" } }, { status: 403 });
   }
 
-  const { id } = await params;
   const body = await req.json();
 
   const project = await prisma.project.update({
@@ -64,10 +64,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
   await prisma.project.update({ where: { id }, data: { deletedAt: new Date() } });
 
   return NextResponse.json({ success: true });

@@ -16,7 +16,29 @@ async function run(pool, sql, label) {
   }
 }
 
+/**
+ * Preview and branch deploys on Vercel inherit the same DATABASE_URL as production, so
+ * without this gate every pull-request build mutates the production schema before anyone
+ * has reviewed it. Statements here are additive and idempotent, so the blast radius is
+ * small — but "small" is not "none", and a preview build should never touch prod.
+ *
+ * Runs when: VERCEL_ENV is production, or the build is not on Vercel (local/CI), or
+ * RUN_MIGRATIONS=1 is set explicitly. Skips preview builds.
+ */
+function migrationsEnabled() {
+  if (process.env.RUN_MIGRATIONS === "1") return true;
+  if (process.env.SKIP_MIGRATIONS === "1") return false;
+  const vercelEnv = process.env.VERCEL_ENV;
+  if (!vercelEnv) return true; // local or non-Vercel CI
+  return vercelEnv === "production";
+}
+
 async function main() {
+  if (!migrationsEnabled()) {
+    console.log(`Skipping neon migration — VERCEL_ENV=${process.env.VERCEL_ENV} (set RUN_MIGRATIONS=1 to force)`);
+    return;
+  }
+
   const url = process.env.DATABASE_URL;
   if (!url || url.startsWith("file:")) {
     console.log("Skipping neon migration — not a postgres URL");

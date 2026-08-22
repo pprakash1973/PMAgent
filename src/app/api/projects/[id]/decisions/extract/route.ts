@@ -8,6 +8,8 @@ import { anthropic } from "@/lib/ai";
 import { resolveModel } from "@/lib/model-router";
 import { extractJson } from "@/lib/extract-json";
 import { rateLimit } from "@/lib/rate-limit";
+import { extractPdfText } from "@/lib/pdf";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // A meeting transcript is text — it does not need the 10 MB the artifact uploader allows.
 // Keeping this tight is the first line of defence against decompression bombs, since
@@ -47,17 +49,11 @@ async function extractFileText(file: File): Promise<string> {
   const buffer = Buffer.from(arrayBuffer);
 
   if (ext === "pdf") {
-    const pdfParse = require("pdf-parse/lib/pdf-parse");
-    try {
-      const result = await pdfParse(buffer);
-      return result.text;
-    } catch (pdfErr: any) {
-      const msg = pdfErr?.message ?? "";
-      if (msg.includes("XRef") || msg.includes("encrypt") || msg.includes("password")) {
-        throw new Error("PDF could not be read — it may be password-protected or corrupted. Please export it as a plain PDF or save the transcript as a .txt file.");
-      }
-      throw new Error(`PDF parsing failed: ${msg}`);
-    }
+    // Shared extractor: tries pdfjs (which rebuilds a broken XRef table rather than
+    // throwing "bad XRef entry"), then falls back to pdf-parse. This route previously
+    // called pdf-parse directly and only renamed the error, so a transcript that the
+    // Requirements tab reads without complaint failed here.
+    return await extractPdfText(buffer);
   }
   if (ext === "docx") {
     const mammoth = require("mammoth");
@@ -88,15 +84,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  const user = session.user as any;
   const { id } = await params;
-
-  const project = await prisma.project.findUnique({ where: { id }, select: { orgId: true, name: true } });
-  if (!project || project.orgId !== user.orgId) {
-    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
-  }
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+  const { user, project } = access;
 
   // Bill the LLM budget to the user, scoped to this route.
   const limited = rateLimit(`decisions-extract:${user.id}`, EXTRACT_LIMIT, EXTRACT_WINDOW_MS);

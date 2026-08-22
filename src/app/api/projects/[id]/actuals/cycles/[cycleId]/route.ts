@@ -1,18 +1,18 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // GET /api/projects/[id]/actuals/cycles/[cycleId] — cycle detail with submissions
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; cycleId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId, cycleId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+
 
   const cycle = await prisma.collectionCycle.findFirst({
     where: { id: cycleId, projectId },
@@ -42,10 +42,10 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; cycleId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId, cycleId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+
   const body = await req.json();
 
   const cycle = await prisma.collectionCycle.findFirst({

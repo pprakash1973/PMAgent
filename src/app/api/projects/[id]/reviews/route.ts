@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { runAdvisoryEngine, type ProjectState } from "@/lib/advisory-engine";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // ── Interpretation bands (§12.5) ───────────────────────────────────────────────
 
@@ -31,9 +31,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const [project, tasks, risks, issues, costEntries] = await Promise.all([
     prisma.project.findUnique({ where: { id } }),

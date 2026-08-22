@@ -1,13 +1,13 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; resourceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  const { resourceId } = await params;
+  const { id, resourceId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   const body = await req.json();
   const resource = await prisma.projectResource.update({
     where: { id: resourceId },
@@ -27,9 +27,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string; resourceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-  const { resourceId } = await params;
+  const { id, resourceId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
   // Unassign tasks before deleting
   await prisma.scheduleTask.updateMany({ where: { resourceId }, data: { resourceId: null } });
   await prisma.projectResource.delete({ where: { id: resourceId } });

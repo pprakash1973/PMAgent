@@ -4,10 +4,20 @@ import * as XLSX from "xlsx";
 // xlsx (SheetJS) community edition does not support cell styling.
 // We apply structure, column widths, and frozen panes using what CE supports.
 
+/**
+ * Cells beginning = + - @ (or a tab/CR before one) are interpreted as formulas by Excel,
+ * Sheets and LibreOffice — so text a user typed, or text an AI lifted out of an uploaded
+ * transcript, can execute on open. Prefixing a single quote makes the cell literal text;
+ * the quote is a display hint and is not part of the value.
+ */
+function neutralizeFormula(s: string): string {
+  return /^[\t\r]*[=+\-@]/.test(s) ? `'${s}` : s;
+}
+
 function safeStr(v: unknown): string {
   if (v == null) return "";
-  if (typeof v === "object") return JSON.stringify(v);
-  return String(v);
+  if (typeof v === "object") return neutralizeFormula(JSON.stringify(v));
+  return neutralizeFormula(String(v));
 }
 
 function cols(widths: number[]) {

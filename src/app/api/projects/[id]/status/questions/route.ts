@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateStatusQuestions } from "@/lib/ai";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -9,10 +9,10 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
 
   const project = await prisma.project.findUnique({
     where: { id },
@@ -84,6 +84,7 @@ export async function POST(
     const questions = await generateStatusQuestions(projectContext);
     return NextResponse.json({ questions, projectContext });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error("[status/questions] failed:", err);
+    return NextResponse.json({ error: "Could not generate status questions." }, { status: 500 });
   }
 }

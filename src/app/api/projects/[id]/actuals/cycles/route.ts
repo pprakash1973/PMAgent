@@ -1,21 +1,21 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
 import { format, addDays } from "date-fns";
 import { sendTaskActualsEmail } from "@/lib/email-smtp";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // GET /api/projects/[id]/actuals/cycles — list cycles with compliance stats
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
 
   const cycles = await prisma.collectionCycle.findMany({
     where: { projectId: id },
@@ -54,10 +54,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id: projectId } = await params;
+  const access = await requireProjectAccess(projectId);
+  if (access.error) return access.error;
+
   const body = await req.json();
   const { label, startDate, endDate, dispatch = false, taskIds = [] } = body;
 
@@ -133,7 +133,7 @@ export async function POST(
       endDate: new Date(endDate),
       status: "open",
       taskIds: selectedIds.length > 0 ? selectedIds : [],
-      createdBy: session.user.id,
+      createdBy: access.user.id,
       ...(dispatch ? { dispatchedAt: new Date() } : {}),
     },
   });

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
+import { nextSequentialId } from "@/lib/sequential-id";
 
 export const dynamic = "force-dynamic";
 
 // Generate a human-readable reference like AI-PRJ014-007
 async function generateReference(projectId: string): Promise<string> {
-  const count = await prisma.actionItem.count({ where: { projectId } });
   const shortId = projectId.slice(-6).toUpperCase();
-  return `AI-${shortId}-${String(count + 1).padStart(3, "0")}`;
+  const existing = await prisma.actionItem.findMany({
+    where: { projectId },
+    select: { reference: true },
+  });
+  return nextSequentialId(existing.map((a) => a.reference), `AI-${shortId}`);
 }
 
 // Add N working days to a date
@@ -28,11 +32,11 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
-  const user = session.user as any;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+  const user = access.user;
+
 
   const items = await prisma.actionItem.findMany({
     where: { projectId: id },
@@ -50,15 +54,15 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+  const user = access.user;
 
-  const user = session.user as any;
   if (!["dm", "pgm", "admin", "dh"].includes(user.role)) {
     return NextResponse.json({ error: "FORBIDDEN — only DM/DH/Admin can create action items" }, { status: 403 });
   }
 
-  const { id } = await params;
 
   const project = await prisma.project.findUnique({ where: { id } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
@@ -126,7 +130,7 @@ export async function POST(
     });
   } catch (err: any) {
     console.error("[action-items] create failed:", err?.message);
-    return NextResponse.json({ error: `Failed to create action item: ${err?.message ?? "unknown error"}` }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create action item." }, { status: 500 });
   }
 
   // Write initial event (non-fatal if event table isn't migrated yet)

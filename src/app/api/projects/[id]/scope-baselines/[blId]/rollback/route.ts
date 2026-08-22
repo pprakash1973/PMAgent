@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // Reconstruct a schedule task status from its recorded progress
 function statusFromProgress(pct: number): string {
@@ -15,9 +15,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; blId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const { id, blId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
 
   const url = new URL(req.url);
   const confirm = url.searchParams.get("confirm") === "true";

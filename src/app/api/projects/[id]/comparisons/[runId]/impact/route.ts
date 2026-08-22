@@ -1,17 +1,17 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeImpact } from "@/lib/impact-engine";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; runId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id, runId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
   const db = prisma as any;
 
   const report = await db.impactReport.findUnique({ where: { runId } });
@@ -24,10 +24,10 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; runId: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id, runId } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
 
   const run = await (prisma as any).comparisonRun.findUnique({
     where: { id: runId },

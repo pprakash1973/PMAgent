@@ -1,7 +1,7 @@
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -15,21 +15,20 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  const user = session?.user as any;
-  if (!user || !["dm", "pgm", "admin", "dh"].includes(user.role)) {
+  const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+  const user = access.user;
+
+  if (!["dm", "pgm", "admin", "dh"].includes(user.role)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { id } = await params;
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Validation failed" }, { status: 400 });
   }
-
-  const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const note = await prisma.dmReviewNote.create({
     data: {

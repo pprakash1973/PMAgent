@@ -2,18 +2,18 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { buildPptx } from "@/lib/export-pptx";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
-
   const { id } = await params;
+  const access = await requireProjectAccess(id);
+  if (access.error) return access.error;
+
 
   const [project, report] = await Promise.all([
     prisma.project.findUnique({ where: { id }, select: { name: true } }),
@@ -51,6 +51,6 @@ export async function GET(
     });
   } catch (err: any) {
     console.error("WSR export error:", err);
-    return NextResponse.json({ error: err.message || "Export failed" }, { status: 500 });
+    return NextResponse.json({ error: "Export failed." }, { status: 500 });
   }
 }
