@@ -79,8 +79,8 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   milestone_plan:        "milestones (array of {id, name, plannedDate, forecastDate, status, owner, deliverables, description})",
   resource_plan:         "teamDirectory (array of {id, name, role, department, skills, allocationPercent, startDate, endDate, dailyRate, currency, notes}), resourceCalendar, skillsMatrix, resourceConstraints, trainingNeeds",
   cost_plan:             "currency, estimatingMethod, laborEstimates (array of {role, resource, phase, estimatedDays, dailyRate, totalCost}), nonLaborCosts, totalBudget, contingencyReserve, managementReserve, bac, fundingRequirements",
-  raid_register:         "risks (array of {id, description, probability, impact, status, owner, mitigation}), assumptions (array), issues (array of {id, description, severity, status, owner, resolution, dueDate}), dependencies (array)",
-  risk_register:         "risks (array of {id, statement, category, probability, impact, riskScore, owner, responseActions, status})",
+  raid_register:         "risks (array of {id, description, probability, impact, status, owner, mitigation, requirementRef}), assumptions (array), issues (array of {id, description, severity, status, owner, resolution, dueDate}), dependencies (array)",
+  risk_register:         "risks (array of {id, statement, category, probability, impact, riskScore, owner, responseActions, status, requirementRef})",
   communication_plan:    "stakeholderComms (array of {stakeholder, information, format, frequency, owner, channel})",
   raci_matrix:           "activities (array of {id, activity, phase, assignments (object keyed by role: R|A|C|I)}), roles (array of strings)",
   quality_plan:          "qualityObjectives, qualityStandards (array), qualityActivities (array of {activity, phase, owner, tool, acceptance}), metrics (array)",
@@ -792,6 +792,7 @@ Return JSON with:
     trigger (string): condition that indicates risk is occurring
     status (string): Open | In Progress | Closed | Occurred | Accepted
     dueDate (string)
+    requirementRef (string): If the project context includes scopeRequirements, trace this risk to the most relevant requirement key (e.g. "REQ-001", "FR-12"). Use "General" only if the risk is not traceable to any specific requirement.
   })
 - assumptions (array of {
     id (string): A001…
@@ -850,6 +851,7 @@ Return JSON with:
     residualRiskScore (number): P×I after response
     status (string): Open | In Progress | Closed | Occurred | Accepted
     dueDate (string)
+    requirementRef (string): If the project context includes scopeRequirements, trace this risk to the most relevant requirement key (e.g. "REQ-001", "FR-12"). Use "General" only if the risk is not traceable to any specific requirement.
   })
 - riskExposureSummary (object): {totalRisks, criticalCount, highCount, mediumCount, lowCount, topRisk (string)}`,
 
