@@ -53,8 +53,8 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     ? JSON.stringify(project.requirementsDocs[0].extractedContent)
     : undefined;
 
-  // Generate risks from AI
-  const content = await generateArtifact("risk_register", projectContext, requirements) as any;
+  // Generate risks from AI — use a tight token budget so the call finishes within Vercel's function timeout
+  const content = await generateArtifact("risk_register", projectContext, requirements, undefined, undefined, undefined, 3500) as any;
   const aiRisks: any[] = content.risks ?? [];
   if (aiRisks.length === 0)
     return NextResponse.json({ added: 0, message: "AI returned no risks." });

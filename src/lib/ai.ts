@@ -143,7 +143,8 @@ export async function generateArtifact(
   requirements?: string,
   evidenceContext?: EvidenceContext,
   templateOverride?: ArtifactTemplateOverride,
-  onToken?: (text: string) => void
+  onToken?: (text: string) => void,
+  maxTokensOverride?: number
 ): Promise<Record<string, unknown>> {
   const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext, templateOverride);
   const config = await resolveModel("artifact");
@@ -154,7 +155,7 @@ export async function generateArtifact(
 
   const userContent = content.map((b) => b.text).join("\n\n");
   const evidenceText = evidenceContext?.hasEvidence ? formatEvidenceForPrompt(evidenceContext) : undefined;
-  const maxTokens = ARTIFACT_TOKEN_BUDGET[artifactType] ?? 6000;
+  const maxTokens = maxTokensOverride ?? ARTIFACT_TOKEN_BUDGET[artifactType] ?? 6000;
 
   const response = await streamLLM(
     {
