@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { validateDecisionPatch, DecisionValidationError } from "@/lib/decision-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -25,24 +26,23 @@ export async function PATCH(
   const decision = await resolveAndAuthorize(id, decId, user.orgId);
   if (!decision) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  const body = await req.json();
-  const updated = await prisma.decision.update({
-    where: { id: decId },
-    data: {
-      ...(body.title !== undefined && { title: body.title.trim() }),
-      ...(body.rationale !== undefined && { rationale: body.rationale?.trim() || null }),
-      ...(body.madeBy !== undefined && { madeBy: body.madeBy?.trim() || null }),
-      ...(body.madeAt !== undefined && { madeAt: new Date(body.madeAt) }),
-      ...(body.reviewAt !== undefined && { reviewAt: body.reviewAt ? new Date(body.reviewAt) : null }),
-      ...(body.status !== undefined && { status: body.status }),
-      ...(body.linkedRef !== undefined && { linkedRef: body.linkedRef?.trim() || null }),
-      ...(body.linkedType !== undefined && { linkedType: body.linkedType || null }),
-      ...(body.sprintId !== undefined && { sprintId: body.sprintId || null }),
-      ...(body.sprintLabel !== undefined && { sprintLabel: body.sprintLabel?.trim() || null }),
-      ...(body.category !== undefined && { category: body.category || null }),
-    },
-  });
-  return NextResponse.json(updated);
+  let patch;
+  try {
+    patch = validateDecisionPatch(await req.json());
+  } catch (err) {
+    if (err instanceof DecisionValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    return NextResponse.json({ error: "Could not read the request body." }, { status: 400 });
+  }
+
+  try {
+    const updated = await prisma.decision.update({ where: { id: decId }, data: patch });
+    return NextResponse.json(updated);
+  } catch (err) {
+    console.error("[decisions] update failed:", err);
+    return NextResponse.json({ error: "Could not update the decision." }, { status: 500 });
+  }
 }
 
 export async function DELETE(

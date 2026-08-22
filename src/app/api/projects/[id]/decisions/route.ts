@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { validateDecisionCreate, DecisionValidationError, nextDecisionId } from "@/lib/decision-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -35,25 +36,28 @@ export async function POST(
   const project = await prisma.project.findUnique({ where: { id }, select: { orgId: true } });
   if (!project || project.orgId !== user.orgId) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  const body = await req.json();
+  let input;
+  try {
+    input = validateDecisionCreate(await req.json());
+  } catch (err) {
+    if (err instanceof DecisionValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    return NextResponse.json({ error: "Could not read the request body." }, { status: 400 });
+  }
 
-  const count = await prisma.decision.count({ where: { projectId: id } });
-  const decision = await prisma.decision.create({
-    data: {
-      projectId: id,
-      decisionId: `D-${String(count + 1).padStart(3, "0")}`,
-      title: body.title?.trim() || "Untitled decision",
-      rationale: body.rationale?.trim() || null,
-      madeBy: body.madeBy?.trim() || null,
-      madeAt: body.madeAt ? new Date(body.madeAt) : new Date(),
-      reviewAt: body.reviewAt ? new Date(body.reviewAt) : null,
-      status: body.status ?? "open",
-      linkedRef: body.linkedRef?.trim() || null,
-      linkedType: body.linkedType || null,
-      sprintId: body.sprintId || null,
-      sprintLabel: body.sprintLabel?.trim() || null,
-      category: body.category || null,
-    },
-  });
-  return NextResponse.json(decision, { status: 201 });
+  try {
+    const existing = await prisma.decision.findMany({
+      where: { projectId: id },
+      select: { decisionId: true },
+    });
+
+    const decision = await prisma.decision.create({
+      data: { projectId: id, decisionId: nextDecisionId(existing.map((d) => d.decisionId)), ...input },
+    });
+    return NextResponse.json(decision, { status: 201 });
+  } catch (err) {
+    console.error("[decisions] create failed:", err);
+    return NextResponse.json({ error: "Could not save the decision." }, { status: 500 });
+  }
 }

@@ -140,30 +140,60 @@ export function DecisionsTab({ project }: Props) {
     if (toSave.length === 0) return;
     setConfirmingDrafts(true);
     let saved = 0;
-    for (const d of toSave) {
+    // Indices of drafts that failed, so the panel can stay open on just those.
+    const failedIdx: number[] = [];
+    const reasons: string[] = [];
+
+    const selectedIdx = extractedDrafts.map((_, i) => i).filter((i) => selectedDrafts.has(i));
+    for (const idx of selectedIdx) {
+      const d = extractedDrafts[idx];
       const payload: any = {
-        title: d.title ?? "Untitled",
+        title: d.title ?? "",
         rationale: d.rationale ?? "",
         madeBy: d.madeBy ?? "",
         madeAt: d.madeAt ?? new Date().toISOString().slice(0, 10),
       };
-      if (isAgile) {
-        payload.category = d.category ?? "Other";
-      }
+      if (isAgile) payload.category = d.category ?? "Other";
+
       try {
         const res = await fetch(`/api/projects/${project.id}/decisions`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
         });
-        if (res.ok) saved++;
-      } catch { /* skip failed */ }
+        if (res.ok) {
+          saved++;
+        } else {
+          const body = await res.json().catch(() => ({}));
+          failedIdx.push(idx);
+          reasons.push(`"${(d.title ?? "untitled").slice(0, 40)}" — ${body?.error ?? `error ${res.status}`}`);
+        }
+      } catch {
+        failedIdx.push(idx);
+        reasons.push(`"${(d.title ?? "untitled").slice(0, 40)}" — network error`);
+      }
     }
+
     setConfirmingDrafts(false);
-    setExtractedDrafts([]);
-    setSelectedDrafts(new Set());
-    setTranscriptFile(null);
-    setShowTranscript(false);
     await load();
-    toast({ title: `${saved} decision${saved !== 1 ? "s" : ""} added from transcript` });
+
+    if (failedIdx.length === 0) {
+      setExtractedDrafts([]);
+      setSelectedDrafts(new Set());
+      setTranscriptFile(null);
+      setShowTranscript(false);
+      setExtractMsg(null);
+      toast({ title: `${saved} decision${saved !== 1 ? "s" : ""} added from transcript` });
+      return;
+    }
+
+    // Keep the failures on screen with their reasons so nothing is lost silently.
+    setExtractedDrafts((prev) => prev.filter((_, i) => failedIdx.includes(i)));
+    setSelectedDrafts(new Set(failedIdx.map((_, i) => i)));
+    setExtractMsg(`${failedIdx.length} could not be saved — fix and retry: ${reasons.join("; ")}`);
+    toast({
+      title: `${saved} added, ${failedIdx.length} failed`,
+      description: "The failed decisions are still listed below.",
+      variant: "destructive",
+    });
   }
 
   async function handleSave() {
@@ -323,7 +353,7 @@ export function DecisionsTab({ project }: Props) {
       {extractedDrafts.length > 0 && (
         <>
           <div style={{ fontSize: 12, color: C.text2, marginBottom: 8 }}>
-            <strong style={{ color: C.text }}>{extractedDrafts.length} decision{extractedDrafts.length !== 1 ? "s" : ""} found.</strong> Review, edit, and select which to add.
+            <strong style={{ color: C.text }}>{extractedDrafts.length} AI-suggested decision{extractedDrafts.length !== 1 ? "s" : ""}.</strong> Check each against the transcript before adding — wording and attribution can be wrong.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
             {extractedDrafts.map((d, i) => {
