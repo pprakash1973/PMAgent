@@ -106,8 +106,8 @@ const ARTIFACT_TOKEN_BUDGET: Record<string, number> = {
   project_charter:           12000,  // many nested arrays (milestones, stakeholders, risks, signatures)
   initiation_deck:           12000,  // RACI + team intro + escalation channels make this large
   evm_analysis:              10000,  // per-period data table + forecasts
-  raid_register:             10000,  // 4 full arrays
-  risk_register:             10000,  // detailed risk entries
+  raid_register:              5000,  // 4 arrays; capped to keep generation under 60s
+  risk_register:              4000,  // detailed risk entries; capped to keep generation under 60s
   raci_matrix:                8000,  // activities × roles matrix
   resource_plan:              8000,  // team directory + skills matrix
   cost_plan:                  8000,  // labor estimates + phase breakdown
@@ -774,6 +774,7 @@ Return JSON with:
 - fundingRequirements (array of {period (string), amount (number), cumulativeAmount (number)})`,
 
     raid_register: `Generate a RAID Register covering Risks, Assumptions, Issues, and Dependencies.
+Generate at most 5 risks, 5 assumptions, 4 issues, and 4 dependencies — focus on the most significant items only.
 Return JSON with:
 - risks (array of {
     id (string): R001, R002…
@@ -827,6 +828,7 @@ Return JSON with:
   })`,
 
     risk_register: `Generate a Risk Register covering the full risk management lifecycle.
+Generate between 5 and 8 risks maximum — focus on the most critical and distinct risks only. Quality over quantity.
 Return JSON with:
 - projectName (string)
 - riskAppetite (string): Low | Medium | High
