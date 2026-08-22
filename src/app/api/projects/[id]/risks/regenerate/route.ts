@@ -7,6 +7,7 @@ import { normaliseProbImpact } from "@/lib/artifact-sync";
 export const maxDuration = 120;
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   const user = session.user as any;
@@ -95,4 +96,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   });
 
   return NextResponse.json({ added: newRisks.length });
+  } catch (err: any) {
+    console.error("[regenerate risks]", err);
+    return NextResponse.json(
+      { error: err?.message ?? "Internal server error" },
+      { status: 500 }
+    );
+  }
 }

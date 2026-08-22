@@ -733,7 +733,8 @@ function RiskTab({ project }: { project: any }) {
     setRegenerating(true); setRegenMsg("");
     try {
       const res = await fetch(`/api/projects/${project.id}/risks/regenerate`, { method: "POST" });
-      const data = await res.json();
+      let data: any = {};
+      try { data = await res.json(); } catch { data = { error: `Server error (${res.status})` }; }
       if (res.ok) {
         setRegenMsg(data.added > 0 ? `✓ Added ${data.added} new risk${data.added !== 1 ? "s" : ""} from baseline` : `✓ ${data.message}`);
         await load();
