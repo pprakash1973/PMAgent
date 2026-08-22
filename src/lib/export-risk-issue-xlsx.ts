@@ -123,6 +123,7 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
 
   ws.columns = [
     { header: "Risk ID",          key: "id",          width: 10 },
+    { header: "Req. Traceability",key: "reqRef",      width: 20 },
     { header: "Category",         key: "category",    width: 16 },
     { header: "Type",             key: "type",        width: 10 },
     { header: "Risk Description", key: "statement",   width: 50 },
@@ -150,6 +151,7 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
     const level = safeStr(r.severity ?? r.riskLevel ?? "");
     const row = ws.addRow([
       safeStr(r.id),
+      safeStr(r.requirementRef ?? "General"),
       safeStr(r.category),
       safeStr(r.type ?? "Threat"),
       safeStr(r.statement ?? r.description),
@@ -170,10 +172,10 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
     applyBody(row, bg, true);
     row.height = 32;
 
-    // Color the Risk Level cell (col 8)
+    // Color the Risk Level cell (col 9, shifted +1 for new Req. Traceability column)
     if (level) {
       const lc = riskLevelFill(level);
-      const lCell = row.getCell(8);
+      const lCell = row.getCell(9);
       lCell.fill = fill(lc.bg);
       lCell.font = { bold: true, color: { argb: lc.fg }, size: 10 };
       lCell.alignment = { horizontal: "center", vertical: "middle" };
@@ -181,7 +183,7 @@ function buildRiskRegisterSheet(wb: ExcelJS.Workbook, risks: any[]) {
     alt++;
   }
 
-  ws.autoFilter = { from: "A1", to: "Q1" };
+  ws.autoFilter = { from: "A1", to: "R1" };
 }
 
 function buildPxISheet(wb: ExcelJS.Workbook, risks: any[]) {

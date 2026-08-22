@@ -713,11 +713,12 @@ model Risk {
   probability String    @default("medium")
   impact      String    @default("medium")
   status      String    @default("open")
-  owner       String?
-  mitigation  String?
-  dueDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  owner          String?
+  mitigation     String?
+  dueDate        DateTime?
+  requirementRef String?   @default("General")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   project     Project      @relation(fields: [projectId], references: [id])
   escalations Escalation[]

@@ -20,6 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.owner !== undefined && { owner: body.owner }),
       ...(body.mitigation !== undefined && { mitigation: body.mitigation }),
       ...(body.dueDate !== undefined && { dueDate: body.dueDate ? new Date(body.dueDate) : null }),
+      ...(body.requirementRef !== undefined && { requirementRef: body.requirementRef }),
     },
   });
   refreshAdvisories(id).catch(() => {});

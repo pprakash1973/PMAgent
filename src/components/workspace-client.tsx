@@ -690,7 +690,7 @@ function RiskTab({ project }: { project: any }) {
   const [levelFilter, setLevelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [adding, setAdding] = useState(false);
-  const [newForm, setNewForm] = useState({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "" });
+  const [newForm, setNewForm] = useState({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "", requirementRef: "General" });
   const [saving, setSaving] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -733,7 +733,7 @@ function RiskTab({ project }: { project: any }) {
     const res = await fetch(`/api/projects/${project.id}/risks`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newForm),
     });
-    if (res.ok) { setAdding(false); setNewForm({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "" }); await load(); }
+    if (res.ok) { setAdding(false); setNewForm({ description: "", category: "Technical", probability: "medium", impact: "medium", owner: "", mitigation: "", requirementRef: "General" }); await load(); }
     setSaving(null);
   }
 
@@ -753,7 +753,7 @@ function RiskTab({ project }: { project: any }) {
 
   function startEdit(r: any) {
     setEditId(r.id);
-    setEditForm({ description: r.description, category: r.category || "", probability: r.probability, impact: r.impact, owner: r.owner || "", mitigation: r.mitigation || "", status: r.status });
+    setEditForm({ description: r.description, category: r.category || "", probability: r.probability, impact: r.impact, owner: r.owner || "", mitigation: r.mitigation || "", status: r.status, requirementRef: r.requirementRef || "General" });
   }
   async function saveEdit() {
     if (!editId) return;
@@ -861,6 +861,10 @@ function RiskTab({ project }: { project: any }) {
               <label style={{ fontSize: 11.5, color: C.text3, display: "block", marginBottom: 3 }}>Owner</label>
               <input value={newForm.owner} onChange={e => setNewForm(f => ({ ...f, owner: e.target.value }))} placeholder="Name" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, background: C.surface2, color: C.text }} />
             </div>
+            <div>
+              <label style={{ fontSize: 11.5, color: C.text3, display: "block", marginBottom: 3 }}>Req. Traceability</label>
+              <input value={newForm.requirementRef} onChange={e => setNewForm(f => ({ ...f, requirementRef: e.target.value }))} placeholder="REQ-001 or General" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, background: C.surface2, color: C.text }} />
+            </div>
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={{ fontSize: 11.5, color: C.text3, display: "block", marginBottom: 3 }}>Mitigation Plan</label>
               <input value={newForm.mitigation} onChange={e => setNewForm(f => ({ ...f, mitigation: e.target.value }))} placeholder="Response / mitigation strategy…" style={{ width: "100%", padding: "6px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 13, background: C.surface2, color: C.text }} />
@@ -876,8 +880,8 @@ function RiskTab({ project }: { project: any }) {
       {/* Table */}
       <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
         {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 90px 72px", gap: 8, padding: "8px 14px", background: C.surface2, fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.text3, borderBottom: `1px solid ${C.border}` }}>
-          <span>ID</span><span>Description</span><span>Category</span><span>Prob</span><span>Impact</span><span>Score</span><span>Owner</span><span>Status</span><span>Actions</span>
+        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 110px 90px 72px", gap: 8, padding: "8px 14px", background: C.surface2, fontSize: 11, fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: C.text3, borderBottom: `1px solid ${C.border}` }}>
+          <span>ID</span><span>Description</span><span>Category</span><span>Prob</span><span>Impact</span><span>Score</span><span>Owner</span><span>Req. Ref</span><span>Status</span><span>Actions</span>
         </div>
 
         {filtered.length === 0 && (
@@ -891,7 +895,7 @@ function RiskTab({ project }: { project: any }) {
           const scC = scoreColor(sc);
           const isEdit = editId === r.id;
           return (
-            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 90px 72px", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, alignItems: "center", fontSize: 13, background: i % 2 === 1 ? C.surface2 : C.surface }}>
+            <div key={r.id} style={{ display: "grid", gridTemplateColumns: "56px 1fr 88px 72px 72px 50px 100px 110px 90px 72px", gap: 8, padding: "10px 14px", borderBottom: `1px solid ${C.border}`, alignItems: "center", fontSize: 13, background: i % 2 === 1 ? C.surface2 : C.surface }}>
               <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 12, fontWeight: 600, color: C.text3 }}>{r.riskId || `R-${String(i + 1).padStart(3, "0")}`}</span>
 
               {isEdit ? (
@@ -930,6 +934,12 @@ function RiskTab({ project }: { project: any }) {
                 <input value={editForm.owner} onChange={e => setEditForm((f: any) => ({ ...f, owner: e.target.value }))} placeholder="Owner" style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 12, background: C.surface, color: C.text, width: "100%" }} />
               ) : (
                 <span style={{ fontSize: 12, color: r.owner ? C.text2 : C.text3, fontStyle: r.owner ? "normal" : "italic" as const }}>{r.owner || "To Be Assigned"}</span>
+              )}
+
+              {isEdit ? (
+                <input value={editForm.requirementRef} onChange={e => setEditForm((f: any) => ({ ...f, requirementRef: e.target.value }))} placeholder="REQ-001 or General" style={{ padding: "3px 6px", border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 11, background: C.surface, color: C.text, width: "100%" }} />
+              ) : (
+                <span style={{ fontSize: 11, color: r.requirementRef && r.requirementRef !== "General" ? C.primary : C.text3, fontFamily: r.requirementRef && r.requirementRef !== "General" ? "'IBM Plex Mono',monospace" : "inherit" }}>{r.requirementRef || "General"}</span>
               )}
 
               {isEdit ? (
