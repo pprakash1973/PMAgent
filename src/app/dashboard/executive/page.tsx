@@ -145,6 +145,23 @@ export default async function ExecutivePage() {
       projProdStats = await getProductivityStatsForProjects(rawProjects.map((p) => p.id));
     } catch {}
 
+    // DM per account: AccountAssignment where user.role = "dm"
+    const accountIdsInScope = [...new Set(rawProjects.map(p => p.accountId).filter(Boolean))] as string[];
+    const accountDmMap = new Map<string, { id: string; name: string }>();
+    if (accountIdsInScope.length > 0) {
+      try {
+        const dmAssignments = await prisma.accountAssignment.findMany({
+          where: { accountId: { in: accountIdsInScope }, user: { role: "dm" } },
+          select: { accountId: true, user: { select: { id: true, fullName: true } } },
+        });
+        for (const a of dmAssignments) {
+          if (!accountDmMap.has(a.accountId)) {
+            accountDmMap.set(a.accountId, { id: a.user.id, name: a.user.fullName });
+          }
+        }
+      } catch {}
+    }
+
     const now = Date.now();
     const dhProjects: DhProject[] = rawProjects.map((p) => {
       const deliveryMethod: string = (p as any).deliveryMethod ?? "predictive";
@@ -198,6 +215,8 @@ export default async function ExecutivePage() {
         clusterType: (p.account as any)?.cluster?.type ?? "geography",
         programName: (p.program as any)?.name ?? "—",
         pmName:      p.pmOwner.fullName,
+        dmId:        p.accountId ? (accountDmMap.get(p.accountId)?.id ?? null) : null,
+        dmName:      p.accountId ? (accountDmMap.get(p.accountId)?.name ?? null) : null,
         rag,
         spi,
         cpi,

@@ -8,6 +8,7 @@ export interface DhProject {
   clientId: string; clientName: string;
   clusterId: string; clusterName: string; clusterType: string;
   programName: string; pmName: string;
+  dmId: string | null; dmName: string | null;
   rag: "red" | "amber" | "green";
   spi: number | null; cpi: number | null;
   deliveryMethod: string; // "predictive" | "agile_scrum" | "hybrid" — extensible
@@ -797,6 +798,123 @@ function MetricsTilesSection({ projects, clusterHealth, wfTrends, agileTrends }:
             );
           })}
         </div>
+
+        {/* By Delivery Managers */}
+        {(() => {
+          const dmMap = new Map<string, { name: string; projects: DhProject[] }>();
+          for (const p of filtered) {
+            const key = p.dmId ?? "__unassigned__";
+            const label = p.dmName ?? "Unassigned";
+            if (!dmMap.has(key)) dmMap.set(key, { name: label, projects: [] });
+            dmMap.get(key)!.projects.push(p);
+          }
+          const dmTiles = [...dmMap.values()].sort((a, b) => {
+            const aRed = a.projects.filter(p => p.rag === "red").length;
+            const bRed = b.projects.filter(p => p.rag === "red").length;
+            const aAmber = a.projects.filter(p => p.rag === "amber").length;
+            const bAmber = b.projects.filter(p => p.rag === "amber").length;
+            return bRed - aRed || bAmber - aAmber || a.name.localeCompare(b.name);
+          });
+          if (dmTiles.length < 2) return null;
+          return (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
+                By Delivery Manager
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14, marginBottom: 28 }}>
+                {dmTiles.map(dm => {
+                  const pp = dm.projects;
+                  const red   = pp.filter(p => p.rag === "red").length;
+                  const amber = pp.filter(p => p.rag === "amber").length;
+                  const green = pp.filter(p => p.rag === "green").length;
+                  const wfProjs   = pp.filter(p => dmkey(p) !== "agile_scrum");
+                  const agileProjs = pp.filter(p => dmkey(p) === "agile_scrum");
+                  const wfSpi  = wfProjs.map(p => p.spi).filter((v): v is number => v !== null);
+                  const wfCpi  = wfProjs.map(p => p.cpi).filter((v): v is number => v !== null);
+                  const avgSpi = wfSpi.length ? wfSpi.reduce((a, b) => a + b, 0) / wfSpi.length : null;
+                  const avgCpi = wfCpi.length ? wfCpi.reduce((a, b) => a + b, 0) / wfCpi.length : null;
+                  const aVel  = agileProjs.map(p => p.velocity).filter((v): v is number => v !== null);
+                  const aRel  = agileProjs.map(p => p.commitmentReliability).filter((v): v is number => v !== null);
+                  const avgVel = aVel.length ? aVel.reduce((a, b) => a + b, 0) / aVel.length : null;
+                  const avgRel = aRel.length ? aRel.reduce((a, b) => a + b, 0) / aRel.length : null;
+                  const budgets = pp.map(p => p.budget ?? 0).reduce((a, b) => a + b, 0);
+                  const fmtM = (v: number) => v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `$${(v / 1_000).toFixed(0)}K` : `$${v}`;
+                  const ragLine = red > 0 ? C.red : amber > 0 ? C.amber : C.green;
+                  return (
+                    <div key={dm.name} style={{ background: C.surface, border: `1px solid ${C.border}`, borderLeft: `5px solid ${ragLine}`, borderRadius: 13, padding: "16px 18px" }}>
+                      {/* Header */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${ragLine}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke={ragLine} strokeWidth="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke={ragLine} strokeWidth="1.8" strokeLinecap="round"/></svg>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink, fontFamily: C.FF, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{dm.name}</div>
+                          <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{pp.length} project{pp.length !== 1 ? "s" : ""}{budgets > 0 ? ` · ${fmtM(budgets)}` : ""}</div>
+                        </div>
+                      </div>
+                      {/* Health breakdown */}
+                      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                        {[{ v: red, l: "Critical", c: C.red, bg: C.redBg }, { v: amber, l: "At Risk", c: C.amber, bg: C.amberBg }, { v: green, l: "On Track", c: C.green, bg: C.greenBg }].map(k => (
+                          <div key={k.l} style={{ flex: 1, textAlign: "center" as const, background: k.bg, borderRadius: 7, padding: "7px 4px" }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, color: k.c, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
+                            <div style={{ fontSize: 9.5, color: k.c, fontFamily: C.FF, marginTop: 3 }}>{k.l}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Metrics — split by methodology presence */}
+                      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" as const }}>
+                        {wfProjs.length > 0 && (
+                          <div style={{ flex: 1, minWidth: 80 }}>
+                            <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 4 }}>Waterfall ({wfProjs.length})</div>
+                            <div style={{ display: "flex", gap: 12 }}>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>SPI</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: avgSpi !== null ? (avgSpi < 0.85 ? C.red : avgSpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{avgSpi !== null ? fmt2(avgSpi) : "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>CPI</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: avgCpi !== null ? (avgCpi < 0.85 ? C.red : avgCpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{avgCpi !== null ? fmt2(avgCpi) : "—"}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {agileProjs.length > 0 && (
+                          <div style={{ flex: 1, minWidth: 80 }}>
+                            <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 4 }}>Agile ({agileProjs.length})</div>
+                            <div style={{ display: "flex", gap: 12 }}>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>Velocity</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: "#7c3aed", fontFamily: C.FM }}>{avgVel !== null ? `${avgVel.toFixed(0)} pts` : "—"}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9, color: C.inkFaint, fontFamily: C.FF }}>Reliability</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: avgRel !== null ? (avgRel < 60 ? C.red : avgRel < 80 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{avgRel !== null ? `${Math.round(avgRel)}%` : "—"}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {/* Issues strip */}
+                      {(() => {
+                        const issues = pp.reduce((s, p) => s + p.criticalIssues, 0);
+                        const risks  = pp.reduce((s, p) => s + p.highRisks, 0);
+                        const actions = pp.reduce((s, p) => s + p.openActionItems, 0);
+                        if (issues + risks + actions === 0) return null;
+                        return (
+                          <div style={{ display: "flex", gap: 8, marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${C.borderSoft}`, flexWrap: "wrap" as const }}>
+                            {issues > 0  && <span style={{ fontSize: 10.5, color: C.red,   background: C.redBg,   borderRadius: 99, padding: "2px 8px", fontFamily: C.FF }}>{issues} critical issue{issues !== 1 ? "s" : ""}</span>}
+                            {risks > 0   && <span style={{ fontSize: 10.5, color: C.amber, background: C.amberBg, borderRadius: 99, padding: "2px 8px", fontFamily: C.FF }}>{risks} high risk{risks !== 1 ? "s" : ""}</span>}
+                            {actions > 0 && <span style={{ fontSize: 10.5, color: C.blue,  background: C.blueSoft,borderRadius: 99, padding: "2px 8px", fontFamily: C.FF }}>{actions} open action{actions !== 1 ? "s" : ""}</span>}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
 
         {/* Trend charts */}
         {(wfTrends.length > 0 || agileTrends.length > 0) && (
