@@ -818,24 +818,6 @@ function DeliveryMetrics({ data }: { data: TriageData }) {
   const onTimePct     = all.length > 0 ? Math.round(all.filter(p => p.spi !== null && (p.spi ?? 0) >= 0.85).length / all.length * 100) : null;
   const revenueAtRisk = all.filter(p => p.band !== "green").reduce((s, p) => s + (p.budget ?? 0), 0);
 
-  // Per-account aggregation
-  const accountMap = new Map<string, { name: string; red: number; amber: number; green: number; noData: number; total: number; budget: number; spiVals: number[]; cpiVals: number[] }>();
-  for (const p of all) {
-    const aid = p.accountId ?? "__none__";
-    const aname = p.accountName ?? "Unassigned";
-    if (!accountMap.has(aid)) accountMap.set(aid, { name: aname, red: 0, amber: 0, green: 0, noData: 0, total: 0, budget: 0, spiVals: [], cpiVals: [] });
-    const acc = accountMap.get(aid)!;
-    acc.total++;
-    acc.budget += p.budget ?? 0;
-    if (p.band === "red") acc.red++;
-    else if (p.band === "amber") acc.amber++;
-    else if (p.band === "green") acc.green++;
-    else acc.noData++;
-    if (p.spi !== null) acc.spiVals.push(p.spi);
-    if (p.cpi !== null) acc.cpiVals.push(p.cpi);
-  }
-  const accountTiles = [...accountMap.values()].sort((a, b) => b.red - a.red || b.amber - a.amber || a.name.localeCompare(b.name));
-
   type Tile = { label: string; value: string; sub: string; color: string; bg: string; border: string };
   const tiles: Tile[] = [
     { label: "Active Projects",   value: String(all.length),                                                           sub: "In your scope",              color: C.teal,    bg: "#e8f5f6",  border: "#b2dde0" },
@@ -936,58 +918,6 @@ function DeliveryMetrics({ data }: { data: TriageData }) {
         })}
       </div>
 
-      {/* Per-account breakdown tiles */}
-      {accountTiles.length > 0 && (
-        <>
-          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.inkFaint, fontFamily: C.FF, marginBottom: 12 }}>
-            By Account
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
-            {accountTiles.map(acc => {
-              const accAvgSpi = acc.spiVals.length ? acc.spiVals.reduce((a, b) => a + b, 0) / acc.spiVals.length : null;
-              const accAvgCpi = acc.cpiVals.length ? acc.cpiVals.reduce((a, b) => a + b, 0) / acc.cpiVals.length : null;
-              return (
-                <div key={acc.name} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px" }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, fontFamily: C.FF, marginBottom: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{acc.name}</div>
-                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                    {[
-                      { v: acc.red,    l: "Critical", col: C.red,   bg: C.redBg },
-                      { v: acc.amber,  l: "At Risk",  col: C.amber, bg: C.amberBg },
-                      { v: acc.green,  l: "On Track", col: C.green, bg: C.greenBg },
-                    ].map(k => (
-                      <div key={k.l} style={{ flex: 1, textAlign: "center" as const, background: k.bg, borderRadius: 6, padding: "5px 4px" }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: k.col, fontFamily: C.FM, lineHeight: 1 }}>{k.v}</div>
-                        <div style={{ fontSize: 9, color: k.col, fontFamily: C.FF, marginTop: 2 }}>{k.l}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column" as const, gap: 5 }}>
-                    {accAvgSpi !== null && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>Avg SPI</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: spiColor(accAvgSpi), fontFamily: C.FM }}>{accAvgSpi.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {accAvgCpi !== null && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>Avg CPI</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: spiColor(accAvgCpi), fontFamily: C.FM }}>{accAvgCpi.toFixed(2)}</span>
-                      </div>
-                    )}
-                    {acc.budget > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>Budget</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: C.ink, fontFamily: C.FM }}>{fmtMoney(acc.budget)}</span>
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF, marginTop: 2 }}>{acc.total} project{acc.total !== 1 ? "s" : ""}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
     </div>
   );
 }
