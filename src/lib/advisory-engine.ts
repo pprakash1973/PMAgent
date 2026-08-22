@@ -28,6 +28,7 @@ export interface ProjectState {
   costEntries: any[];
   budget?: number | null;
   currentPhase?: string;
+  endDate?: Date | string | null;
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -58,7 +59,8 @@ function hasStructure(desc: string): boolean {
 // ── Risk pack (RA) ─────────────────────────────────────────────────────────────
 
 function runRiskPack(state: ProjectState): AdvisoryCandidate[] {
-  const { risks, tasks } = state;
+  const { risks, tasks, endDate } = state;
+  const projectEnd = endDate ? new Date(endDate) : null;
   const out: AdvisoryCandidate[] = [];
   const openRisks = risks.filter(r => r.status === "open" || r.status === "in_progress");
 
@@ -268,6 +270,36 @@ function runRiskPack(state: ProjectState): AdvisoryCandidate[] {
         draftPayload: null,
         rankScore: 25,
       });
+    }
+  }
+
+  // RA-30 — Risk due date beyond project end date → must be treated as an issue
+  if (projectEnd) {
+    for (const r of openRisks) {
+      if (!r.dueDate) continue;
+      const rDue = new Date(r.dueDate);
+      if (isNaN(rDue.getTime())) continue;
+      if (rDue > projectEnd) {
+        out.push({
+          ruleId: "RA-30",
+          pack: "ra",
+          class: "c1",
+          severity: "s1",
+          provenance: "p1",
+          tab: "risk",
+          objectId: r.id,
+          objectType: "risk",
+          statement: `Risk ${r.riskId ?? r.id.slice(0, 6)} due ${rDue.toISOString().slice(0, 10)} extends beyond project end (${projectEnd.toISOString().slice(0, 10)}) — escalate to an issue.`,
+          evidenceSummary: `A risk that cannot be resolved before project closure is no longer a risk — it is a materialised problem. Log it as an issue with a closure action plan.`,
+          draftPayload: {
+            description: r.description ?? "",
+            severity: "high",
+            owner: r.owner ?? "",
+            resolution: r.mitigation ?? "[Define closure action plan]",
+          },
+          rankScore: 95,
+        });
+      }
     }
   }
 

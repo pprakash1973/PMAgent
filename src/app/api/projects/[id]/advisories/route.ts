@@ -52,6 +52,7 @@ export async function GET(
     costEntries,
     budget: project.budget,
     currentPhase: project.currentPhase,
+    endDate: project.endDate,
   };
 
   // Run the engine
