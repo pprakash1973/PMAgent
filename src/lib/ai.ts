@@ -779,11 +779,11 @@ Return JSON with:
     category (string): Technical | Schedule | Cost | Resource | External | Organizational | Quality
     statement (string): "If [cause], then [event], causing [effect]" — cause→event→effect format
     probability (string): Very Low | Low | Medium | High | Very High
-    probabilityScore (number): 1-5
+    probabilityScore (number): 1-10
     impact (string): Very Low | Low | Medium | High | Very High
-    impactScore (number): 1-5
-    riskScore (number): probabilityScore × impactScore
-    severity (string): Low (1-4) | Medium (5-9) | High (10-19) | Critical (20-25)
+    impactScore (number): 1-10
+    riskScore (number): probabilityScore × impactScore (max 100)
+    severity (string): Low (1-15) | Medium (16-35) | High (36-59) | Critical (60-100)
     type (string): Threat | Opportunity
     strategy (string): for Threat: Avoid/Transfer/Mitigate/Escalate/Accept; for Opportunity: Exploit/Share/Enhance/Escalate/Accept
     responseActions (array of strings)
@@ -836,11 +836,11 @@ Return JSON with:
     statement (string): "If [cause], then [event], causing [effect]" — ALWAYS use cause→event→effect format
     type (string): Threat | Opportunity
     probability (string): Very Low | Low | Medium | High | Very High
-    probabilityScore (number): 1-5
+    probabilityScore (number): 1-10
     impact (string): Very Low | Low | Medium | High | Very High
-    impactScore (number): 1-5
-    riskScore (number): probabilityScore × impactScore
-    severity (string): Low (1-4) | Medium (5-9) | High (10-19) | Critical (20-25)
+    impactScore (number): 1-10
+    riskScore (number): probabilityScore × impactScore (max 100)
+    severity (string): Low (1-15) | Medium (16-35) | High (36-59) | Critical (60-100)
     velocity (string): Immediate | Short-term | Medium-term | Long-term
     strategy (string): Threats → Avoid/Transfer/Mitigate/Escalate/Accept; Opportunities → Exploit/Share/Enhance/Escalate/Accept
     responseActions (array of strings): specific, actionable steps

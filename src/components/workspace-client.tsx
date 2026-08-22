@@ -662,12 +662,13 @@ function ArtifactsTab({ project, catalog, onNavigate }: { project: any; catalog:
 
 // ── Risk tab ────────────────────────────────────────────────────────────────────
 
-const PROB_SCORE: Record<string, number> = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
-const IMP_SCORE: Record<string, number>  = { very_low: 1, low: 2, medium: 3, high: 4, very_high: 5 };
-function riskScore(r: any) { return (PROB_SCORE[r.probability] ?? 3) * (IMP_SCORE[r.impact] ?? 3); }
+const PROB_SCORE: Record<string, number> = { very_low: 2, low: 4, medium: 6, high: 8, very_high: 10 };
+const IMP_SCORE: Record<string, number>  = { very_low: 2, low: 4, medium: 6, high: 8, very_high: 10 };
+function riskScore(r: any) { return (PROB_SCORE[r.probability] ?? 6) * (IMP_SCORE[r.impact] ?? 6); }
 function scoreColor(s: number) {
-  if (s >= 15) return { color: C.red, bg: C.redLight };
-  if (s >= 9)  return { color: C.amber, bg: C.amberLight };
+  if (s >= 60) return { color: C.red, bg: C.redLight };
+  if (s >= 36) return { color: C.amber, bg: C.amberLight };
+  if (s >= 16) return { color: C.text2, bg: C.surface2 };
   return { color: C.green, bg: C.greenLight };
 }
 function piColor(v: string) {
@@ -708,7 +709,7 @@ function RiskTab({ project }: { project: any }) {
         projectName: project.name,
         kpiSnapshot: {
           risksOpen: data.filter((r: any) => r.status === "open" || r.status === "in_progress").length,
-          risksCritical: data.filter((r: any) => riskScore(r) >= 15).length,
+          risksCritical: data.filter((r: any) => riskScore(r) >= 60).length,
         },
       });
     }
@@ -764,7 +765,7 @@ function RiskTab({ project }: { project: any }) {
   const filtered = useMemo(() => {
     return risks.filter(r => {
       const sc = riskScore(r);
-      const level = sc >= 15 ? "critical" : sc >= 9 ? "high" : sc >= 4 ? "medium" : "low";
+      const level = sc >= 60 ? "critical" : sc >= 36 ? "high" : sc >= 16 ? "medium" : "low";
       const matchLevel = levelFilter === "all" || level === levelFilter;
       const matchStatus = statusFilter === "all" || r.status === statusFilter;
       const matchSearch = !search || r.description?.toLowerCase().includes(search.toLowerCase()) || r.owner?.toLowerCase().includes(search.toLowerCase()) || r.category?.toLowerCase().includes(search.toLowerCase());
@@ -773,7 +774,7 @@ function RiskTab({ project }: { project: any }) {
   }, [risks, search, levelFilter, statusFilter]);
 
   const openCount = risks.filter(r => r.status === "open" || r.status === "in_progress").length;
-  const criticalCount = risks.filter(r => riskScore(r) >= 15).length;
+  const criticalCount = risks.filter(r => riskScore(r) >= 60).length;
   const mitigatedCount = risks.filter(r => r.status === "mitigated" || r.status === "closed").length;
 
   const AI_CHIPS = [
@@ -792,7 +793,7 @@ function RiskTab({ project }: { project: any }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
         {[
           { label: "Total Risks", value: risks.length, sub: "All categories", color: C.primary, bg: C.primaryLight },
-          { label: "Critical / High", value: criticalCount, sub: "Score ≥ 15", color: C.red, bg: C.redLight },
+          { label: "Critical / High", value: criticalCount, sub: "Score ≥ 60", color: C.red, bg: C.redLight },
           { label: "Open", value: openCount, sub: "Awaiting mitigation", color: C.amber, bg: C.amberLight },
           { label: "Mitigated", value: mitigatedCount, sub: "Response in place", color: C.green, bg: C.greenLight },
         ].map(k => (
@@ -815,10 +816,10 @@ function RiskTab({ project }: { project: any }) {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search risks…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface2, color: C.text, width: 180 }} />
         <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text }}>
           <option value="all">All Levels</option>
-          <option value="critical">Critical (≥15)</option>
-          <option value="high">High (9–14)</option>
-          <option value="medium">Medium (4–8)</option>
-          <option value="low">Low (1–3)</option>
+          <option value="critical">Critical (≥60)</option>
+          <option value="high">High (36–59)</option>
+          <option value="medium">Medium (16–35)</option>
+          <option value="low">Low (1–15)</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text }}>
           <option value="all">All Status</option>
