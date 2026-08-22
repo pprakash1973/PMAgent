@@ -115,7 +115,7 @@ const ARTIFACT_TOKEN_BUDGET: Record<string, number> = {
   lessons_learned:            8000,  // detailed lesson entries
   closure_report:             8000,  // objectives scorecard + deliverables + benefits
   quarterly_business_review:  6000,
-  project_mgmt_plan:          8000,  // master plan — 10+ sub-plans, wide coverage needed
+  project_mgmt_plan:          5000,  // master plan summary; concise sub-plan entries
   scope_statement:            5000,
   stakeholder_register:       5000,
   communication_plan:         5000,
@@ -907,84 +907,22 @@ Return JSON with:
 - defectManagement (object): {process (string), severity levels (array of {level, definition, responseTime}), tools (string)}
 - continuousImprovement (string)`,
 
-    project_mgmt_plan: `Generate a Project Management Plan — the master governing document for project execution, monitoring, control, and closure.
-Return JSON with:
-- projectOverview (object): {
-    name (string), code (string), version (string, e.g. "1.0"),
-    sponsor (string), pm (string),
-    startDate (string: ISO date), endDate (string: ISO date),
-    budget (string: formatted currency),
-    projectDescription (string: 2-3 sentences),
-    objectives (array of strings),
-    successCriteria (array of strings)
-  }
-- scopeManagement (object): {
-    scopeStatement (string),
-    inScope (array of strings),
-    outOfScope (array of strings),
-    deliverablesBaseline (array of strings),
-    wbsApproach (string),
-    changeControlProcess (string)
-  }
-- scheduleManagement (object): {
-    methodology (string: Waterfall | Agile | Hybrid),
-    tooling (string),
-    baselineApproach (string),
-    varianceThreshold (string: e.g. "±10% SPI triggers recovery plan"),
-    keyMilestones (array of {milestone, plannedDate, owner})
-  }
-- costManagement (object): {
-    estimatingMethod (string),
-    controlMethod (string),
-    varianceThreshold (string: e.g. "±5% CPI triggers corrective action"),
-    contingencyReserve (string),
-    managementReserve (string),
-    earnedValueApproach (string)
-  }
-- qualityManagement (object): {
-    qualityPolicy (string),
-    standards (array of strings),
-    qaApproach (string),
-    defectThreshold (string)
-  }
-- resourceManagement (object): {
-    teamStructure (string),
-    keyRoles (array of {role, responsibilities (array of strings)}),
-    acquisitionApproach (string),
-    releaseApproach (string),
-    trainingNeeds (string)
-  }
-- communicationsManagement (object): {
-    approach (string),
-    channelCount (number),
-    communicationItems (array of {audience, information, frequency, channel, owner}),
-    escalationPath (string)
-  }
-- riskManagement (object): {
-    approach (string),
-    riskCategories (array of strings),
-    reviewCadence (string),
-    appetiteStatement (string),
-    topRisks (array of {risk, probability, impact, mitigation})
-  }
-- stakeholderManagement (object): {
-    engagementStrategy (string),
-    keyStakeholders (array of {name, role, engagementLevel}),
-    reportingCadence (string)
-  }
-- changeManagement (object): {
-    process (string),
-    authority (string: e.g. "PM approves <1% budget; Sponsor approves 1–5%; Steering Committee >5%"),
-    impactThresholds (array of {category, threshold, approver})
-  }
-- procurementManagement (object): {
-    approach (string),
-    contractTypes (array of strings),
-    vendorManagement (string)
-  }
-- keyAssumptions (array of strings)
-- keyConstraints (array of strings)
-- approvalSignatures (array of {role, name, date})`,
+    project_mgmt_plan: `Generate a Project Management Plan — the master governing document for this project.
+IMPORTANT: Keep every string field to ONE concise sentence. Arrays: max 4 items each.
+Return JSON with exactly these keys:
+- projectOverview: { name, code, version:"1.0", sponsor, pm, startDate, endDate, budget, description (1 sentence), objectives (≤4 strings), successCriteria (≤4 strings) }
+- scopeManagement: { scopeStatement (1 sentence), inScope (≤4 strings), outOfScope (≤3 strings), wbsApproach (1 sentence), changeControlProcess (1 sentence) }
+- scheduleManagement: { methodology, tooling, baselineApproach (1 sentence), varianceThreshold (e.g. "±10% SPI triggers recovery plan"), keyMilestones (≤4 of {milestone, plannedDate, owner}) }
+- costManagement: { estimatingMethod, controlMethod, varianceThreshold (e.g. "±5% CPI triggers corrective action"), contingencyReserve, earnedValueApproach (1 sentence) }
+- qualityManagement: { qualityPolicy (1 sentence), standards (≤3 strings), qaApproach (1 sentence) }
+- resourceManagement: { teamStructure (1 sentence), keyRoles (≤4 of {role, responsibility}), acquisitionApproach (1 sentence) }
+- communicationsManagement: { approach (1 sentence), communicationItems (≤4 of {audience, information, frequency, channel}), escalationPath (1 sentence) }
+- riskManagement: { approach (1 sentence), riskCategories (≤4 strings), reviewCadence, topRisks (≤3 of {risk, probability, impact, mitigation (1 sentence)}) }
+- stakeholderManagement: { engagementStrategy (1 sentence), keyStakeholders (≤4 of {name, role, engagementLevel}), reportingCadence }
+- changeManagement: { process (1 sentence), authority (e.g. "PM <1%; Sponsor 1–5%; Steering Committee >5%") }
+- keyAssumptions (≤4 strings)
+- keyConstraints (≤4 strings)
+- approvalSignatures (≤3 of {role, name, date})`,
 
     // ── EXECUTION ─────────────────────────────────────────────────────────────
 
