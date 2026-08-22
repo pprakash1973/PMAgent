@@ -626,7 +626,14 @@ function HealthSection({ projects, onReview }: { projects: DhProject[]; onReview
 
       {/* Sections — grouped by methodology */}
       <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
-        <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 28 }}>
+        <div style={{
+          maxWidth: 1280, margin: "0 auto",
+          // Two across, wrapping to a new row as methodologies are added.
+          // minmax(0,1fr) — plain 1fr defaults to min-width:auto, letting a long
+          // project name push its column past its share and break the grid.
+          display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))",
+          gap: 16, alignItems: "start",
+        }}>
           {Object.entries(METHODOLOGY_GROUPS).map(([methKey, cfg]) => {
             const mp = filtered.filter(p => dmkey(p) === methKey);
             if (mp.length === 0) return null;
