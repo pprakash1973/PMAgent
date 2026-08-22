@@ -4178,12 +4178,19 @@ function ScopeControlTab({ project }: { project: any }) {
           >
             {extracting ? "Extracting…" : "Extract Requirements"}
           </button>
+          <style>{`@keyframes risk-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
           <button
             onClick={handleCreateBaselineWithConfirm}
             disabled={creatingBaseline || activeReqs.length === 0}
             style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, background: creatingBaseline ? C.surface2 : C.primary, color: creatingBaseline ? C.text3 : "#fff", border: "none", borderRadius: 7, padding: "6px 13px", cursor: creatingBaseline || activeReqs.length === 0 ? "not-allowed" : "pointer", opacity: activeReqs.length === 0 ? 0.5 : 1 }}
           >
-            {creatingBaseline ? "Creating Baseline…" : latestBaseline ? "Update Baseline" : "Create Baseline"}
+            {creatingBaseline && (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ animation: "risk-spin 1s linear infinite", flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity=".3" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            )}
+            {creatingBaseline ? "Saving baseline…" : latestBaseline ? "Update Baseline" : "Create Baseline"}
           </button>
         </div>
       </div>
