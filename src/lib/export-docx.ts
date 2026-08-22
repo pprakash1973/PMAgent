@@ -3,6 +3,7 @@ import {
   TextRun, HeadingLevel, AlignmentType, WidthType, BorderStyle,
   ShadingType, convertInchesToTwip,
 } from "docx";
+import { orderArtifactContent } from "@/lib/artifact-section-order";
 
 const BLUE = "1E3A8A";
 const LIGHT_BLUE = "DBEAFE";
@@ -293,7 +294,7 @@ export async function buildDocx(artifactType: string, content: any): Promise<Buf
   const title = artifactType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   const children = artifactType === "project_charter"
     ? buildCharterDoc(content)
-    : buildGenericDoc(title, content);
+    : buildGenericDoc(title, orderArtifactContent(artifactType, content));
 
   const doc = new Document({
     styles: {

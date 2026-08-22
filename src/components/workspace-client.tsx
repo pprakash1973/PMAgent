@@ -5344,6 +5344,35 @@ function StatusTab({ project }: { project: any }) {
 
 const COST_CATEGORIES = ["labor", "materials", "travel", "software", "training", "other"];
 
+// Chart series colours — one per COST_CATEGORIES entry. Keep these two lists in sync:
+// a category missing here renders in the fallback grey rather than disappearing.
+const COST_CAT_CHART_COLOR: Record<string, string> = {
+  labor:     "#006E74",
+  materials: "#3b82f6",
+  travel:    "#f59e0b",
+  software:  "#8b5cf6",
+  training:  "#0ea5e9",
+  other:     "#9ca3af",
+};
+const COST_CAT_FALLBACK_COLOR = "#64748b";
+
+function costCatColor(cat: string) {
+  return COST_CAT_CHART_COLOR[cat] ?? COST_CAT_FALLBACK_COLOR;
+}
+
+/**
+ * Categories actually present in `entries`, ordered by COST_CATEGORIES with any
+ * unrecognised category appended. Derived from the data — never a hardcoded list —
+ * so a category that is not in COST_CATEGORIES (legacy rows, future additions) still
+ * renders instead of being silently dropped while remaining counted in the totals.
+ */
+function presentCostCategories(entries: any[]): string[] {
+  const seen = new Set<string>(entries.map((e) => e.category ?? "other"));
+  const ordered = COST_CATEGORIES.filter((c) => seen.has(c));
+  for (const c of seen) if (!ordered.includes(c)) ordered.push(c);
+  return ordered;
+}
+
 const COST_CAT_STYLE: Record<string, { bg: string; color: string; border: string }> = {
   labor:     { bg: "#e0f2fe", color: "#0369a1", border: "rgba(3,105,161,.2)" },
   materials: { bg: "#fef9c3", color: "#854d0e", border: "rgba(133,77,14,.2)" },
@@ -5450,20 +5479,18 @@ function CostMonthlyChart({ entries, currency, budget }: { entries: any[]; curre
   if (!entries.length) return null;
 
   // Group entries by YYYY-MM, then by category within month
-  const CATS = ["labor", "infrastructure", "travel", "licenses", "other"];
-  const CAT_COLORS: Record<string, string> = {
-    labor: "#006E74", infrastructure: "#3b82f6", travel: "#f59e0b",
-    licenses: "#8b5cf6", other: "#9ca3af",
-  };
+  const CATS = presentCostCategories(entries);
 
   const monthMap: Record<string, Record<string, number>> = {};
   for (const e of entries) {
-    const mo = e.date.slice(0, 7);
+    const mo = String(e.date ?? "").slice(0, 7);
+    if (!mo) continue;
     if (!monthMap[mo]) monthMap[mo] = {};
     const cat = e.category ?? "other";
-    monthMap[mo][cat] = (monthMap[mo][cat] ?? 0) + e.amount;
+    monthMap[mo][cat] = (monthMap[mo][cat] ?? 0) + (Number(e.amount) || 0);
   }
   const months = Object.keys(monthMap).sort();
+  if (!months.length) return null;
   const monthTotals = months.map((m) => Object.values(monthMap[m]).reduce((s, v) => s + v, 0));
   const maxVal = Math.max(...monthTotals, 1);
 
@@ -5501,7 +5528,7 @@ function CostMonthlyChart({ entries, currency, budget }: { entries: any[]; curre
               yBase -= bh;
               return (
                 <rect key={cat} x={xOf(i) - barW / 2} y={yBase} width={barW} height={bh}
-                  fill={CAT_COLORS[cat] ?? C.text3} opacity={0.85} rx={2} />
+                  fill={costCatColor(cat)} opacity={0.85} rx={2} />
               );
             })}
             <text x={xOf(i)} y={H - PAD.bottom + 13} textAnchor="middle" fontSize={8.5} fill={C.text3}>
@@ -5522,9 +5549,9 @@ function CostMonthlyChart({ entries, currency, budget }: { entries: any[]; curre
         </>
       )}
       {/* Legend */}
-      {CATS.filter((c) => entries.some((e) => (e.category ?? "other") === c)).map((c, i) => (
-        <g key={c} transform={`translate(${PAD.left + i * 95}, ${H - 16})`}>
-          <rect x={0} y={-6} width={10} height={10} fill={CAT_COLORS[c]} rx={2} />
+      {CATS.map((c, i) => (
+        <g key={c} transform={`translate(${PAD.left + i * 80}, ${H - 16})`}>
+          <rect x={0} y={-6} width={10} height={10} fill={costCatColor(c)} rx={2} />
           <text x={14} y={4} fontSize={8.5} fill={C.text2}>{c.charAt(0).toUpperCase() + c.slice(1)}</text>
         </g>
       ))}
@@ -5536,16 +5563,12 @@ function CostMonthlyChart({ entries, currency, budget }: { entries: any[]; curre
 function CostCategoryView({ entries, currency, budget, summary }: { entries: any[]; currency: string; budget?: number | null; summary?: any }) {
   if (!entries.length) return null;
 
-  const CATS = ["labor", "infrastructure", "travel", "licenses", "other"];
-  const CAT_COLORS: Record<string, string> = {
-    labor: "#006E74", infrastructure: "#3b82f6", travel: "#f59e0b",
-    licenses: "#8b5cf6", other: "#9ca3af",
-  };
-  const total = entries.reduce((s, e) => s + e.amount, 0);
+  const CATS = presentCostCategories(entries);
+  const total = entries.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const bycat: Record<string, number> = {};
   for (const e of entries) {
     const c = e.category ?? "other";
-    bycat[c] = (bycat[c] ?? 0) + e.amount;
+    bycat[c] = (bycat[c] ?? 0) + (Number(e.amount) || 0);
   }
   const rows = CATS.filter((c) => bycat[c] > 0).map((c) => ({
     cat: c, amount: bycat[c],
@@ -5603,7 +5626,7 @@ function CostCategoryView({ entries, currency, budget, summary }: { entries: any
           <div key={r.cat}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: CAT_COLORS[r.cat] ?? C.text3, display: "inline-block", flexShrink: 0 }} />
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: costCatColor(r.cat), display: "inline-block", flexShrink: 0 }} />
                 <span style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>{r.cat.charAt(0).toUpperCase() + r.cat.slice(1)}</span>
               </div>
               <div style={{ display: "flex", gap: 14, fontSize: 12, color: C.text2 }}>
@@ -5613,7 +5636,7 @@ function CostCategoryView({ entries, currency, budget, summary }: { entries: any
               </div>
             </div>
             <div style={{ height: 6, background: C.surface2, borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${r.pctSpend}%`, background: CAT_COLORS[r.cat] ?? C.text3, borderRadius: 3 }} />
+              <div style={{ height: "100%", width: `${r.pctSpend}%`, background: costCatColor(r.cat), borderRadius: 3 }} />
             </div>
           </div>
         ))}

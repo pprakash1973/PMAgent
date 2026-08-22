@@ -7,6 +7,22 @@ import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
 import { resolveModel } from "@/lib/model-router";
 import { extractJson } from "@/lib/extract-json";
+import { rateLimit } from "@/lib/rate-limit";
+
+// A meeting transcript is text — it does not need the 10 MB the artifact uploader allows.
+// Keeping this tight is the first line of defence against decompression bombs, since
+// .docx is a ZIP that a crafted file can expand from megabytes to gigabytes of XML.
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+// Hard ceiling on post-extraction text. Bounds everything downstream of the parser and
+// rejects obvious bombs. NOTE: this runs after the parser has already allocated, so it
+// mitigates rather than eliminates the OOM risk — a streaming parser would be needed
+// to remove it entirely.
+const MAX_EXTRACTED_CHARS = 2_000_000;
+
+// LLM budget per user. Generous for real use; stops a client looping uploads to burn credits.
+const EXTRACT_LIMIT = 10;
+const EXTRACT_WINDOW_MS = 10 * 60 * 1000;
 
 async function extractFileText(file: File): Promise<string> {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -40,6 +56,17 @@ async function extractFileText(file: File): Promise<string> {
   throw new Error(`Unsupported file type: .${ext}. Supported: pdf, docx, txt, md`);
 }
 
+/** Parses the file and enforces the post-extraction size ceiling. */
+async function extractBoundedText(file: File): Promise<string> {
+  const text = await extractFileText(file);
+  if (text.length > MAX_EXTRACTED_CHARS) {
+    throw new Error(
+      "This file expands to far more text than a transcript should contain. Please upload the transcript itself rather than a full document archive."
+    );
+  }
+  return text;
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -54,21 +81,29 @@ export async function POST(
     return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
   }
 
+  // Bill the LLM budget to the user, scoped to this route.
+  const limited = rateLimit(`decisions-extract:${user.id}`, EXTRACT_LIMIT, EXTRACT_WINDOW_MS);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: `Too many extractions. Please wait ${Math.ceil(limited.retryAfterSec / 60)} minute(s) and try again.` },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfterSec) } }
+    );
+  }
+
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
 
-  const MAX_FILE_BYTES = 10 * 1024 * 1024;
   if (file.size > MAX_FILE_BYTES) {
     return NextResponse.json(
-      { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.` },
+      { error: `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum is ${MAX_FILE_BYTES / 1024 / 1024} MB.` },
       { status: 413 }
     );
   }
 
   let extractedText: string;
   try {
-    extractedText = await extractFileText(file);
+    extractedText = await extractBoundedText(file);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 422 });
   }
@@ -117,6 +152,8 @@ Extract all decisions from this content. Return JSON only.`;
     const decisions = Array.isArray(parsed?.decisions) ? parsed.decisions : [];
     return NextResponse.json({ decisions });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "Internal server error" }, { status: 500 });
+    // Provider errors can carry model names, request ids and quota details — log, don't leak.
+    console.error("[decisions/extract] AI call failed:", err);
+    return NextResponse.json({ error: "Decision extraction failed. Please try again." }, { status: 500 });
   }
 }

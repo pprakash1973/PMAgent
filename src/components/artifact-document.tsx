@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Printer, Download, Loader2, FileSpreadsheet, Presentation, FileText, TriangleAlert } from "lucide-react";
 import { toast } from "@/components/ui/toaster";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
+import { orderArtifactContent } from "@/lib/artifact-section-order";
 
 type Props = { artifactType: string; content: Record<string, unknown>; projectId: string };
 
@@ -124,7 +125,7 @@ export function ArtifactDocument({ artifactType, content, projectId }: Props) {
         <h1 className="text-lg font-bold text-blue-900 border-b-2 border-blue-900 pb-2">{title}</h1>
         {artifactType === "project_charter"
           ? <RenderCharter content={content} />
-          : <RenderValue value={content} depth={0} />}
+          : <RenderValue value={orderArtifactContent(artifactType, content)} depth={0} />}
       </div>
     </div>
   );
