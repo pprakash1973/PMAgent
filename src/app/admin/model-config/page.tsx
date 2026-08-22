@@ -415,25 +415,8 @@ export default function ModelConfigPage() {
                     />
                   </div>
 
-                  {/* Temperature */}
-                  <div className="col-span-2 space-y-1">
-                    <label className="text-xs font-medium text-slate-600">
-                      Temperature
-                      {e.temperature === 0 && <span className="ml-1 text-[10px] text-emerald-600 font-semibold">(deterministic)</span>}
-                    </label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={e.temperature}
-                      onChange={(ev) => patch(a.agent, "temperature", parseFloat(ev.target.value) || 0)}
-                      className="text-sm"
-                    />
-                  </div>
-
                   {/* Notes */}
-                  <div className="col-span-2 space-y-1">
+                  <div className="col-span-4 space-y-1">
                     <label className="text-xs font-medium text-slate-600">Notes</label>
                     <Input
                       placeholder="e.g. switched to GPT-4o for cost"

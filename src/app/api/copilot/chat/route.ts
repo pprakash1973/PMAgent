@@ -8,6 +8,9 @@ import { anthropic } from "@/lib/ai";
 import { resolveModel } from "@/lib/model-router";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 
+// Claude 5 family has deprecated the temperature parameter
+const supportsTemperature = (model: string) => !/-5(?:[-_]|$)/.test(model) && !model.includes("fable");
+
 const TAB_QUICK_ACTIONS: Record<string, string[]> = {
   schedule:   ["What tasks are at risk this week?", "Close all completed tasks", "Update task progress"],
   artifacts:  ["Explain this artifact", "Regenerate the Initiation Deck", "Regenerate the Weekly Status Report"],
@@ -118,7 +121,7 @@ async function extractRiskParams(message: string, anthropicClient: typeof anthro
   const res = await anthropicClient.messages.create({
     model,
     max_tokens: 256,
-    temperature: 0,
+    ...(supportsTemperature(model) && { temperature: 0 }),
     messages: [{
       role: "user",
       content: `Extract risk details from this PM request as JSON only (no markdown):
@@ -137,7 +140,7 @@ async function extractIssueParams(message: string, anthropicClient: typeof anthr
   const res = await anthropicClient.messages.create({
     model,
     max_tokens: 256,
-    temperature: 0,
+    ...(supportsTemperature(model) && { temperature: 0 }),
     messages: [{
       role: "user",
       content: `Extract issue details from this PM request as JSON only (no markdown):
@@ -156,7 +159,7 @@ async function extractEntityRef(message: string, entityType: "task" | "risk" | "
   const res = await anthropicClient.messages.create({
     model,
     max_tokens: 128,
-    temperature: 0,
+    ...(supportsTemperature(model) && { temperature: 0 }),
     messages: [{
       role: "user",
       content: `Extract the ${entityType} name or ID being referenced in this PM request as JSON only (no markdown):
@@ -631,7 +634,7 @@ export async function POST(req: NextRequest) {
           const filterResp = await anthropic.messages.create({
             model: chatModel,
             max_tokens: 400,
-            temperature: 0,
+            ...(supportsTemperature(chatModel) && { temperature: 0 }),
             messages: [{
               role: "user",
               content: `The PM wants to bulk-close tasks with this request: "${filterMsg}"\n\nCandidate tasks (JSON):\n${taskListJson}\n\nReturn a JSON array of task IDs that match the request. If the request says "all" with no phase filter, return all IDs. Return only a valid JSON array, no other text.`,
