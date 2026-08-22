@@ -84,6 +84,7 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   communication_plan:    "stakeholderComms (array of {stakeholder, information, format, frequency, owner, channel})",
   raci_matrix:           "activities (array of {id, activity, phase, assignments (object keyed by role: R|A|C|I)}), roles (array of strings)",
   quality_plan:          "qualityObjectives, qualityStandards (array), qualityActivities (array of {activity, phase, owner, tool, acceptance}), metrics (array)",
+  project_mgmt_plan:     "projectOverview {name, code, sponsor, pm, startDate, endDate, budget}, scopeManagement {scopeStatement, changeControlProcess}, scheduleManagement {methodology, tooling, baselineApproach, varianceThreshold}, costManagement {estimatingMethod, controlMethod, varianceThreshold, earnedValueApproach}, qualityManagement {qualityPolicy, standards, qaApproach}, resourceManagement {teamStructure, acquisitionApproach, releaseApproach}, communicationsManagement {approach, channelCount, escalationPath}, riskManagement {approach, categories, reviewCadence, appetiteStatement}, procurementManagement {approach, contractTypes, vendorManagement}, stakeholderManagement {engagementStrategy, reportingCadence}, changeManagement {process, authority, impactThresholds}, keyAssumptions (array of strings), keyConstraints (array of strings), approvalSignatures (array of {role, name, date})",
   action_log:            "actions (array of {id, description, owner, dueDate, priority, status, notes})",
   issue_register:        "issues (array of {id, description, severity, status, owner, resolutionPlan, dateRaised, dueDate})",
   decision_log:          "decisions (array of {id, description, decisionMade, rationale, owner, date, impact, alternatives})",
@@ -114,6 +115,7 @@ const ARTIFACT_TOKEN_BUDGET: Record<string, number> = {
   lessons_learned:            8000,  // detailed lesson entries
   closure_report:             8000,  // objectives scorecard + deliverables + benefits
   quarterly_business_review:  6000,
+  project_mgmt_plan:          8000,  // master plan — 10+ sub-plans, wide coverage needed
   scope_statement:            5000,
   stakeholder_register:       5000,
   communication_plan:         5000,
@@ -904,6 +906,85 @@ Return JSON with:
 - qcCheckpoints (array of {phase, checkpoint, criteria, method, owner, deliverable})
 - defectManagement (object): {process (string), severity levels (array of {level, definition, responseTime}), tools (string)}
 - continuousImprovement (string)`,
+
+    project_mgmt_plan: `Generate a Project Management Plan — the master governing document for project execution, monitoring, control, and closure.
+Return JSON with:
+- projectOverview (object): {
+    name (string), code (string), version (string, e.g. "1.0"),
+    sponsor (string), pm (string),
+    startDate (string: ISO date), endDate (string: ISO date),
+    budget (string: formatted currency),
+    projectDescription (string: 2-3 sentences),
+    objectives (array of strings),
+    successCriteria (array of strings)
+  }
+- scopeManagement (object): {
+    scopeStatement (string),
+    inScope (array of strings),
+    outOfScope (array of strings),
+    deliverablesBaseline (array of strings),
+    wbsApproach (string),
+    changeControlProcess (string)
+  }
+- scheduleManagement (object): {
+    methodology (string: Waterfall | Agile | Hybrid),
+    tooling (string),
+    baselineApproach (string),
+    varianceThreshold (string: e.g. "±10% SPI triggers recovery plan"),
+    keyMilestones (array of {milestone, plannedDate, owner})
+  }
+- costManagement (object): {
+    estimatingMethod (string),
+    controlMethod (string),
+    varianceThreshold (string: e.g. "±5% CPI triggers corrective action"),
+    contingencyReserve (string),
+    managementReserve (string),
+    earnedValueApproach (string)
+  }
+- qualityManagement (object): {
+    qualityPolicy (string),
+    standards (array of strings),
+    qaApproach (string),
+    defectThreshold (string)
+  }
+- resourceManagement (object): {
+    teamStructure (string),
+    keyRoles (array of {role, responsibilities (array of strings)}),
+    acquisitionApproach (string),
+    releaseApproach (string),
+    trainingNeeds (string)
+  }
+- communicationsManagement (object): {
+    approach (string),
+    channelCount (number),
+    communicationItems (array of {audience, information, frequency, channel, owner}),
+    escalationPath (string)
+  }
+- riskManagement (object): {
+    approach (string),
+    riskCategories (array of strings),
+    reviewCadence (string),
+    appetiteStatement (string),
+    topRisks (array of {risk, probability, impact, mitigation})
+  }
+- stakeholderManagement (object): {
+    engagementStrategy (string),
+    keyStakeholders (array of {name, role, engagementLevel}),
+    reportingCadence (string)
+  }
+- changeManagement (object): {
+    process (string),
+    authority (string: e.g. "PM approves <1% budget; Sponsor approves 1–5%; Steering Committee >5%"),
+    impactThresholds (array of {category, threshold, approver})
+  }
+- procurementManagement (object): {
+    approach (string),
+    contractTypes (array of strings),
+    vendorManagement (string)
+  }
+- keyAssumptions (array of strings)
+- keyConstraints (array of strings)
+- approvalSignatures (array of {role, name, date})`,
 
     // ── EXECUTION ─────────────────────────────────────────────────────────────
 

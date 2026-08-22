@@ -64,6 +64,7 @@ export const ARTIFACT_CATALOG = [
   { type: "cost_plan",                 label: "Cost Plan",                          phase: "planning",   mandatory: false },
   { type: "raid_register",             label: "RAID Register",                      phase: "planning",   mandatory: false },
   { type: "quality_plan",              label: "Quality Plan",                       phase: "planning",   mandatory: false },
+  { type: "project_mgmt_plan",         label: "Project Management Plan",            phase: "planning",   mandatory: false },
   { type: "change_log",                label: "Change Control Register",            phase: "monitoring", mandatory: false },
   { type: "evm_analysis",              label: "EVM Analysis",                       phase: "execution",  mandatory: false },
   { type: "action_log",                label: "Action Log",                         phase: "execution",  mandatory: false },

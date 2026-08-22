@@ -15,8 +15,16 @@ async function extractFileText(file: File): Promise<string> {
 
   if (ext === "pdf") {
     const pdfParse = require("pdf-parse/lib/pdf-parse");
-    const result = await pdfParse(buffer);
-    return result.text;
+    try {
+      const result = await pdfParse(buffer);
+      return result.text;
+    } catch (pdfErr: any) {
+      const msg = pdfErr?.message ?? "";
+      if (msg.includes("XRef") || msg.includes("encrypt") || msg.includes("password")) {
+        throw new Error("PDF could not be read — it may be password-protected or corrupted. Please export it as a plain PDF or save the transcript as a .txt file.");
+      }
+      throw new Error(`PDF parsing failed: ${msg}`);
+    }
   }
   if (ext === "docx") {
     const mammoth = require("mammoth");

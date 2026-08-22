@@ -6,7 +6,7 @@ import {
   FileText, Presentation, Users, Target, Network, Flag, Coins, AlertTriangle,
   ShieldAlert, MessageSquare, Grid3x3, BadgeCheck, ClipboardList, AlertCircle,
   Gavel, FileBarChart, RefreshCw, GraduationCap, FileCheck, TrendingUp, ScrollText,
-  Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Check, Lock,
+  BookOpen, Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Check, Lock,
   History, Plus,
 } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
@@ -59,6 +59,7 @@ const ARTIFACT_ICON: Record<string, any> = {
   lessons_learned: GraduationCap, closure_report: FileCheck,
   traceability_matrix: FileText, evm_analysis: TrendingUp,
   dependencies_register: Network, quarterly_business_review: Presentation,
+  project_mgmt_plan: BookOpen,
 };
 
 const GOVERNANCE_LOCKED = new Set(["wbs", "resource_plan", "cost_plan", "raci_matrix", "traceability_matrix"]);
