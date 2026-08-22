@@ -981,7 +981,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
         <div style={{ flex: 1, overflowY: "auto" as const, padding: "22px 26px 48px", background: C.ground }}>
 
           {/* Pulse cards */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 14, marginBottom: 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14, marginBottom: 22 }}>
             <PulseCard title="Portfolio health" icon={
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M3 12h4l2 6 4-14 2 8h6" stroke={C.ink3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
             }>
@@ -1024,22 +1024,6 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
               </div>
             </PulseCard>
 
-            <PulseCard title="My commitments to PMs" icon={
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" stroke={C.ink3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            }>
-              {[
-                { v: data.overdueActionItems, l: "Overdue — needs chasing", c: data.overdueActionItems > 0 ? C.red : C.inkFaint },
-                { v: totalActions, l: "Open action items total", c: totalActions > 0 ? C.amber : C.inkFaint },
-              ].map(r => (
-                <div key={r.l} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
-                  <span style={{ fontSize: 20, fontWeight: 700, color: r.c, fontFamily: C.FM, width: 30, textAlign: "right" as const }}>{r.v}</span>
-                  <span style={{ fontSize: 12.5, color: C.ink2, fontFamily: C.FF }}>{r.l}</span>
-                </div>
-              ))}
-              <div style={{ fontSize: 11.5, color: C.inkFaint, borderTop: `1px dashed ${C.borderSoft}`, paddingTop: 9, marginTop: 3, fontFamily: C.FF }}>
-                {uniqueAccounts} account{uniqueAccounts !== 1 ? "s" : ""} · {data.counts.total} projects
-              </div>
-            </PulseCard>
           </div>
 
           {/* Methodology mix strip */}
