@@ -779,22 +779,17 @@ Return JSON with:
 - risks (array of {
     id (string): R001, R002…
     category (string): Technical | Schedule | Cost | Resource | External | Organizational | Quality
-    statement (string): "If [cause], then [event], causing [effect]" — cause→event→effect format
+    statement (string): one concise sentence — "If [cause], then [event], causing [effect]"
     probability (string): Very Low | Low | Medium | High | Very High
-    probabilityScore (number): 1-10
     impact (string): Very Low | Low | Medium | High | Very High
-    impactScore (number): 1-10
-    riskScore (number): probabilityScore × impactScore (max 100)
+    riskScore (number): map probability/impact to 2/4/6/8/10 then multiply (max 100)
     severity (string): Low (1-15) | Medium (16-35) | High (36-59) | Critical (60-100)
-    type (string): Threat | Opportunity
-    strategy (string): for Threat: Avoid/Transfer/Mitigate/Escalate/Accept; for Opportunity: Exploit/Share/Enhance/Escalate/Accept
-    responseActions (array of strings)
-    contingencyPlan (string)
-    owner (string): generic project role name (e.g. "Project Manager", "Technical Lead") — NOT a personal name or org-specific title; use "To Be Assigned" if no clear owner
-    trigger (string): condition that indicates risk is occurring
-    status (string): Open | In Progress | Closed | Occurred | Accepted
+    strategy (string): Avoid | Transfer | Mitigate | Accept
+    responseActions (array of strings): 1-2 concise steps
+    owner (string): generic project role (e.g. "Project Manager") — NOT a personal name; "To Be Assigned" if unknown
+    status (string): Open | In Progress | Closed | Accepted
     dueDate (string)
-    requirementRef (string): If the project context includes scopeRequirements, trace this risk to the most relevant requirement key (e.g. "REQ-001", "FR-12"). Use "General" only if the risk is not traceable to any specific requirement.
+    requirementRef (string): most relevant scopeRequirement key (e.g. "REQ-001"), or "General"
   })
 - assumptions (array of {
     id (string): A001…
@@ -827,36 +822,23 @@ Return JSON with:
     status (string): On Track | At Risk | Delayed | Resolved
   })`,
 
-    risk_register: `Generate a Risk Register covering the full risk management lifecycle.
-Generate between 5 and 8 risks maximum — focus on the most critical and distinct risks only. Quality over quantity.
+    risk_register: `Generate a Risk Register. Generate 5 to 8 risks maximum — prioritise the most critical and distinct risks only.
 Return JSON with:
-- projectName (string)
-- riskAppetite (string): Low | Medium | High
-- escalationThreshold (string): what P×I score triggers escalation to sponsor
 - risks (array of {
     id (string): R001, R002…
     category (string): Technical | Schedule | Cost | Resource | External | Organizational | Quality | Procurement
-    statement (string): "If [cause], then [event], causing [effect]" — ALWAYS use cause→event→effect format
-    type (string): Threat | Opportunity
+    statement (string): one concise sentence — "If [cause], then [event], causing [effect]"
     probability (string): Very Low | Low | Medium | High | Very High
-    probabilityScore (number): 1-10
     impact (string): Very Low | Low | Medium | High | Very High
-    impactScore (number): 1-10
-    riskScore (number): probabilityScore × impactScore (max 100)
+    riskScore (number): map probability and impact to 2/4/6/8/10 then multiply (max 100)
     severity (string): Low (1-15) | Medium (16-35) | High (36-59) | Critical (60-100)
-    velocity (string): Immediate | Short-term | Medium-term | Long-term
-    strategy (string): Threats → Avoid/Transfer/Mitigate/Escalate/Accept; Opportunities → Exploit/Share/Enhance/Escalate/Accept
-    responseActions (array of strings): specific, actionable steps
-    contingencyPlan (string): if risk occurs
-    contingencyReserve (string): budget reserve allocated
-    owner (string): generic project role name (e.g. "Project Manager", "Technical Lead", "Business Analyst 1") — use a role from the project team, NOT a personal name or organisation-specific title; use "To Be Assigned" if no clear owner can be determined
-    trigger (string): observable event that indicates risk is materializing
-    residualRiskScore (number): P×I after response
-    status (string): Open | In Progress | Closed | Occurred | Accepted
-    dueDate (string)
-    requirementRef (string): If the project context includes scopeRequirements, trace this risk to the most relevant requirement key (e.g. "REQ-001", "FR-12"). Use "General" only if the risk is not traceable to any specific requirement.
-  })
-- riskExposureSummary (object): {totalRisks, criticalCount, highCount, mediumCount, lowCount, topRisk (string)}`,
+    strategy (string): Avoid | Transfer | Mitigate | Accept | Exploit | Enhance
+    responseActions (array of strings): 1-2 concise actionable steps
+    owner (string): generic project role (e.g. "Project Manager", "Technical Lead") — NOT a personal name; "To Be Assigned" if unknown
+    status (string): Open | In Progress | Closed | Accepted
+    dueDate (string): ISO date or null
+    requirementRef (string): trace to the most relevant scopeRequirement key (e.g. "REQ-001"); use "General" only if not traceable
+  })`,
 
     communication_plan: `Generate a Communications Management Plan.
 Apply the communications channels formula: n(n−1)/2.
