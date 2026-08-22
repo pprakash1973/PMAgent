@@ -687,6 +687,8 @@ function RiskTab({ project }: { project: any }) {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenMsg, setRegenMsg] = useState("");
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -725,6 +727,23 @@ function RiskTab({ project }: { project: any }) {
     if (res.ok) { setImportMsg(`✓ Imported ${data.imported} risks from artifact`); await load(); }
     else setImportMsg(`✗ ${data.error}`);
     setImporting(false);
+  }
+
+  async function handleRegenerate() {
+    setRegenerating(true); setRegenMsg("");
+    try {
+      const res = await fetch(`/api/projects/${project.id}/risks/regenerate`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setRegenMsg(data.added > 0 ? `✓ Added ${data.added} new risk${data.added !== 1 ? "s" : ""} from baseline` : `✓ ${data.message}`);
+        await load();
+      } else {
+        setRegenMsg(`✗ ${data.error ?? "Regeneration failed"}`);
+      }
+    } catch {
+      setRegenMsg("✗ Network error");
+    }
+    setRegenerating(false);
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -811,7 +830,11 @@ function RiskTab({ project }: { project: any }) {
         <button onClick={handleImport} disabled={importing} style={{ height: 30, padding: "0 12px", background: "rgba(0,110,116,.07)", color: C.primary, border: `1px solid rgba(0,110,116,.2)`, borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: importing ? "not-allowed" : "pointer", opacity: importing ? .7 : 1 }}>
           {importing ? "Importing…" : "↓ Import from Risk Register artifact"}
         </button>
+        <button onClick={handleRegenerate} disabled={regenerating} style={{ height: 30, padding: "0 12px", background: "rgba(124,58,237,.07)", color: "#7C3AED", border: "1px solid rgba(124,58,237,.2)", borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: regenerating ? "not-allowed" : "pointer", opacity: regenerating ? .7 : 1 }}>
+          {regenerating ? "Regenerating…" : "⟳ Regenerate Risks"}
+        </button>
         {importMsg && <span style={{ fontSize: 12, color: importMsg.startsWith("✓") ? C.green : C.red }}>{importMsg}</span>}
+        {regenMsg && <span style={{ fontSize: 12, color: regenMsg.startsWith("✓") ? C.green : C.red }}>{regenMsg}</span>}
         <div style={{ flex: 1 }} />
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search risks…" style={{ height: 30, padding: "0 10px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface2, color: C.text, width: 180 }} />
         <select value={levelFilter} onChange={e => setLevelFilter(e.target.value)} style={{ height: 30, padding: "0 8px", border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 13, background: C.surface, color: C.text }}>

@@ -200,7 +200,7 @@ export async function syncArtifactToTables(
 
 // ── Normalisation helpers ─────────────────────────────────────────────────────
 
-function normaliseProbImpact(val: any): string {
+export function normaliseProbImpact(val: any): string {
   if (!val) return "medium";
   const v = String(val).toLowerCase();
   if (v.includes("very high") || v.includes("critical")) return "very_high";
