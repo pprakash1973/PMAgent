@@ -84,7 +84,7 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   communication_plan:    "stakeholderComms (array of {stakeholder, information, format, frequency, owner, channel})",
   raci_matrix:           "activities (array of {id, activity, phase, assignments (object keyed by role: R|A|C|I)}), roles (array of strings)",
   quality_plan:          "qualityObjectives, qualityStandards (array), qualityActivities (array of {activity, phase, owner, tool, acceptance}), metrics (array)",
-  project_mgmt_plan:     "projectOverview {name, code, sponsor, pm, startDate, endDate, budget}, scopeManagement {scopeStatement, changeControlProcess}, scheduleManagement {methodology, tooling, baselineApproach, varianceThreshold}, costManagement {estimatingMethod, controlMethod, varianceThreshold, earnedValueApproach}, qualityManagement {qualityPolicy, standards, qaApproach}, resourceManagement {teamStructure, acquisitionApproach, releaseApproach}, communicationsManagement {approach, channelCount, escalationPath}, riskManagement {approach, categories, reviewCadence, appetiteStatement}, procurementManagement {approach, contractTypes, vendorManagement}, stakeholderManagement {engagementStrategy, reportingCadence}, changeManagement {process, authority, impactThresholds}, keyAssumptions (array of strings), keyConstraints (array of strings), approvalSignatures (array of {role, name, date})",
+  project_mgmt_plan:     "projectOverview {name, code, sponsor, pm, startDate, endDate, budget, objectives, successCriteria}, scopeManagement {scopeStatement, inScope, outOfScope, wbsApproach}, changeManagement {process, authority, impactThresholds}, riskManagement {approach, riskCategories, reviewCadence, topRisks}, costManagement {estimatingMethod, controlMethod, varianceThreshold, contingencyReserve, earnedValueApproach}, qualityManagement {qualityPolicy, standards, qaApproach}, scheduleManagement {methodology, tooling, keyMilestones}, resourceManagement {teamStructure, keyRoles}, communicationsManagement {approach, communicationItems, escalationPath}, stakeholderManagement {engagementStrategy, keyStakeholders}, keyAssumptions (array), keyDependencies (array), keyConstraints (array), approvalSignatures (array of {role, name, date})",
   action_log:            "actions (array of {id, description, owner, dueDate, priority, status, notes})",
   issue_register:        "issues (array of {id, description, severity, status, owner, resolutionPlan, dateRaised, dueDate})",
   decision_log:          "decisions (array of {id, description, decisionMade, rationale, owner, date, impact, alternatives})",
@@ -909,18 +909,19 @@ Return JSON with:
 
     project_mgmt_plan: `Generate a Project Management Plan — the master governing document for this project.
 IMPORTANT: Keep every string field to ONE concise sentence. Arrays: max 4 items each.
-Return JSON with exactly these keys:
+Return JSON with exactly these keys in this order:
 - projectOverview: { name, code, version:"1.0", sponsor, pm, startDate, endDate, budget, description (1 sentence), objectives (≤4 strings), successCriteria (≤4 strings) }
-- scopeManagement: { scopeStatement (1 sentence), inScope (≤4 strings), outOfScope (≤3 strings), wbsApproach (1 sentence), changeControlProcess (1 sentence) }
-- scheduleManagement: { methodology, tooling, baselineApproach (1 sentence), varianceThreshold (e.g. "±10% SPI triggers recovery plan"), keyMilestones (≤4 of {milestone, plannedDate, owner}) }
+- scopeManagement: { scopeStatement (1 sentence), inScope (≤4 strings), outOfScope (≤3 strings), wbsApproach (1 sentence) }
+- changeManagement: { process (1 sentence), authority (e.g. "PM <1%; Sponsor 1–5%; Steering Committee >5%"), impactThresholds (≤3 of {category, threshold, approver}) }
+- riskManagement: { approach (1 sentence), riskCategories (≤4 strings), reviewCadence, topRisks (≤3 of {risk, probability, impact, mitigation (1 sentence)}) }
 - costManagement: { estimatingMethod, controlMethod, varianceThreshold (e.g. "±5% CPI triggers corrective action"), contingencyReserve, earnedValueApproach (1 sentence) }
 - qualityManagement: { qualityPolicy (1 sentence), standards (≤3 strings), qaApproach (1 sentence) }
+- scheduleManagement: { methodology, tooling, baselineApproach (1 sentence), varianceThreshold (e.g. "±10% SPI triggers recovery plan"), keyMilestones (≤4 of {milestone, plannedDate, owner}) }
 - resourceManagement: { teamStructure (1 sentence), keyRoles (≤4 of {role, responsibility}), acquisitionApproach (1 sentence) }
 - communicationsManagement: { approach (1 sentence), communicationItems (≤4 of {audience, information, frequency, channel}), escalationPath (1 sentence) }
-- riskManagement: { approach (1 sentence), riskCategories (≤4 strings), reviewCadence, topRisks (≤3 of {risk, probability, impact, mitigation (1 sentence)}) }
 - stakeholderManagement: { engagementStrategy (1 sentence), keyStakeholders (≤4 of {name, role, engagementLevel}), reportingCadence }
-- changeManagement: { process (1 sentence), authority (e.g. "PM <1%; Sponsor 1–5%; Steering Committee >5%") }
 - keyAssumptions (≤4 strings)
+- keyDependencies (≤4 strings)
 - keyConstraints (≤4 strings)
 - approvalSignatures (≤3 of {role, name, date})`,
 
