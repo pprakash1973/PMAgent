@@ -8,7 +8,7 @@ import { HealthDonut, EVMScatter, SpiDistribution } from "@/components/executive
 import { getProductivityStatsForUser, getProductivityStatsForProjects } from "@/lib/productivity";
 import { ProductivityMeter } from "@/components/productivity-meter";
 import { SteeringDeckGenerator } from "@/components/steering-deck-generator";
-import DhDashboardClient, { type DhProject, type TrendPoint, type ClusterHealth } from "./dh-dashboard-client";
+import DhDashboardClient, { type DhProject, type TrendPoint, type ClusterHealth, type AgileVelPoint } from "./dh-dashboard-client";
 
 const CAN_EXECUTIVE = ["dh", "admin"];
 
@@ -219,7 +219,12 @@ export default async function ExecutivePage() {
       };
     });
 
-    // Build 6-month trend from status reports
+    // Waterfall project ids (for trend filtering)
+    const wfProjectIds = new Set(
+      rawProjects.filter(p => !isAgileProject((p as any).deliveryMethod ?? "predictive", p.methodology)).map(p => p.id)
+    );
+
+    // Build 6-month trend from status reports (all projects)
     const trends: TrendPoint[] = Array.from({ length: 6 }, (_, i) => {
       const d = new Date();
       d.setMonth(d.getMonth() - (5 - i));
@@ -245,17 +250,71 @@ export default async function ExecutivePage() {
       };
     });
 
+    // Waterfall-only 6-month SPI/CPI trend
+    const wfTrends: TrendPoint[] = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (5 - i));
+      const label = d.toLocaleString("en", { month: "short" });
+      const yr = d.getFullYear(), mo = d.getMonth();
+      const reports: Array<{ spi: number | null; cpi: number | null; rag: string | null }> = [];
+      for (const p of rawProjects) {
+        if (!wfProjectIds.has(p.id)) continue;
+        for (const r of p.statusReports) {
+          const rd = new Date(r.reportDate);
+          if (rd.getFullYear() === yr && rd.getMonth() === mo) {
+            reports.push({ spi: r.healthScore?.spi ?? null, cpi: r.healthScore?.cpi ?? null, rag: r.healthScore?.ragStatus ?? null });
+          }
+        }
+      }
+      const spiVals = reports.map(r => r.spi).filter((v): v is number => v !== null);
+      const cpiVals = reports.map(r => r.cpi).filter((v): v is number => v !== null);
+      const greenCount = reports.filter(r => r.rag === "green").length;
+      return {
+        label,
+        avgSpi:    spiVals.length ? spiVals.reduce((a, b) => a + b, 0) / spiVals.length : null,
+        avgCpi:    cpiVals.length ? cpiVals.reduce((a, b) => a + b, 0) / cpiVals.length : null,
+        healthPct: reports.length ? Math.round(greenCount / reports.length * 100) : null,
+      };
+    });
+
+    // Agile velocity trend: avg accepted points per sprint position (position 1=oldest, 5=newest)
+    const agileProjects = rawProjects.filter(p => !wfProjectIds.has(p.id));
+    const sprintLabels = ["5 ago", "4 ago", "3 ago", "2 ago", "Last"];
+    const agileTrends: AgileVelPoint[] = sprintLabels.map((label, pos) => {
+      const velocities: number[] = [];
+      const reliabilities: number[] = [];
+      for (const p of agileProjects) {
+        const closed = ((p as any).sprints ?? []).filter((s: any) => s.state === "closed");
+        // sprints are ordered desc by sprintNumber; pos 4 = newest (index 0), pos 0 = 4 ago (index 4)
+        const idx = (sprintLabels.length - 1) - pos;
+        const sprint = closed[idx];
+        if (sprint && sprint.acceptedPoints !== null) {
+          velocities.push(sprint.acceptedPoints);
+          if (sprint.committedPoints && sprint.committedPoints > 0) {
+            reliabilities.push((sprint.acceptedPoints / sprint.committedPoints) * 100);
+          }
+        }
+      }
+      return {
+        label,
+        avgVelocity:   velocities.length   ? velocities.reduce((a, b) => a + b, 0) / velocities.length     : null,
+        avgReliability: reliabilities.length ? reliabilities.reduce((a, b) => a + b, 0) / reliabilities.length : null,
+      };
+    });
+
     // Cluster health: aggregate RAG per cluster
     const clusterMap = new Map<string, ClusterHealth>();
     for (const p of dhProjects) {
       const cid = p.clusterId || "__unassigned__";
       const cname = p.clusterName || "Unassigned";
-      if (!clusterMap.has(cid)) clusterMap.set(cid, { id: cid, name: cname, red: 0, amber: 0, green: 0, total: 0 });
+      if (!clusterMap.has(cid)) clusterMap.set(cid, { id: cid, name: cname, red: 0, amber: 0, green: 0, total: 0, methodCounts: {} });
       const entry = clusterMap.get(cid)!;
       entry.total++;
       if (p.rag === "red") entry.red++;
       else if (p.rag === "amber") entry.amber++;
       else entry.green++;
+      const mkey = p.deliveryMethod || "predictive";
+      entry.methodCounts[mkey] = (entry.methodCounts[mkey] ?? 0) + 1;
     }
     const clusterHealth: ClusterHealth[] = [...clusterMap.values()]
       .sort((a, b) => b.red - a.red || b.amber - a.amber || a.name.localeCompare(b.name));
@@ -283,6 +342,8 @@ export default async function ExecutivePage() {
         <DhDashboardClient
           projects={dhProjects}
           trends={trends}
+          wfTrends={wfTrends}
+          agileTrends={agileTrends}
           userName={user.name ?? user.email ?? "DH"}
           escalations={JSON.parse(JSON.stringify(dhEscalations))}
           clusterHealth={clusterHealth}

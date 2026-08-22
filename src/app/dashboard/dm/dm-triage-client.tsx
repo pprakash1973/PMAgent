@@ -344,6 +344,89 @@ function BandSection({ label, dotColor, projects, collapsed: initialCollapsed, o
   );
 }
 
+// ── Methodology mix strip + per-method KPIs ───────────────────────────────────────
+function MethodologyMixStrip({ rows }: { rows: TriageRow[] }) {
+  const total = rows.length || 1;
+  const groups = (Object.entries(METHODOLOGY_GROUPS) as [string, typeof METHODOLOGY_GROUPS[string]][]).map(([key, cfg]) => {
+    const mp = rows.filter(r => mkey(r) === key);
+    if (mp.length === 0) return null;
+    const red   = mp.filter(r => r.band === "red").length;
+    const amber = mp.filter(r => r.band === "amber").length;
+    const green = mp.filter(r => r.band === "green").length;
+    const pct   = Math.round((mp.length / total) * 100);
+    // Per-methodology KPIs
+    const isAgile = key === "agile_scrum";
+    const withVel = mp.filter(r => r.velocity !== null);
+    const withRel = mp.filter(r => r.commitmentReliability !== null);
+    const avgVel = withVel.length ? Math.round(withVel.reduce((s, r) => s + (r.velocity ?? 0), 0) / withVel.length) : null;
+    const avgRel = withRel.length ? Math.round(withRel.reduce((s, r) => s + (r.commitmentReliability ?? 0), 0) / withRel.length) : null;
+    const withSpi = mp.filter(r => r.spi !== null);
+    const withCpi = mp.filter(r => r.cpi !== null);
+    const avgSpi = withSpi.length ? withSpi.reduce((s, r) => s + (r.spi ?? 0), 0) / withSpi.length : null;
+    const avgCpi = withCpi.length ? withCpi.reduce((s, r) => s + (r.cpi ?? 0), 0) / withCpi.length : null;
+    return { key, cfg, count: mp.length, pct, red, amber, green, isAgile, avgVel, avgRel, avgSpi, avgCpi };
+  }).filter((g): g is NonNullable<typeof g> => g !== null);
+
+  if (groups.length < 2) return null;
+
+  return (
+    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 18px", marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase" as const, color: C.ink3, fontFamily: C.FF }}>Methodology Mix</span>
+        <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF }}>{rows.length} projects</span>
+      </div>
+      {/* Stacked bar */}
+      <div style={{ height: 8, borderRadius: 99, overflow: "hidden", display: "flex", marginBottom: 14 }}>
+        {groups.map(g => (
+          <div key={g.key} style={{ width: `${g.pct}%`, background: g.cfg.color, minWidth: 4 }} title={`${g.cfg.label}: ${g.count}`} />
+        ))}
+      </div>
+      {/* Per-method tiles */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" as const }}>
+        {groups.map(g => (
+          <div key={g.key} style={{ flex: 1, minWidth: 160, background: g.cfg.bg, border: `1.5px solid ${g.cfg.border}`, borderRadius: 10, padding: "12px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: g.cfg.color }} />
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: g.cfg.color, fontFamily: C.FF }}>{g.cfg.shortLabel}</span>
+              <span style={{ fontSize: 11, color: C.inkFaint, fontFamily: C.FF, marginLeft: "auto" }}>{g.count} projects</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              {g.red > 0   && <span style={{ fontSize: 10, fontWeight: 600, color: C.red,   background: C.redBg,   borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.red} crit</span>}
+              {g.amber > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: C.amber, background: C.amberBg, borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.amber} risk</span>}
+              {g.green > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: C.green, background: C.greenBg, borderRadius: 99, padding: "1px 6px", fontFamily: C.FF }}>{g.green} ok</span>}
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              {g.isAgile ? (
+                <>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg Velocity</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgVel !== null ? g.cfg.color : C.inkFaint, fontFamily: C.FM }}>{g.avgVel !== null ? `${g.avgVel} pts` : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg Reliability</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgRel !== null ? (g.avgRel < 60 ? C.red : g.avgRel < 80 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{g.avgRel !== null ? `${g.avgRel}%` : "—"}</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg SPI</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgSpi !== null ? (g.avgSpi < 0.85 ? C.red : g.avgSpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{g.avgSpi !== null ? g.avgSpi.toFixed(2) : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9.5, color: C.inkFaint, fontFamily: C.FF, marginBottom: 1 }}>Avg CPI</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: g.avgCpi !== null ? (g.avgCpi < 0.85 ? C.red : g.avgCpi < 0.95 ? C.amber : C.green) : C.inkFaint, fontFamily: C.FM }}>{g.avgCpi !== null ? g.avgCpi.toFixed(2) : "—"}</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Methodology section wrapper (attention queue) ─────────────────────────────────
 function MethodologySection({ methKey, bands, onReview, onEscalate, onAddAction, escalatedIds, addedActionsMap, filter }: {
   methKey: string;
@@ -1028,6 +1111,9 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
               </div>
             </PulseCard>
           </div>
+
+          {/* Methodology mix strip */}
+          <MethodologyMixStrip rows={allProjects} />
 
           {/* Search */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
