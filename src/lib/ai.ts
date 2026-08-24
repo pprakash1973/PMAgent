@@ -8,6 +8,151 @@ import { formatEvidenceForPrompt, type EvidenceContext } from "@/lib/evidence-as
 // These are not routed through the provider abstraction.
 export const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ---------------------------------------------------------------------------
+// Domain Intelligence — Phase 1: Static playbook
+// ---------------------------------------------------------------------------
+
+const DOMAIN_PLAYBOOK: Record<string, string> = {
+  "healthcare": `
+DOMAIN: Healthcare / Life Sciences
+Regulatory & standards: HIPAA, HL7/FHIR, DCB0129/DCB0160 clinical safety (UK NHS),
+  FDA 21 CFR Part 11 (electronic records), NHS DSPT, ISO 13485 (medical devices if applicable).
+WBS mandatory workstreams: Clinical Engagement, Information Governance,
+  Clinical Safety Case, Validation (IQ/OQ/PQ), Change Management & Training,
+  Go-live Hypercare (minimum 4 weeks post-launch).
+Resource roles to include: Clinical Informatics Lead, Information Governance Lead,
+  Clinical Safety Officer, UAT Coordinator (Clinical), NHS Change Lead,
+  Integration Specialist (HL7/FHIR).
+Risk patterns: clinical workflow disruption, data quality during EPR migration,
+  HL7/FHIR integration failures, staff adoption in high-pressure clinical settings,
+  patient safety incidents during cutover, vendor lock-in on clinical systems.
+Scheduling constraints: avoid go-live during winter pressure periods (Dec–Feb NHS),
+  plan for clinical downtime windows (typically early morning Sunday).
+Milestones: Clinical Safety Case sign-off, IG/DSPT sign-off, Clinical Pilot,
+  Full Rollout, Post-Implementation Clinical Review.`,
+
+  "retail": `
+DOMAIN: Retail / E-commerce
+WBS mandatory workstreams: Omnichannel Integration, POS Rollout,
+  Inventory & Warehouse Cut-over, Loyalty Programme Migration, Store Operations Training.
+Resource roles to include: Retail Process Analyst, Merchandise Systems Lead,
+  Store Operations Lead, POS Integration Specialist, Loyalty Programme Manager.
+Risk patterns: stockcount accuracy during cutover, POS downtime impact on trading,
+  loyalty point migration errors, ERP/WMS integration failures,
+  staff training completion before peak, supplier data quality.
+Scheduling constraints: HARD BLACKOUT Nov 1 – Jan 15 (peak trading season —
+  no go-live, major deployments, or cutover activity). Secondary blackout:
+  Easter trading week, Bank Holiday weekends.
+Milestones: UAT sign-off (trading simulation), Pilot Store go-live, Full Chain Rollout,
+  Peak Readiness Review.`,
+
+  "financial services": `
+DOMAIN: Financial Services / Banking / Insurance
+Regulatory & standards: SOX compliance, FCA/PRA regulations (UK), GDPR,
+  PCI-DSS (payment processing), Basel III (banking capital), IFRS 17 (insurance).
+WBS mandatory workstreams: Regulatory Compliance & Audit, Data Governance,
+  Model Risk Sign-off, Security & Penetration Testing, Business Continuity Planning,
+  Parallel Run (dual running of old and new systems before cutover).
+Resource roles to include: Data Governance Lead, Model Risk Analyst,
+  Compliance Lead, Business Continuity Lead, Security Analyst, Quantitative Analyst.
+Risk patterns: regulatory non-compliance, data sovereignty issues, model validation failure,
+  fraud vector introduction via new system, audit trail gaps, vendor concentration risk.
+Scheduling constraints: avoid quarter-end and year-end regulatory reporting periods.
+  Parallel run period mandatory (typically 4–8 weeks) before full cutover.
+Milestones: Regulatory Sign-off, Model Validation, Security Accreditation,
+  Parallel Run Start, Cutover Approval, Audit Review.`,
+
+  "telecom": `
+DOMAIN: Telecommunications
+WBS mandatory workstreams: Network Infrastructure, OSS/BSS Integration,
+  Roaming & Interconnect, Network Operations Centre (NOC) Integration, Field Engineer Rollout.
+Resource roles to include: Network Architect, OSS/BSS Integration Specialist,
+  RF Engineer, NOC Integration Lead, Field Deployment Manager.
+Risk patterns: network performance degradation during migration, OSS/BSS integration
+  complexity, spectrum licensing delays, field engineer availability, roaming agreement gaps,
+  SLA breach during cutover window.
+Scheduling constraints: network changes require maintenance windows (typically 2–4am).
+  Avoid sporting events and major broadcast dates where network load spikes.
+Milestones: Lab Proof of Concept, Field Trial, Network Acceptance Testing,
+  Soft Launch (limited geography), Full Coverage Launch.`,
+
+  "manufacturing": `
+DOMAIN: Manufacturing / Industrial
+WBS mandatory workstreams: OT/IT Integration, MES/ERP Rollout,
+  Quality Management System, Maintenance & Reliability, Health & Safety Compliance.
+Resource roles to include: Manufacturing Systems Lead, OT Security Specialist,
+  Quality Assurance Lead, LEAN/Six Sigma Analyst, Plant Operations Lead.
+Risk patterns: production downtime during system cutover, OT network security vulnerabilities,
+  MES/ERP data mapping errors, supplier integration failures, safety incident during changeover.
+Scheduling constraints: align to planned maintenance shutdowns. Avoid peak production
+  periods. Any OT system changes require signed plant safety approval.
+Milestones: Factory Acceptance Test, Site Acceptance Test, Parallel Production Run,
+  Full Production Go-live, 30-Day Stabilisation Review.`,
+
+  "life sciences": `
+DOMAIN: Life Sciences
+Regulatory & standards: GxP (GMP, GCP, GLP), FDA 21 CFR Part 11 (electronic records),
+  EU Annex 11, ICH Q10 (pharmaceutical quality system), ISO 13485 (medical devices),
+  EMA guidelines, GAMP 5 (computerised system validation).
+WBS mandatory workstreams: Computerised System Validation (CSV), Computer Qualification &
+  Verification (CQV), Regulatory Affairs, Quality Assurance, Data Integrity,
+  Change Control, Post-Market Surveillance (if applicable).
+Resource roles to include: Validation Lead, Quality Assurance Manager, Regulatory Affairs
+  Specialist, Data Integrity Officer, CSV/CQV Engineer, QA Auditor.
+Risk patterns: regulatory inspection findings, data integrity breaches, CSV deviations,
+  audit trail gaps, software change control failures, cold chain/storage compliance.
+Scheduling constraints: avoid regulatory submission windows and scheduled inspections.
+  Validation activities require formal approval before system go-live.
+Milestones: URS Approval, Design Qualification (DQ), Installation Qualification (IQ),
+  Operational Qualification (OQ), Performance Qualification (PQ), Regulatory Submission.`,
+
+  "pharma": `
+DOMAIN: Pharmaceutical
+Regulatory & standards: GMP (Good Manufacturing Practice), GCP (Good Clinical Practice),
+  FDA 21 CFR Parts 210/211, EU GMP Annex 11, EMA guidelines, ICH Q8/Q9/Q10,
+  WHO guidelines, DEA regulations (controlled substances if applicable).
+WBS mandatory workstreams: GMP Compliance, Clinical Trial Readiness, Regulatory Submission,
+  Batch Record Management, Quality Control, Pharmacovigilance, Supply Chain Validation.
+Resource roles to include: Qualified Person (QP), Regulatory Affairs Director,
+  Clinical Trial Manager, GMP Compliance Lead, Pharmacovigilance Officer,
+  Biostatistician, Medical Monitor.
+Risk patterns: GMP non-compliance leading to batch rejection, clinical trial protocol
+  deviations, regulatory submission delays, supply chain disruption for APIs,
+  adverse event reporting failures, import/export licence delays.
+Scheduling constraints: avoid scheduled FDA/EMA inspection periods. Clinical trial
+  milestones must align with regulatory review windows. Batch release requires QP sign-off.
+Milestones: IND/CTA Submission, Phase I/II/III Trial Milestones, NDA/MAA Submission,
+  Regulatory Approval, Commercial Launch, Post-Marketing Commitment.`,
+
+  "ecommerce": `
+DOMAIN: E-commerce / Digital Commerce
+Regulatory & standards: PCI-DSS (payment card industry), GDPR, consumer protection
+  regulations, accessibility (WCAG 2.1 AA), distance selling regulations.
+WBS mandatory workstreams: Checkout & Payment Integration, Fulfilment & Logistics
+  Pipeline, Product Catalogue Migration, Customer Data Migration, Search & Merchandising,
+  Performance & Load Testing, Customer Service Integration.
+Resource roles to include: E-commerce Platform Architect, Payment Integration Specialist,
+  UX/CX Lead, SEO Specialist, Logistics Integration Lead, Data Migration Engineer,
+  Performance Test Engineer.
+Risk patterns: payment gateway failures during peak traffic, cart abandonment from
+  performance degradation, product data quality issues post-migration, SEO ranking
+  drops during replatforming, fulfilment integration failures, GDPR compliance gaps.
+Scheduling constraints: HARD BLACKOUT Nov 1 – Jan 15 (peak trading / holiday season —
+  no major releases, platform migrations, or cutover activity). Secondary blackout:
+  Bank Holiday weekends, major sale events (Black Friday, Cyber Monday, Prime Day).
+Milestones: Platform Proof of Concept, Payment Integration Sign-off, UAT (end-to-end
+  purchase flow), Performance Test Sign-off, Soft Launch, Full Launch, Post-Launch Review.`,
+};
+
+function getDomainPlaybook(industry: string | null | undefined): string {
+  if (!industry) return "";
+  const key = industry.toLowerCase().trim();
+  const match = Object.keys(DOMAIN_PLAYBOOK).find(k => key.includes(k) || k.includes(key));
+  return match ? DOMAIN_PLAYBOOK[match] : "";
+}
+
+// ---------------------------------------------------------------------------
+
 function extractJson(text: string): Record<string, unknown> {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
   if (fenced) return JSON.parse(fenced[1]);
@@ -87,20 +232,28 @@ export interface ArtifactTemplateOverride {
   templateId?: string | null;
 }
 
+const DOMAIN_SENSITIVE_ARTIFACTS = ["wbs", "resource_plan", "risk_register", "project_schedule"];
+
 export async function generateArtifact(
   artifactType: string,
   projectContext: Record<string, unknown>,
   requirements?: string,
   evidenceContext?: EvidenceContext,
+  domainContext?: string,
   templateOverride?: ArtifactTemplateOverride
 ): Promise<Record<string, unknown>> {
   const content = buildArtifactContent(artifactType, projectContext, requirements, evidenceContext, templateOverride);
   const config = await resolveModel("artifact");
 
-  // Build system prompt — client addendum leads as a mandatory override block
-  const systemText = templateOverride?.systemAddendum
-    ? `${PMI_SYSTEM_PROMPT}\n\nMANDATORY CLIENT-SPECIFIC INSTRUCTIONS — these override your defaults:\n${templateOverride.systemAddendum}`
-    : PMI_SYSTEM_PROMPT;
+  // Build system prompt: base → domain playbook → dynamic domain context → client addendum
+  const domainBlock = DOMAIN_SENSITIVE_ARTIFACTS.includes(artifactType)
+    ? getDomainPlaybook(projectContext.industry as string)
+    : "";
+  const parts = [PMI_SYSTEM_PROMPT];
+  if (domainBlock) parts.push(`---\n${domainBlock}`);
+  if (domainContext) parts.push(`---\n${domainContext}`);
+  if (templateOverride?.systemAddendum) parts.push(`MANDATORY CLIENT-SPECIFIC INSTRUCTIONS — these override your defaults:\n${templateOverride.systemAddendum}`);
+  const systemText = parts.join("\n\n");
 
   const userContent = content.map((b) => b.text).join("\n\n");
 
@@ -1137,4 +1290,45 @@ Return the artifact as valid JSON wrapped in \`\`\`json ... \`\`\` code blocks.`
     { text: taskBlock },
     { text: dynamicContext },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Domain Intelligence — Phase 2: Dynamic domain agent (Haiku pre-flight)
+// ---------------------------------------------------------------------------
+
+const DOMAIN_AGENT_PROMPT = `You are a domain expert advisor for a project management AI system.
+Given a project's industry, customer, and description, produce a concise
+domain-context block (200–300 words) that the artifact-generating AI should know.
+Cover:
+1. Applicable regulatory frameworks and standards for this specific context
+2. Mandatory workstreams or phases that PMBOK artifacts must include
+3. Standard resource roles for this domain and customer type
+4. Top 5 risk patterns commonly seen in this domain
+5. Any scheduling constraints or blackout windows
+
+Be specific to the customer type and project description — a private clinic
+differs from an NHS Trust even in the same industry.
+Return ONLY the domain context block. No preamble, no meta-commentary.`;
+
+export async function generateDomainContext(
+  industry: string,
+  description: string,
+  customer: string | null | undefined,
+): Promise<string> {
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 512,
+      system: DOMAIN_AGENT_PROMPT,
+      messages: [{
+        role: "user",
+        content: `Industry: ${industry}\nCustomer: ${customer ?? "not specified"}\nProject description: ${description?.slice(0, 800) ?? "not provided"}`,
+      }],
+    });
+    const text = msg.content.find(b => b.type === "text");
+    return (text as { type: "text"; text: string } | undefined)?.text ?? "";
+  } catch (err) {
+    console.warn("[domain-agent] context generation failed:", err);
+    return "";
+  }
 }

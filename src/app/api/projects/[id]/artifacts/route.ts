@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { generateArtifact, type ArtifactTemplateOverride } from "@/lib/ai";
+import { generateArtifact, generateDomainContext, type ArtifactTemplateOverride } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
@@ -151,6 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     teamSize: project.teamSize,
     description: project.description,
     milestones: project.milestones,
+    industry: project.industry ?? null,
     ...(artifactType === "traceability_matrix" && {
       scheduleTasks,
       wbsStructure: wbsContent,
@@ -174,10 +175,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     artifactType
   );
 
+  // Phase 2: domain pre-flight — Haiku synthesises project-specific domain guidance
+  const DOMAIN_AGENT_ARTIFACTS = ["wbs", "resource_plan", "risk_register"];
+  let dynamicDomainContext = "";
+  if (DOMAIN_AGENT_ARTIFACTS.includes(artifactType) && project.industry && project.description) {
+    dynamicDomainContext = await generateDomainContext(project.industry, project.description, project.customer);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let content: any;
   try {
-    content = await generateArtifact(artifactType, projectContext, requirements, undefined, templateOverride);
+    content = await generateArtifact(artifactType, projectContext, requirements, undefined, dynamicDomainContext, templateOverride);
   } catch (err: any) {
     console.error(`[artifact] generation failed for ${artifactType}:`, err);
     return NextResponse.json(

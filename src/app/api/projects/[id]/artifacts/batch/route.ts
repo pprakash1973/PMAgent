@@ -117,7 +117,7 @@ export async function POST(
   // Fan out — each generateArtifact() is an independent sub-agent call
   const subAgentResults = await Promise.allSettled(
     allowed.map(({ type }, i) =>
-      generateArtifact(type, projectContext, requirements, evidenceContexts[i], templateMap.get(type))
+      generateArtifact(type, projectContext, requirements, evidenceContexts[i], undefined, templateMap.get(type))
         .then((content) => ({ type, content, evidenceCtx: evidenceContexts[i] }))
     )
   );

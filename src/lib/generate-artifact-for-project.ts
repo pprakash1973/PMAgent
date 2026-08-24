@@ -152,7 +152,7 @@ export async function generateArtifactForProject(
 
   let content: any;
   try {
-    content = await generateArtifact(artifactType, projectContext, requirements, undefined, templateOverride);
+    content = await generateArtifact(artifactType, projectContext, requirements, undefined, undefined, templateOverride);
   } catch (err: any) {
     return { error: err.message ?? "AI generation failed" };
   }
