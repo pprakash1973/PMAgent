@@ -470,6 +470,9 @@ model Artifact {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // Generation lifecycle
+  generationStartedAt DateTime?
+
   // Grounding Phase 2
   gapCount       Int      @default(0)
   groundingScore Float?

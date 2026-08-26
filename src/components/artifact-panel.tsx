@@ -65,6 +65,7 @@ function stageOf(artifact: Artifact | undefined, isGen: boolean): number {
   if (isGen) return 1;
   if (!artifact) return 0;
   const s = (artifact.status ?? "draft").toLowerCase();
+  if (s === "generating") return 1;
   if (s === "approved") return 4;
   if (s === "reviewed" || s === "in_review") return 3;
   return 2; // "draft" — the only value the API writes today
@@ -126,13 +127,29 @@ export function ArtifactPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef<string | null>(null);
+  const pollingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/artifacts`)
       .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (Array.isArray(data)) setLocalArtifacts(data); })
+      .then((data) => {
+        if (!Array.isArray(data)) return;
+        setLocalArtifacts(data);
+        // Resume polling for any artifacts still in "generating" state (e.g. after navigation)
+        for (const art of data as Artifact[]) {
+          if (art.status === "generating" && !pollingIntervalsRef.current.has(art.artifactType)) {
+            setGenerating((prev) => new Set(prev).add(art.artifactType));
+            startPolling(art.artifactType);
+          }
+        }
+      })
       .catch(() => {});
-  }, [projectId]);
+    // Cleanup all polling intervals on unmount
+    return () => {
+      pollingIntervalsRef.current.forEach((id) => clearInterval(id));
+      pollingIntervalsRef.current.clear();
+    };
+  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setLocalArtifacts((prev) => {
@@ -172,7 +189,43 @@ export function ArtifactPanel({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function startPolling(artifactType: string) {
+    if (pollingIntervalsRef.current.has(artifactType)) return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/artifacts`);
+        if (!res.ok) return;
+        const data: Artifact[] = await res.json();
+        const art = data.find((a) => a.artifactType === artifactType);
+        if (!art || art.status === "generating") return;
+
+        clearInterval(pollingIntervalsRef.current.get(artifactType));
+        pollingIntervalsRef.current.delete(artifactType);
+        setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
+
+        if (art.status === "failed") {
+          setGuardrailErrors((prev) => ({ ...prev, [artifactType]: "Generation failed — please try again." }));
+          toast({ title: "Generation failed", description: `${artifactType.replace(/_/g, " ")} could not be generated`, variant: "destructive" });
+          return;
+        }
+
+        setLocalArtifacts((prev) => {
+          const idx = prev.findIndex((a) => a.artifactType === artifactType);
+          if (idx >= 0) { const copy = [...prev]; copy[idx] = art; return copy; }
+          return [...prev, art];
+        });
+        setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
+        toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
+        router.refresh();
+      } catch {
+        // transient network error — keep polling
+      }
+    }, 3000);
+    pollingIntervalsRef.current.set(artifactType, id);
+  }
+
   async function generate(artifactType: string) {
+    if (pollingIntervalsRef.current.has(artifactType)) return; // already in flight
     setGenerating((prev) => new Set(prev).add(artifactType));
     setMenuFor(null);
     setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
@@ -185,19 +238,13 @@ export function ArtifactPanel({
       if (!res.ok) {
         const msg = data?.error?.message ?? data?.error ?? `Generation failed (${res.status})`;
         setGuardrailErrors((prev) => ({ ...prev, [artifactType]: msg }));
+        setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
         return;
       }
-      setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
-      setLocalArtifacts((prev) => {
-        const existing = prev.findIndex((a) => a.artifactType === artifactType);
-        if (existing >= 0) { const copy = [...prev]; copy[existing] = data; return copy; }
-        return [...prev, data];
-      });
-      toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
-      router.refresh();
+      // 202 — generation is running in background; poll until complete
+      startPolling(artifactType);
     } catch (err: any) {
       setGuardrailErrors((prev) => ({ ...prev, [artifactType]: err.message || "Generation failed" }));
-    } finally {
       setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
     }
   }

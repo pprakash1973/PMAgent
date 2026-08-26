@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateArtifact, generateDomainContext, type ArtifactTemplateOverride } from "@/lib/ai";
@@ -47,6 +47,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
 
   const { id } = await params;
+
+  // Reset stale "generating" artifacts (> 10 min) — guards against crashed instances
+  const staleThreshold = new Date(Date.now() - 10 * 60 * 1000);
+  await prisma.artifact.updateMany({
+    where: {
+      projectId: id,
+      status: "generating",
+      generationStartedAt: { lt: staleThreshold },
+    },
+    data: { status: "failed", generationStartedAt: null },
+  });
+
   const artifacts = await prisma.artifact.findMany({
     where: { projectId: id },
     include: {
@@ -175,114 +187,136 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     artifactType
   );
 
-  // Phase 2: domain pre-flight — Haiku synthesises project-specific domain guidance
-  const DOMAIN_AGENT_ARTIFACTS = ["wbs", "resource_plan", "risk_register"];
-  let dynamicDomainContext = "";
-  if (DOMAIN_AGENT_ARTIFACTS.includes(artifactType) && project.industry && project.description) {
-    dynamicDomainContext = await generateDomainContext(project.industry, project.description, project.customer);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let content: any;
-  try {
-    content = await generateArtifact(artifactType, projectContext, requirements, undefined, dynamicDomainContext, templateOverride);
-  } catch (err: any) {
-    console.error(`[artifact] generation failed for ${artifactType}:`, err);
-    return NextResponse.json(
-      { error: { code: "GENERATION_FAILED", message: err.message ?? "AI generation failed" } },
-      { status: 502 }
-    );
-  }
-
-  const existing = await prisma.artifact.findFirst({
+  // ── Upsert artifact as "generating" and return 202 immediately ────────────
+  // Generation runs in the background via after() — the client polls for completion.
+  const existingForUpsert = await prisma.artifact.findFirst({
     where: { projectId: id, artifactType },
     include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
   });
-  const newHash = hashArtifactContent(content);
 
-  let artifact;
-  if (existing) {
-    const currentHash = (existing.versions[0] as any)?.contentHash ?? null;
-    if (currentHash && currentHash === newHash) {
-      return NextResponse.json(
-        { noChange: true, currentVersion: existing.currentVersion, artifact: existing },
-        { status: 200 }
-      );
-    }
-    const newVersion = existing.currentVersion + 1;
-    const parentVersionId = existing.versions[0]?.id ?? null;
-    artifact = await prisma.artifact.update({
-      where: { id: existing.id },
-      data: { content, currentVersion: newVersion, status: "draft" },
-    });
-    await (prisma.artifactVersion as any).create({
-      data: {
-        artifactId: existing.id,
-        versionNumber: newVersion,
-        content,
-        contentHash: newHash,
-        source: "ai_regenerated",
-        approvalStatus: "unreviewed",
-        parentVersionId,
-        editedById: user.id,
-        appliedTemplateId: templateOverride?.templateId ?? null,
-      },
+  let pendingArtifact: any;
+  if (existingForUpsert) {
+    pendingArtifact = await prisma.artifact.update({
+      where: { id: existingForUpsert.id },
+      data: { status: "generating", generationStartedAt: new Date() },
     });
   } else {
-    artifact = await prisma.artifact.create({
+    pendingArtifact = await prisma.artifact.create({
       data: {
         projectId: id,
         artifactType,
         phase: catalogEntry.phase,
-        content,
-        currentVersion: 1,
-        status: "draft",
-      },
-    });
-    await (prisma.artifactVersion as any).create({
-      data: {
-        artifactId: artifact.id,
-        versionNumber: 1,
-        content,
-        contentHash: newHash,
-        source: "ai_generated",
-        approvalStatus: "unreviewed",
-        parentVersionId: null,
-        editedById: user.id,
-        appliedTemplateId: templateOverride?.templateId ?? null,
+        content: {},
+        currentVersion: 0,
+        status: "generating",
+        generationStartedAt: new Date(),
       },
     });
   }
 
-  // Mark selection as active
-  await prisma.artifactSelection.upsert({
-    where: { projectId_artifactType: { projectId: id, artifactType } },
-    create: {
-      projectId: id,
-      artifactType,
-      selectionStatus: "active",
-      selectedById: user.id,
-      selectedAt: new Date(),
-    },
-    update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
+  // ── Background: domain pre-flight + AI generation + save ──────────────────
+  after(async () => {
+    try {
+      const DOMAIN_AGENT_ARTIFACTS = ["wbs", "resource_plan", "risk_register"];
+      let dynamicDomainContext = "";
+      if (DOMAIN_AGENT_ARTIFACTS.includes(artifactType) && project.industry && project.description) {
+        dynamicDomainContext = await generateDomainContext(project.industry, project.description, project.customer);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const content: any = await generateArtifact(
+        artifactType, projectContext, requirements, undefined, dynamicDomainContext, templateOverride
+      );
+
+      const newHash = hashArtifactContent(content);
+
+      if (existingForUpsert) {
+        const currentHash = (existingForUpsert.versions[0] as any)?.contentHash ?? null;
+        const newVersion = existingForUpsert.currentVersion + 1;
+        const parentVersionId = existingForUpsert.versions[0]?.id ?? null;
+
+        if (currentHash && currentHash === newHash) {
+          // Content identical — just clear generating status
+          await prisma.artifact.update({
+            where: { id: pendingArtifact.id },
+            data: { status: "draft", generationStartedAt: null },
+          });
+          return;
+        }
+
+        await prisma.artifact.update({
+          where: { id: pendingArtifact.id },
+          data: { content, currentVersion: newVersion, status: "draft", generationStartedAt: null },
+        });
+        await (prisma.artifactVersion as any).create({
+          data: {
+            artifactId: pendingArtifact.id,
+            versionNumber: newVersion,
+            content,
+            contentHash: newHash,
+            source: "ai_regenerated",
+            approvalStatus: "unreviewed",
+            parentVersionId,
+            editedById: user.id,
+            appliedTemplateId: templateOverride?.templateId ?? null,
+          },
+        });
+      } else {
+        await prisma.artifact.update({
+          where: { id: pendingArtifact.id },
+          data: { content, currentVersion: 1, status: "draft", generationStartedAt: null },
+        });
+        await (prisma.artifactVersion as any).create({
+          data: {
+            artifactId: pendingArtifact.id,
+            versionNumber: 1,
+            content,
+            contentHash: newHash,
+            source: "ai_generated",
+            approvalStatus: "unreviewed",
+            parentVersionId: null,
+            editedById: user.id,
+            appliedTemplateId: templateOverride?.templateId ?? null,
+          },
+        });
+      }
+
+      // Mark selection as active
+      await prisma.artifactSelection.upsert({
+        where: { projectId_artifactType: { projectId: id, artifactType } },
+        create: { projectId: id, artifactType, selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
+        update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
+      });
+
+      // Sync into live DB tables
+      await syncArtifactToTables(id, artifactType, content).catch((err) => {
+        console.error(`[artifact-sync] generate sync failed for ${artifactType}:`, err);
+      });
+
+      // Extract canonical items (non-blocking)
+      const latestVersion = await (prisma.artifactVersion as any).findFirst({
+        where: { artifactId: pendingArtifact.id },
+        orderBy: { versionNumber: "desc" },
+        select: { id: true },
+      });
+      if (latestVersion) {
+        extractAndStoreItems(latestVersion.id, artifactType, content).catch((e) => {
+          console.error("[item-extractor]", e);
+        });
+      }
+
+      console.log(`[artifact] background generation complete: ${artifactType}`);
+    } catch (err: any) {
+      console.error(`[artifact] background generation failed for ${artifactType}:`, err);
+      await prisma.artifact.update({
+        where: { id: pendingArtifact.id },
+        data: { status: "failed", generationStartedAt: null },
+      }).catch(() => {});
+    }
   });
 
-  // Sync artifact content into live DB tables (RAID tab, Resources tab, milestones)
-  await syncArtifactToTables(id, artifactType, content).catch((err) => {
-    console.error(`[artifact-sync] generate sync failed for ${artifactType}:`, err);
-  });
-
-  // BL-P2: extract canonical items async (non-blocking — never delays the response)
-  const latestVersion = await (prisma.artifactVersion as any).findFirst({
-    where: { artifactId: artifact.id },
-    orderBy: { versionNumber: "desc" },
-    select: { id: true },
-  });
-  if (latestVersion) {
-    extractAndStoreItems(latestVersion.id, artifactType, content).catch((e) => {
-      console.error("[item-extractor]", e);
-    });
-  }
-
-  return NextResponse.json(artifact, { status: 201 });
+  return NextResponse.json(
+    { status: "generating", artifactId: pendingArtifact.id, artifactType },
+    { status: 202 }
+  );
 }
