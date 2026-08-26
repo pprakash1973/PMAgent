@@ -223,6 +223,37 @@ check("A4", "no route exceeds the Azure 230s request ceiling", () => {
   return "all within cap";
 });
 
+// ── Brand typography ────────────────────────────────────────────────────────
+check("FONT", "every export path sets the brand fonts", () => {
+  const problems = [];
+
+  const docx = readCode("src/lib/export-docx.ts");
+  if (!/document:\s*\{\s*run:\s*\{\s*font:\s*FONT_BODY/.test(docx)) problems.push("docx: no document-default body font");
+  if (!/heading1:\s*\{\s*run:\s*\{\s*font:\s*FONT_HEADING/.test(docx)) problems.push("docx: heading1 has no display font");
+
+  for (const rel of [
+    "src/lib/export-all-xlsx.ts",
+    "src/lib/export-evm-xlsx.ts",
+    "src/lib/export-risk-issue-xlsx.ts",
+    "src/lib/export-rtm-xlsx.ts",
+    "src/lib/export-wbs-xlsx.ts",
+  ]) {
+    const src = readCode(rel);
+    const writes = (src.match(/wb\.xlsx\.writeBuffer\(\)/g) ?? []).length;
+    const stamps = (src.match(/applyWorkbookFonts\(wb\)/g) ?? []).length;
+    if (stamps < writes) problems.push(`${path.basename(rel)}: ${writes} writeBuffer, only ${stamps} font stamp(s)`);
+  }
+
+  const pptx = readCode("src/lib/export-pptx.ts");
+  if (/fontFace:\s*["']Aptos["']/.test(pptx)) problems.push("pptx: hardcoded fontFace remains — use FONT_HEADING/FONT_BODY");
+
+  const print = readCode("src/components/artifact-document.tsx");
+  if (/font-family:\s*Arial/.test(print)) problems.push("print view: still hardcodes Arial");
+
+  if (problems.length) throw new Error(problems.join("\n    "));
+  return "docx, 5 xlsx exporters, pptx and print all branded";
+});
+
 // ── report ──────────────────────────────────────────────────────────────────
 const pass = results.filter((r) => r.pass);
 const fail = results.filter((r) => !r.pass);

@@ -19,6 +19,7 @@
  *   buildGenericLogXlsx        — 1 sheet: generic key-value table
  */
 import ExcelJS from "exceljs";
+import { applyWorkbookFonts } from "@/lib/export-fonts";
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 const UST = {
@@ -142,6 +143,7 @@ function newWb(): ExcelJS.Workbook {
 }
 
 async function toBuffer(wb: ExcelJS.Workbook): Promise<Buffer> {
+  applyWorkbookFonts(wb);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 

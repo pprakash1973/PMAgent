@@ -5,6 +5,7 @@
  * Sheet 3: Summary Dashboard
  */
 import ExcelJS from "exceljs";
+import { applyWorkbookFonts } from "@/lib/export-fonts";
 
 const UST = {
   navy:       "FF006E74",
@@ -276,6 +277,7 @@ export async function buildRtmXlsx(content: any): Promise<Buffer> {
   buildGapsSheet(wb, content);
   buildSummarySheet(wb, content);
 
+  applyWorkbookFonts(wb);
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }

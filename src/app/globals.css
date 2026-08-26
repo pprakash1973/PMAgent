@@ -65,6 +65,11 @@ body {
   margin: 0;
 }
 
+/* Aptos Display is the heading face; Calibri Light is the approved fallback */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Aptos Display', 'Calibri Light', 'Aptos', 'Calibri', system-ui, sans-serif;
+}
+
 .mono { font-family: 'Aptos Mono', 'Consolas', monospace; }
 
 ::-webkit-scrollbar { width: 7px; height: 7px; }

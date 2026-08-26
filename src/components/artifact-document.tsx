@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Printer, Download, Loader2, FileSpreadsheet, Presentation, FileText } from "lucide-react";
 import { toast } from "@/components/ui/toaster";
 import { ARTIFACT_FORMAT } from "@/lib/utils";
+import { CSS_HEADING_STACK, CSS_BODY_STACK } from "@/lib/export-fonts";
 
 type Props = { artifactType: string; content: Record<string, unknown>; projectId: string };
 
@@ -50,7 +51,8 @@ export function ArtifactDocument({ artifactType, content, projectId }: Props) {
     win.document.write(`
       <html><head><title>${artifactType.replace(/_/g, " ").toUpperCase()}</title>
       <style>
-        body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; padding: 32px; max-width: 900px; margin: 0 auto; }
+        body { font-family: ${CSS_BODY_STACK}; font-size: 12px; color: #1a1a1a; padding: 32px; max-width: 900px; margin: 0 auto; }
+        h1, h2, h3 { font-family: ${CSS_HEADING_STACK}; }
         h1 { font-size: 20px; color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px; margin-bottom: 20px; }
         h2 { font-size: 14px; color: #1e40af; margin-top: 20px; margin-bottom: 8px; }
         h3 { font-size: 12px; color: #374151; margin-top: 12px; margin-bottom: 4px; }

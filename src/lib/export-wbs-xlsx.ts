@@ -7,6 +7,7 @@
  *   Sheet 4: Quality Audit  (Pass=green, Fail=red, Partial=amber)
  */
 import ExcelJS from "exceljs";
+import { applyWorkbookFonts } from "@/lib/export-fonts";
 
 // ── UST brand palette ───────────────────────────────────────────────────────
 const UST = {
@@ -329,6 +330,7 @@ export async function buildWbsXlsx(content: any): Promise<Buffer> {
   buildScopeBaselineSheet(wb, content);
   buildQualityAuditSheet(wb, content);
 
+  applyWorkbookFonts(wb);
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }

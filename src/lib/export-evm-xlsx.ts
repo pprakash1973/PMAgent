@@ -5,6 +5,7 @@
  * Sheet 3: Verdict            (narrative + interpretation table)
  */
 import ExcelJS from "exceljs";
+import { applyWorkbookFonts } from "@/lib/export-fonts";
 
 const UST = {
   navy:      "FF006E74",
@@ -366,6 +367,7 @@ export async function buildEvmXlsx(content: any): Promise<Buffer> {
   buildDashboardSheet(wb, content);
   buildVerdictSheet(wb, content);
 
+  applyWorkbookFonts(wb);
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }

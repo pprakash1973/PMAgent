@@ -12,6 +12,7 @@
  *   2. Issue Summary  — counts by severity and category
  */
 import ExcelJS from "exceljs";
+import { applyWorkbookFonts } from "@/lib/export-fonts";
 
 // ── Palette ──────────────────────────────────────────────────────────────────
 const UST = {
@@ -387,6 +388,7 @@ export async function buildRiskRegisterXlsx(content: any): Promise<Buffer> {
   buildResponsePlanSheet(wb, risks);
   buildRiskDashboardSheet(wb, content, risks);
 
+  applyWorkbookFonts(wb);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
@@ -551,5 +553,6 @@ export async function buildIssueRegisterXlsx(content: any): Promise<Buffer> {
   buildIssueRegisterSheet(wb, issues);
   buildIssueSummarySheet(wb, issues);
 
+  applyWorkbookFonts(wb);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

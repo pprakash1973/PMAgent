@@ -3,6 +3,7 @@ import {
   TextRun, HeadingLevel, AlignmentType, WidthType, BorderStyle,
   ShadingType, convertInchesToTwip,
 } from "docx";
+import { FONT_HEADING, FONT_BODY } from "@/lib/export-fonts";
 
 const BLUE = "1E3A8A";
 const LIGHT_BLUE = "DBEAFE";
@@ -136,9 +137,12 @@ export async function buildDocx(artifactType: string, content: any): Promise<Buf
   const doc = new Document({
     styles: {
       default: {
-        heading1: { run: { bold: true, color: BLUE, size: 28 }, paragraph: { spacing: { before: 240, after: 120 } } },
-        heading2: { run: { bold: true, color: "1E40AF", size: 24 }, paragraph: { spacing: { before: 200, after: 80 } } },
-        heading3: { run: { bold: true, color: "374151", size: 22 }, paragraph: { spacing: { before: 160, after: 60 } } },
+        // Body face for every run that doesn't override it. Without this Word
+        // falls back to its own theme default, which is Calibri on older installs.
+        document: { run: { font: FONT_BODY, size: 22 } },
+        heading1: { run: { font: FONT_HEADING, bold: true, color: BLUE, size: 28 }, paragraph: { spacing: { before: 240, after: 120 } } },
+        heading2: { run: { font: FONT_HEADING, bold: true, color: "1E40AF", size: 24 }, paragraph: { spacing: { before: 200, after: 80 } } },
+        heading3: { run: { font: FONT_HEADING, bold: true, color: "374151", size: 22 }, paragraph: { spacing: { before: 160, after: 60 } } },
       },
     },
     sections: [{
