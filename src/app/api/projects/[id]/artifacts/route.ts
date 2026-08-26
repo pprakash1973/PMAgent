@@ -7,6 +7,7 @@ import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
 import { extractAndStoreItems } from "@/lib/item-extractor";
+import { requireProjectAccess } from "@/lib/project-access";
 
 async function resolveTemplate(
   orgId: string | null | undefined,
@@ -40,11 +41,16 @@ async function resolveTemplate(
   return { systemAddendum: pick.systemAddendum, userAddendum: pick.userAddendum, templateId: pick.id };
 }
 
-export const maxDuration = 300;
+// Azure (A4): App Service enforces a hard 230s load-balancer timeout that cannot
+// be raised. Stay below it so behaviour matches on Vercel and Azure.
+export const maxDuration = 220;
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const { id } = await params;
 
@@ -73,6 +79,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const user = session.user as any;
   const { id } = await params;

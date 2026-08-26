@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // Returns weekly EVM series: { date, pv, ev, ac, cpi, spi, eac }[]
 // plus summary: { bac, totalAC, totalEV, cpi, spi, eac, vac, etc }
@@ -8,6 +9,9 @@ import { auth } from "@/lib/auth";
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
   const { id } = await params;
 
   const [project, tasks, entries] = await Promise.all([

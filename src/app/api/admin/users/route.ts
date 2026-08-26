@@ -15,7 +15,7 @@ const createSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const { error, user } = await requireAdmin();
+  const { error, orgId } = await requireAdmin();
   if (error) return error;
 
   const { searchParams } = new URL(req.url);
@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status");
 
   const showDeleted = searchParams.get("showDeleted") === "true";
-  const where: any = showDeleted ? {} : { deletedAt: null };
+  // SEC: always scope to the calling admin's tenant
+  const where: any = showDeleted ? { orgId } : { orgId, deletedAt: null };
   if (role) where.role = role;
   if (status) where.status = status;
 

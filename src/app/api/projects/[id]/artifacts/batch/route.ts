@@ -7,8 +7,11 @@ import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { assembleEvidence, countGaps, extractGapFields } from "@/lib/evidence-assembler";
 import type { Prisma } from "@prisma/client";
+import { requireProjectAccess } from "@/lib/project-access";
 
-export const maxDuration = 300;
+// Azure (A4): App Service enforces a hard 230s load-balancer timeout that cannot
+// be raised. Stay below it so behaviour matches on Vercel and Azure.
+export const maxDuration = 220;
 
 export async function POST(
   req: NextRequest,
@@ -16,6 +19,9 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const user = session.user as any;
   const { id } = await params;

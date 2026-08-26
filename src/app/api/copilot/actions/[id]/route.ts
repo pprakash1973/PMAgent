@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// Azure (A4): App Service enforces a hard 230s load-balancer timeout that cannot
+// be raised. Stay below it so behaviour matches on Vercel and Azure.
+export const maxDuration = 220;
 
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";

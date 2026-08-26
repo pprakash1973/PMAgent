@@ -8,6 +8,7 @@ import { anthropic, ARTIFACT_SCHEMA_HINTS } from "@/lib/ai";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
 import { extractAndStoreItems } from "@/lib/item-extractor";
+import { requireProjectAccess } from "@/lib/project-access";
 
 function extractJson(text: string): Record<string, unknown> {
   const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
@@ -88,6 +89,9 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const { id, type } = await params;
 
@@ -101,6 +105,24 @@ export async function POST(
   const formData = await req.formData();
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+
+  // SEC (M2): the parsers below (pdf-parse, mammoth, xlsx) are all reachable
+  // zip/ReDoS amplification targets. Bound size and extension before parsing.
+  const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: `File too large (${(file.size / 1048576).toFixed(1)} MB). Maximum is 15 MB.` },
+      { status: 413 }
+    );
+  }
+  const ALLOWED_EXT = new Set(["pdf", "docx", "xlsx", "xls", "csv", "pptx", "txt"]);
+  const uploadExt = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!ALLOWED_EXT.has(uploadExt)) {
+    return NextResponse.json(
+      { error: `Unsupported file type ".${uploadExt}". Allowed: ${[...ALLOWED_EXT].join(", ")}` },
+      { status: 415 }
+    );
+  }
 
   let extractedText: string;
   try {

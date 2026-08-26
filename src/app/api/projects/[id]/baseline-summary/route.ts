@@ -4,6 +4,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { generateBaselineSummary } from "@/lib/baseline-copilot";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function POST(
   req: NextRequest,
@@ -11,6 +12,9 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const { id } = await params;
   const { runId } = await req.json();

@@ -81,16 +81,8 @@ export function DeliveryIntelligencePanel({ userRole }: { userRole: string }) {
       const res = await fetch("/api/dm/intelligence/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectName: row.projectName,
-          industry: row.industry,
-          spi: row.drivers.spi,
-          cpi: row.drivers.cpi,
-          riskExposure: row.drivers.riskExposure,
-          milestoneSlipPct: row.drivers.milestoneSlipPct,
-          deliveryScore: row.deliveryScore,
-          topRisk: row.topRisk,
-        }),
+        // Server re-derives every signal from the DB — only the id travels.
+        body: JSON.stringify({ projectId: row.projectId }),
       });
       const data = await res.json();
       if (data.recommendation) {

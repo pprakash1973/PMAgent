@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
   const { id } = await params;
 
   const artifact = await prisma.artifact.findFirst({

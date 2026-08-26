@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import * as XLSX from "xlsx";
+import { requireProjectAccess } from "@/lib/project-access";
 
 function fmtDate(d: Date | string | null | undefined): string {
   if (!d) return "";
@@ -139,6 +140,9 @@ export async function GET(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const { id } = await params;
   const user = session.user as any;

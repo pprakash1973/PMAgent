@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // DELETE an artifact (and its version history) so the user can regenerate or
 // re-upload a fresh one. The catalog selection is left intact so the row stays
@@ -11,6 +12,9 @@ export async function DELETE(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const { id, type } = await params;
 

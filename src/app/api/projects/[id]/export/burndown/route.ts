@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import * as XLSX from "xlsx";
+import { requireProjectAccess } from "@/lib/project-access";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -386,6 +387,9 @@ function buildEvmSummary(wb: XLSX.WorkBook, project: any, evmSummary: any) {
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const { id } = await params;
   const [project, costEntries, scheduleTasks] = await Promise.all([

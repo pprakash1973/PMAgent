@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { refreshAdvisories } from "@/lib/refresh-advisories";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,9 @@ export async function PATCH(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
 
   const { id, taskId } = await params;
   const body = await req.json();
@@ -106,6 +110,9 @@ export async function DELETE(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
   const { id, taskId } = await params;
 
   const task = await prisma.scheduleTask.findFirst({ where: { id: taskId, projectId: id } });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { requireProjectAccess } from "@/lib/project-access";
 
 export async function DELETE(
   _req: NextRequest,
@@ -8,6 +9,9 @@ export async function DELETE(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
   const { entryId } = await params;
   await prisma.costEntry.delete({ where: { id: entryId } });
   return NextResponse.json({ ok: true });
@@ -19,6 +23,9 @@ export async function PATCH(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
   const { entryId } = await params;
   const body = await req.json();
   const entry = await prisma.costEntry.update({

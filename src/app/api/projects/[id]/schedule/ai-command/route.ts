@@ -4,6 +4,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { anthropic } from "@/lib/ai";
+import { requireProjectAccess } from "@/lib/project-access";
 
 function addWorkingDays(start: Date, days: number): Date {
   const d = new Date(start);
@@ -26,6 +27,9 @@ export async function POST(
 ) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  // SEC: enforce tenant boundary — see lib/project-access.ts
+  const _acc = await requireProjectAccess((await params).id);
+  if (_acc.error) return _acc.error;
   await params;
 
   const body = await req.json();

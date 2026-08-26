@@ -10,7 +10,10 @@ export function proxy(req: NextRequest) {
     isStaticAsset ||
     pathname === "/login" ||
     pathname === "/register" ||
-    pathname.startsWith("/api/auth");
+    pathname.startsWith("/api/auth") ||
+    // Scheduler-invoked endpoints carry no session cookie; they authenticate with
+    // a bearer secret inside the route itself (see api/cron/*).
+    pathname.startsWith("/api/cron");
 
   // Check for Auth.js v5 session cookie (JWT strategy)
   // v5 uses "authjs.session-token"; v4 used "next-auth.session-token"

@@ -17,7 +17,25 @@ function createPrisma(): PrismaClient {
   const { Pool } = require("pg");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaPg } = require("@prisma/adapter-pg");
-  const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
+
+  // SEC: verify the server certificate. Disabling this (rejectUnauthorized:false)
+  // makes the DB connection trivially MITM-able — unacceptable in a hybrid tenancy
+  // where traffic crosses VNet / ExpressRoute / internet boundaries.
+  // Set DATABASE_CA_CERT (PEM) when the server uses a private/enterprise CA.
+  const caCert = process.env.DATABASE_CA_CERT;
+  const ssl = caCert
+    ? { rejectUnauthorized: true, ca: caCert }
+    : { rejectUnauthorized: true };
+
+  const pool = new Pool({
+    connectionString: url,
+    ssl,
+    // Bound the pool per process — App Service runs several workers per instance
+    // and Postgres connection ceilings are per-server, not per-process.
+    max: Number(process.env.DATABASE_POOL_MAX ?? 5),
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+  });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter } as any);
 }

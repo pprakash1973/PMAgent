@@ -10,5 +10,10 @@ export async function requireAdmin() {
   if (user.role !== "admin") {
     return { error: NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 }) };
   }
-  return { user };
+  // SEC: an admin is an admin *of one tenant*. Callers must scope every query by
+  // this orgId — without it an admin in one org can read and mutate all others.
+  if (!user.orgId) {
+    return { error: NextResponse.json({ error: { code: "FORBIDDEN" } }, { status: 403 }) };
+  }
+  return { user, orgId: user.orgId as string };
 }

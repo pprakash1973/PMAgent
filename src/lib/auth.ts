@@ -11,8 +11,30 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+// SEC (C4): Auth.js advisory — a missing/invalid secret is a configuration error
+// that can make existence-based `if (!session?.user)` checks fail open. Fail closed
+// and loudly at server start rather than silently at request time.
+//
+// Skipped during `next build`: the compiler imports this module to collect route
+// metadata, and build agents legitimately have no runtime secrets. Serving without
+// one is what must be prevented, not compiling.
+const AUTH_SECRET = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+const IS_BUILD = process.env.NEXT_PHASE === "phase-production-build";
+if (!IS_BUILD && (!AUTH_SECRET || AUTH_SECRET.length < 32)) {
+  throw new Error(
+    "AUTH_SECRET is missing or shorter than 32 characters. Refusing to start — " +
+      "an unset secret can cause authentication checks to fail open. " +
+      "Generate one with: openssl rand -base64 32"
+  );
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  secret: AUTH_SECRET,
+  // Azure (A2): Auth.js only auto-trusts the request host on Vercel. Without this
+  // every sign-in on App Service / Container Apps fails with UntrustedHost, and it
+  // is required when the app answers on several hostnames in a hybrid tenancy.
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
