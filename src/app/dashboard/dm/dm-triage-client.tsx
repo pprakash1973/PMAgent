@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
+import { DeliveryIntelligencePanel } from "@/components/delivery-intelligence-panel";
 
 type TriageRow = {
   id: string; name: string; accountId: string | null; accountName: string | null;
@@ -743,7 +744,7 @@ function HealthOverview({ data, onSelect, userRole }: { data: TriageData; onSele
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function DmTriageClient({ data, userName, userRole }: { data: TriageData; userName: string; userRole?: string }) {
-  const [tab, setTab] = useState<"portfolio" | "health">("portfolio");
+  const [tab, setTab] = useState<"portfolio" | "health" | "intelligence">("portfolio");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -788,7 +789,7 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 60px)", overflow: "hidden", fontFamily: C.FF }}>
       {/* ── Tab bar ─────────────────────────────────────── */}
       <div style={{ background: C.tabBar, borderBottom: `1px solid ${C.border}`, padding: "0 22px", display: "flex", gap: 4, flexShrink: 0 }}>
-        {([["portfolio", "My Portfolio"], ["health", "Health Overview"]] as const).map(([key, label]) => (
+        {([["portfolio", "My Portfolio"], ["health", "Health Overview"], ["intelligence", "Delivery Intelligence"]] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)} style={{
             padding: "12px 16px 11px", border: "none", background: "transparent",
             font: `600 13.5px ${C.FF}`,
@@ -929,6 +930,13 @@ export function DmTriageClient({ data, userName, userRole }: { data: TriageData;
       {/* ── Health Overview tab ─────────────────────────── */}
       {tab === "health" && (
         <HealthOverview data={data} onSelect={selectAndView} userRole={userRole} />
+      )}
+
+      {/* ── Delivery Intelligence tab ────────────────────── */}
+      {tab === "intelligence" && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", background: "#F2F7F8" }}>
+          <DeliveryIntelligencePanel userRole={userRole ?? "dm"} />
+        </div>
       )}
 
       {/* ── Escalation modal ─────────────────────────────── */}
