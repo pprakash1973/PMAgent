@@ -7,7 +7,7 @@ import {
   ShieldAlert, MessageSquare, Grid3x3, BadgeCheck, ClipboardList, AlertCircle,
   Gavel, FileBarChart, RefreshCw, GraduationCap, FileCheck, TrendingUp, ScrollText,
   Wand2, Loader2, Eye, EyeOff, Download, Upload, Trash2, MoreHorizontal, Check, Lock,
-  History,
+  History, Plus,
 } from "lucide-react";
 import { ArtifactDocument } from "@/components/artifact-document";
 import { ArtifactVersionRail } from "@/components/artifact-version-rail";
@@ -40,6 +40,13 @@ const PHASES = [
   { id: "closure",    label: "Closure",    dot: "#ef4444", pill: { bg: "#fee2e2", color: "#b91c1c" } },
 ];
 
+const PHASE_GROUPS = [
+  { id: "initiation",            label: "Initiation",             color: "#f59e0b", bg: "rgba(245,158,11,.05)",  phases: ["initiation"] },
+  { id: "planning",              label: "Planning",               color: "#3b82f6", bg: "rgba(59,130,246,.05)",  phases: ["planning"] },
+  { id: "execution_monitoring",  label: "Execution & Monitoring", color: "#22c55e", bg: "rgba(34,197,94,.05)",   phases: ["execution", "monitoring"] },
+  { id: "closure",               label: "Closure",                color: "#ef4444", bg: "rgba(239,68,68,.05)",   phases: ["closure"] },
+];
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ARTIFACT_ICON: Record<string, any> = {
   initiation_deck: Presentation, project_charter: ScrollText, business_case: FileText,
@@ -56,19 +63,15 @@ const ARTIFACT_ICON: Record<string, any> = {
 
 const GOVERNANCE_LOCKED = new Set(["wbs", "resource_plan", "cost_plan", "raci_matrix", "traceability_matrix"]);
 
-// ── Lifecycle stepper ──────────────────────────────────────────────────────
-// Four governance stages. `stage` is how many segments are filled, so
-// 0 = nothing started, 4 = approved.
 const STAGE_LABELS = ["Draft", "Generated", "Reviewed", "Approved"];
 
 function stageOf(artifact: Artifact | undefined, isGen: boolean): number {
   if (isGen) return 1;
   if (!artifact) return 0;
   const s = (artifact.status ?? "draft").toLowerCase();
-  if (s === "generating") return 1;
   if (s === "approved") return 4;
   if (s === "reviewed" || s === "in_review") return 3;
-  return 2; // "draft" — the only value the API writes today
+  return 2;
 }
 
 function stageText(stage: number, isGen: boolean): { label: string; color: string } {
@@ -83,10 +86,6 @@ function stageText(stage: number, isGen: boolean): { label: string; color: strin
 
 const PANEL_CSS = `
 .art-panel{container-type:inline-size}
-.art-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;padding:12px 16px}
-@container (max-width:900px){.art-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@container (max-width:680px){.art-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@container (max-width:420px){.art-grid{grid-template-columns:1fr}}
 .art-card{transition:box-shadow .18s,transform .18s,border-color .18s}
 .art-card:hover{box-shadow:0 2px 6px rgba(16,38,48,.09),0 10px 24px rgba(16,38,48,.09);transform:translateY(-2px)}
 @keyframes art-pulse{0%,100%{opacity:1}50%{opacity:.28}}
@@ -116,40 +115,32 @@ export function ArtifactPanel({
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [guardrailErrors, setGuardrailErrors] = useState<Record<string, string>>({});
   const [versionRailFor, setVersionRailFor] = useState<{ id: string; type: string; currentVersion: number } | null>(null);
-  const [selectedOptional, setSelectedOptional] = useState<Set<string>>(new Set());
-  const [promoted, setPromoted] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem(`promoted:${projectId}`);
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch { return new Set(); }
+
+  // Phase-lane selection state — persisted to DB via /artifacts/selections.
+  // Only count records with selectionStatus "selected" (explicitly chosen via the modal).
+  // "active" records created by the generate/batch routes are shown via localArtifacts, not here.
+  const [localSelections, setLocalSelections] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    for (const sel of selections) {
+      if (sel.selectionStatus === "selected") s.add(sel.artifactType);
+    }
+    for (const a of artifacts) s.add(a.artifactType);
+    return s;
   });
-  const [phaseOverrides, setPhaseOverrides] = useState<Record<string, string>>({});
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [modalPicks, setModalPicks] = useState<Set<string>>(new Set());
+  const [savingSelections, setSavingSelections] = useState(false);
+
   const panelRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef<string | null>(null);
-  const pollingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   useEffect(() => {
     fetch(`/api/projects/${projectId}/artifacts`)
       .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (!Array.isArray(data)) return;
-        setLocalArtifacts(data);
-        // Resume polling for any artifacts still in "generating" state (e.g. after navigation)
-        for (const art of data as Artifact[]) {
-          if (art.status === "generating" && !pollingIntervalsRef.current.has(art.artifactType)) {
-            setGenerating((prev) => new Set(prev).add(art.artifactType));
-            startPolling(art.artifactType);
-          }
-        }
-      })
+      .then((data) => { if (Array.isArray(data)) setLocalArtifacts(data); })
       .catch(() => {});
-    // Cleanup all polling intervals on unmount
-    return () => {
-      pollingIntervalsRef.current.forEach((id) => clearInterval(id));
-      pollingIntervalsRef.current.clear();
-    };
-  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   useEffect(() => {
     setLocalArtifacts((prev) => {
@@ -162,7 +153,15 @@ export function ArtifactPanel({
     });
   }, [artifacts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Listen for Copilot-triggered regeneration events
+  // Sync newly generated artifacts into localSelections so they always appear
+  useEffect(() => {
+    setLocalSelections((prev) => {
+      const next = new Set(prev);
+      for (const a of localArtifacts) next.add(a.artifactType);
+      return next;
+    });
+  }, [localArtifacts]);
+
   useEffect(() => {
     function onGenerating(e: Event) {
       const { artifactType } = (e as CustomEvent).detail;
@@ -189,43 +188,7 @@ export function ArtifactPanel({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function startPolling(artifactType: string) {
-    if (pollingIntervalsRef.current.has(artifactType)) return;
-    const id = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/projects/${projectId}/artifacts`);
-        if (!res.ok) return;
-        const data: Artifact[] = await res.json();
-        const art = data.find((a) => a.artifactType === artifactType);
-        if (!art || art.status === "generating") return;
-
-        clearInterval(pollingIntervalsRef.current.get(artifactType));
-        pollingIntervalsRef.current.delete(artifactType);
-        setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
-
-        if (art.status === "failed") {
-          setGuardrailErrors((prev) => ({ ...prev, [artifactType]: "Generation failed — please try again." }));
-          toast({ title: "Generation failed", description: `${artifactType.replace(/_/g, " ")} could not be generated`, variant: "destructive" });
-          return;
-        }
-
-        setLocalArtifacts((prev) => {
-          const idx = prev.findIndex((a) => a.artifactType === artifactType);
-          if (idx >= 0) { const copy = [...prev]; copy[idx] = art; return copy; }
-          return [...prev, art];
-        });
-        setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
-        toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
-        router.refresh();
-      } catch {
-        // transient network error — keep polling
-      }
-    }, 3000);
-    pollingIntervalsRef.current.set(artifactType, id);
-  }
-
   async function generate(artifactType: string) {
-    if (pollingIntervalsRef.current.has(artifactType)) return; // already in flight
     setGenerating((prev) => new Set(prev).add(artifactType));
     setMenuFor(null);
     setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
@@ -234,17 +197,48 @@ export function ArtifactPanel({
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ artifactType }),
       });
-      const data = await res.json().catch(() => ({}));
+      // Non-SSE error response (auth, validation, guardrail)
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         const msg = data?.error?.message ?? data?.error ?? `Generation failed (${res.status})`;
         setGuardrailErrors((prev) => ({ ...prev, [artifactType]: msg }));
-        setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
         return;
       }
-      // 202 — generation is running in background; poll until complete
-      startPolling(artifactType);
+      // Parse SSE stream — tokens arrive as {chunk}, final result as {done, artifact}
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const json = JSON.parse(line.slice(6));
+            if (json.error) {
+              setGuardrailErrors((prev) => ({ ...prev, [artifactType]: json.error }));
+              break outer;
+            }
+            if (json.done && json.artifact) {
+              setGuardrailErrors((prev) => { const n = { ...prev }; delete n[artifactType]; return n; });
+              setLocalArtifacts((prev) => {
+                const idx = prev.findIndex((a) => a.artifactType === artifactType);
+                if (idx >= 0) { const copy = [...prev]; copy[idx] = json.artifact; return copy; }
+                return [...prev, json.artifact];
+              });
+              toast({ title: "Artifact generated", description: `${artifactType.replace(/_/g, " ")} is ready` });
+              router.refresh();
+              break outer;
+            }
+          } catch { /* skip malformed events */ }
+        }
+      }
     } catch (err: any) {
       setGuardrailErrors((prev) => ({ ...prev, [artifactType]: err.message || "Generation failed" }));
+    } finally {
       setGenerating((prev) => { const n = new Set(prev); n.delete(artifactType); return n; });
     }
   }
@@ -305,34 +299,48 @@ export function ArtifactPanel({
     if (file && target) uploadArtifact(target, file);
   }
 
-  function handleMoveToPhase() {
-    setPromoted((prev) => {
-      const next = new Set(prev);
-      selectedOptional.forEach((t) => next.add(t));
-      try { localStorage.setItem(`promoted:${projectId}`, JSON.stringify([...next])); } catch {}
-      return next;
-    });
-    const count = selectedOptional.size;
-    setSelectedOptional(new Set());
-    toast({ title: `${count} artifact${count !== 1 ? "s" : ""} moved up`, description: "They now appear in the Recommended section" });
+  function openModal(groupId: string) {
+    const group = PHASE_GROUPS.find((g) => g.id === groupId)!;
+    const groupTypes = catalog.filter((c) => group.phases.includes(c.phase)).map((c) => c.type);
+    const currentPicks = groupTypes.filter((t) => localSelections.has(t));
+    // Edit mode (lane already has items): pre-populate current selections.
+    // Add mode (empty lane): start with nothing checked so PM consciously picks.
+    setModalPicks(new Set(currentPicks));
+    setActiveModal(groupId);
   }
 
-  const generatedCount = localArtifacts.length;
-  const effectiveRecommended = new Set([
-    ...catalog.filter((c) => c.mandatory).map((c) => c.type),
-    ...promoted,
-    ...Object.keys(phaseOverrides),
-  ]);
-
-  function phasePill(phaseId: string) {
-    const ph = PHASES.find((p) => p.id === phaseId);
-    if (!ph) return null;
-    return (
-      <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: "0.04em", padding: "2px 6px", borderRadius: 10, background: ph.pill.bg, color: ph.pill.color, whiteSpace: "nowrap" as const }}>
-        {ph.label}
-      </span>
+  async function applySelections(groupId: string) {
+    const group = PHASE_GROUPS.find((g) => g.id === groupId)!;
+    const allGroupTypes = catalog.filter((c) => group.phases.includes(c.phase)).map((c) => c.type);
+    const toAdd = allGroupTypes.filter((t) => modalPicks.has(t));
+    const toRemove = allGroupTypes.filter(
+      (t) => !modalPicks.has(t) && !localArtifacts.some((a) => a.artifactType === t)
     );
+    setSavingSelections(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/artifacts/selections`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ add: toAdd, remove: toRemove }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setLocalSelections((prev) => {
+        const next = new Set(prev);
+        toAdd.forEach((t) => next.add(t));
+        toRemove.forEach((t) => next.delete(t));
+        return next;
+      });
+      setActiveModal(null);
+      if (toAdd.length > 0) {
+        toast({ title: `${toAdd.length} artifact${toAdd.length !== 1 ? "s" : ""} added to plan` });
+      }
+    } catch {
+      toast({ title: "Failed to save selections", variant: "destructive" });
+    } finally {
+      setSavingSelections(false);
+    }
   }
+
+  // ── Inline components ──────────────────────────────────────────────────────
 
   function ExpandedViewer({ entryType }: { entryType: string }) {
     const art = localArtifacts.find((a) => a.artifactType === entryType);
@@ -354,8 +362,7 @@ export function ArtifactPanel({
     );
   }
 
-  // Lifecycle-stepper card — mode "rec" shows star badge, mode "opt" shows checkbox
-  function ArtifactMiniCard({ entry, mode }: { entry: CatalogEntry; mode: "rec" | "opt" }) {
+  function ArtifactMiniCard({ entry }: { entry: CatalogEntry }) {
     const artifact = localArtifacts.find((a) => a.artifactType === entry.type);
     const isGen = generating.has(entry.type);
     const isDel = deleting === entry.type;
@@ -363,7 +370,6 @@ export function ArtifactPanel({
     const format = (ARTIFACT_FORMAT[entry.type] ?? "docx").toUpperCase();
     const Icon = ARTIFACT_ICON[entry.type] ?? FileText;
     const isExpandedCard = expanded === entry.type;
-    const isSelected = selectedOptional.has(entry.type);
     const isLocked = engagementMode === "high_level" && GOVERNANCE_LOCKED.has(entry.type);
     const stage = stageOf(artifact, isGen);
     const status = stageText(stage, isGen);
@@ -372,19 +378,9 @@ export function ArtifactPanel({
     const guardrail = guardrailErrors[entry.type];
     const hasCustomTemplate = !!artifact?.versions?.[0]?.appliedTemplateId;
 
-    function toggleSelect(ev: React.MouseEvent) {
-      ev.stopPropagation();
-      setSelectedOptional((prev) => {
-        const n = new Set(prev);
-        if (n.has(entry.type)) n.delete(entry.type); else n.add(entry.type);
-        return n;
-      });
-    }
-
     const segStyle = (i: number): React.CSSProperties => {
       const base: React.CSSProperties = { flex: 1, height: 4, borderRadius: 99, background: "#e5e7eb", transition: "background .4s" };
       if (isGen && i === 1) return { ...base, background: C.primaryAlt };
-      // Fill ALL 4 segments once generated — the card is complete
       if (stage >= 2) return { ...base, background: stage === 4 ? C.green : C.primary };
       if (i < stage) return { ...base, background: C.primary };
       return base;
@@ -396,11 +392,10 @@ export function ArtifactPanel({
         style={{
           display: "grid", gridTemplateColumns: "4px minmax(0,1fr)",
           borderRadius: 12, position: "relative",
-          background: idle && !isSelected ? "transparent" : C.surface,
-          border: isSelected ? `1.5px solid ${C.primary}`
-            : idle ? `1.5px dashed ${C.border}`
-            : `1.5px solid ${C.border}`,
-          boxShadow: idle && !isSelected ? "none" : "0 1px 2px rgba(16,38,48,.06), 0 3px 10px rgba(16,38,48,.05)",
+          flex: "0 0 220px",
+          background: idle ? "transparent" : C.surface,
+          border: idle ? `1.5px dashed ${C.border}` : `1.5px solid ${C.border}`,
+          boxShadow: idle ? "none" : "0 1px 2px rgba(16,38,48,.06), 0 3px 10px rgba(16,38,48,.05)",
           outline: isExpandedCard ? `2px solid ${C.primary}` : "none", outlineOffset: 2,
           opacity: isDel ? 0.5 : 1,
         }}
@@ -408,25 +403,8 @@ export function ArtifactPanel({
         <div style={{ background: idle ? C.border : rail, borderRadius: "10px 0 0 10px" }} />
 
         <div style={{ padding: "11px 12px 10px", minWidth: 0 }}>
-          {/* Row 1 — select/star, icon, title, format */}
+          {/* Row 1 — icon, title, format */}
           <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
-            {mode === "opt" ? (
-              <button
-                type="button" role="checkbox" aria-checked={isSelected}
-                aria-label={`Select ${entry.label}`}
-                onClick={toggleSelect}
-                style={{
-                  width: 15, height: 15, flexShrink: 0, padding: 0, borderRadius: 4, cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  border: isSelected ? `1.5px solid ${C.primary}` : `1.5px solid ${C.border}`,
-                  background: isSelected ? C.primary : C.surface,
-                }}
-              >
-                {isSelected && <Check style={{ width: 9, height: 9, color: "#fff" }} />}
-              </button>
-            ) : (
-              <span aria-hidden style={{ fontSize: 12, color: "#F59E0B", lineHeight: 1, flexShrink: 0 }}>★</span>
-            )}
             <div style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: idle ? C.surface2 : "rgba(0,110,116,.09)" }}>
               <Icon style={{ width: 15, height: 15, color: idle ? C.text3 : C.primary }} />
             </div>
@@ -438,17 +416,13 @@ export function ArtifactPanel({
           </div>
 
           {/* Lifecycle stepper */}
-          <div
-            style={{ display: "flex", gap: 4, marginBottom: 6 }}
-            role="img"
-            aria-label={isLocked ? "Governance locked" : `${STAGE_LABELS[Math.max(0, stage - 1)]} — stage ${stage} of 4`}
-          >
+          <div style={{ display: "flex", gap: 4, marginBottom: 6 }} role="img" aria-label={isLocked ? "Governance locked" : `${STAGE_LABELS[Math.max(0, stage - 1)]} — stage ${stage} of 4`}>
             {[0, 1, 2, 3].map((i) => (
               <i key={i} className={isGen && i === 1 ? "art-seg-now" : undefined} style={segStyle(i)} />
             ))}
           </div>
 
-          {/* Status line — replaces the four stage labels at this density */}
+          {/* Status line */}
           <div style={{ fontSize: 10.5, fontWeight: 600, marginBottom: 9, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: isLocked ? C.amber : status.color }}>
             {isLocked ? "🔒 Governance locked" : isUp ? "Merging upload…" : <>{isGen ? <GeneratingLine hasCustomTemplate={hasCustomTemplate} /> : status.label}</>}
           </div>
@@ -463,53 +437,50 @@ export function ArtifactPanel({
             </div>
           )}
 
-          {/* Footer — phase pill + actions */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-            {phasePill(entry.phase)}
-            <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              {isLocked ? (
-                <button disabled style={{ fontSize: 10.5, padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "not-allowed" }}>Locked</button>
-              ) : isGen ? (
-                <Loader2 className="animate-spin" style={{ width: 14, height: 14, color: C.primaryAlt }} />
-              ) : artifact ? (
-                <>
-                  <button onClick={() => setExpanded(isExpandedCard ? null : entry.type)} style={{ fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.primary}`, background: "transparent", color: C.primary, cursor: "pointer" }}>{isExpandedCard ? "Hide" : "View"}</button>
-                  <button title="Download" aria-label="Download" onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)} style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}><Download style={{ width: 12, height: 12 }} /></button>
-                  <span style={{ position: "relative", display: "flex" }}>
-                    <button
-                      title="More" aria-label="More actions" aria-expanded={menuFor === entry.type}
-                      onClick={() => setMenuFor(menuFor === entry.type ? null : entry.type)}
-                      style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer" }}
-                    ><MoreHorizontal style={{ width: 12, height: 12 }} /></button>
-                    {menuFor === entry.type && (
-                      <>
-                        <div onClick={() => setMenuFor(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                        <div style={{ position: "absolute", right: 0, bottom: "calc(100% + 6px)", zIndex: 41, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, boxShadow: "0 8px 26px rgba(0,0,0,.14)", padding: 5, minWidth: 178, textAlign: "left" }}>
-                          <MenuItem icon={<Upload style={{ width: 13, height: 13 }} />} label={isUp ? "Merging…" : "Upload new version"} onClick={() => handleUploadClick(entry.type)} disabled={!!uploading} />
-                          <MenuItem icon={<RefreshCw style={{ width: 13, height: 13 }} />} label="Regenerate" onClick={() => generate(entry.type)} />
-                          <MenuItem icon={<History style={{ width: 13, height: 13 }} />} label="Version history" onClick={() => { setMenuFor(null); if (artifact) setVersionRailFor({ id: artifact.id, type: entry.type, currentVersion: artifact.currentVersion ?? 1 }); }} />
-                          <MenuItem icon={<Trash2 style={{ width: 13, height: 13 }} />} label="Delete" onClick={() => deleteArtifact(entry.type)} disabled={!!deleting} danger />
-                        </div>
-                      </>
-                    )}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => generate(entry.type)} style={{ fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 5, border: entry.mandatory ? "none" : `1px solid ${C.primary}`, background: entry.mandatory ? C.primary : "transparent", color: entry.mandatory ? "#fff" : C.primary, cursor: "pointer" }}>Generate</button>
-                  <button title="Upload existing" aria-label="Upload existing" disabled={!!uploading} onClick={() => handleUploadClick(entry.type)} style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: uploading ? "default" : "pointer", opacity: uploading ? 0.5 : 1 }}><Upload style={{ width: 12, height: 12 }} /></button>
-                </>
-              )}
-            </span>
+          {/* Footer — actions */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+            {isLocked ? (
+              <button disabled style={{ fontSize: 10.5, padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "not-allowed" }}>Locked</button>
+            ) : isGen ? (
+              <Loader2 className="animate-spin" style={{ width: 14, height: 14, color: C.primaryAlt }} />
+            ) : artifact ? (
+              <>
+                <button onClick={() => setExpanded(isExpandedCard ? null : entry.type)} style={{ fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 5, border: `1px solid ${C.primary}`, background: "transparent", color: C.primary, cursor: "pointer" }}>{isExpandedCard ? "Hide" : "View"}</button>
+                <button title="Download" aria-label="Download" onClick={() => triggerDownload(`/api/projects/${projectId}/artifacts/${entry.type}/export`)} style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}><Download style={{ width: 12, height: 12 }} /></button>
+                <span style={{ position: "relative", display: "flex" }}>
+                  <button
+                    title="More" aria-label="More actions" aria-expanded={menuFor === entry.type}
+                    onClick={() => setMenuFor(menuFor === entry.type ? null : entry.type)}
+                    style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, cursor: "pointer" }}
+                  ><MoreHorizontal style={{ width: 12, height: 12 }} /></button>
+                  {menuFor === entry.type && (
+                    <>
+                      <div onClick={() => setMenuFor(null)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                      <div style={{ position: "absolute", right: 0, bottom: "calc(100% + 6px)", zIndex: 41, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 9, boxShadow: "0 8px 26px rgba(0,0,0,.14)", padding: 5, minWidth: 178, textAlign: "left" }}>
+                        <MenuItem icon={<Upload style={{ width: 13, height: 13 }} />} label={isUp ? "Merging…" : "Upload new version"} onClick={() => handleUploadClick(entry.type)} disabled={!!uploading} />
+                        <MenuItem icon={<RefreshCw style={{ width: 13, height: 13 }} />} label="Regenerate" onClick={() => generate(entry.type)} />
+                        <MenuItem icon={<History style={{ width: 13, height: 13 }} />} label="Version history" onClick={() => { setMenuFor(null); if (artifact) setVersionRailFor({ id: artifact.id, type: entry.type, currentVersion: artifact.currentVersion ?? 1 }); }} />
+                        <MenuItem icon={<Trash2 style={{ width: 13, height: 13 }} />} label="Delete" onClick={() => deleteArtifact(entry.type)} disabled={!!deleting} danger />
+                      </div>
+                    </>
+                  )}
+                </span>
+              </>
+            ) : (
+              <>
+                <button onClick={() => generate(entry.type)} style={{ fontSize: 10.5, fontWeight: 600, padding: "3px 8px", borderRadius: 5, border: "none", background: C.primary, color: "#fff", cursor: "pointer" }}>
+                  Generate
+                </button>
+                <button title="Upload existing" aria-label="Upload existing" disabled={!!uploading} onClick={() => handleUploadClick(entry.type)} style={{ display: "flex", padding: "4px 5px", borderRadius: 5, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: uploading ? "default" : "pointer", opacity: uploading ? 0.5 : 1 }}><Upload style={{ width: 12, height: 12 }} /></button>
+              </>
+            )}
           </div>
         </div>
       </div>
     );
   }
 
-  const recEntries = catalog.filter((c) => effectiveRecommended.has(c.type));
-  const optionalEntries = catalog.filter((c) => !effectiveRecommended.has(c.type));
-  const selCount = selectedOptional.size;
+  const generatedCount = localArtifacts.length;
 
   return (
     <div ref={panelRef} className="art-panel" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, position: "relative" }}>
@@ -519,56 +490,63 @@ export function ArtifactPanel({
       {/* Header */}
       <div style={{ padding: "13px 16px 11px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>Project Artifacts</div>
-        <div style={{ fontSize: 12, color: C.text3 }}>{generatedCount} of {catalog.length} generated</div>
+        <div style={{ fontSize: 12, color: C.text3 }}>{generatedCount} generated · {localSelections.size} planned</div>
       </div>
 
-      {/* ── RECOMMENDED SECTION ── */}
-      <div style={{ borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: "rgba(0,110,116,.07)", borderBottom: `1px solid rgba(0,110,116,.15)` }}>
-          <span style={{ fontSize: 13, color: "#F59E0B" }}>★</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#006E74" }}>Recommended</span>
-          <span style={{ fontSize: 11, color: "rgba(0,110,116,.5)", marginLeft: "auto" }}>Move Up optional artifacts to add them here</span>
-        </div>
-        <div className="art-grid">
-          {recEntries.map((entry) => <ArtifactMiniCard key={entry.type} entry={entry} mode="rec" />)}
-        </div>
-        {expanded && recEntries.some((e) => e.type === expanded) && <ExpandedViewer entryType={expanded} />}
-      </div>
+      {/* ── Phase Lanes ── */}
+      {PHASE_GROUPS.map((group) => {
+        const groupEntries = catalog.filter((c) => group.phases.includes(c.phase));
+        const laneEntries = groupEntries.filter((e) => localSelections.has(e.type));
+        const isEmpty = laneEntries.length === 0;
 
-      {/* ── OPTIONAL SECTION ── */}
-      <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: C.surface2, borderBottom: `1px solid ${C.border}` }}>
-          <span style={{ fontSize: 13, color: C.text3 }}>☆</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: C.text2 }}>Optional</span>
-          <span style={{ fontSize: 11, color: C.textMuted, marginLeft: "auto" }}>Select cards to move up</span>
-        </div>
+        return (
+          <div key={group.id} style={{ borderBottom: `1px solid ${C.border}` }}>
+            {/* Lane header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", background: group.bg }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: group.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{group.label}</span>
+              {laneEntries.length > 0 && (
+                <span style={{ fontSize: 11, color: C.text3 }}>
+                  {laneEntries.length} artifact{laneEntries.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              <button
+                onClick={() => openModal(group.id)}
+                style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.primaryBorder}`, background: "transparent", color: C.primary, cursor: "pointer" }}
+              >
+                <Plus style={{ width: 12, height: 12 }} />
+                {laneEntries.length > 0 ? "Edit" : "Add"}
+              </button>
+            </div>
 
-        {/* Bulk action bar */}
-        {selCount > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "rgba(0,110,116,.06)", borderBottom: `1px solid rgba(0,110,116,.2)` }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: C.primary }}>{selCount} selected</span>
-            <button
-              onClick={handleMoveToPhase}
-              style={{ fontSize: 12, padding: "4px 12px", borderRadius: 6, border: "none", background: C.primary, color: "#fff", cursor: "pointer", fontWeight: 500 }}
-            >★ Move Up</button>
-            <button
-              onClick={() => setSelectedOptional(new Set())}
-              style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer", marginLeft: "auto" }}
-            >Clear</button>
+            {/* Lane body */}
+            {isEmpty ? (
+              <button
+                onClick={() => openModal(group.id)}
+                style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "32px 0", cursor: "pointer", background: "transparent", border: "none" }}
+              >
+                <div style={{ width: 52, height: 52, borderRadius: "50%", border: `2px dashed ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Plus style={{ width: 22, height: 22, color: C.textMuted }} />
+                </div>
+                <span style={{ fontSize: 13, color: C.textMuted }}>
+                  Select {group.label.toLowerCase()} artifacts
+                </span>
+              </button>
+            ) : (
+              <div style={{ padding: "12px 16px", display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {laneEntries.map((entry) => <ArtifactMiniCard key={entry.type} entry={entry} />)}
+              </div>
+            )}
+
+            {/* Expanded viewer anchored to this lane */}
+            {expanded && laneEntries.some((e) => e.type === expanded) && (
+              <ExpandedViewer entryType={expanded} />
+            )}
           </div>
-        )}
+        );
+      })}
 
-        {optionalEntries.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "24px 0", fontSize: 13, color: C.textMuted }}>All optional artifacts have been moved to recommended.</div>
-        ) : (
-          <div className="art-grid">
-            {optionalEntries.map((entry) => <ArtifactMiniCard key={entry.type} entry={entry} mode="opt" />)}
-          </div>
-        )}
-        {expanded && optionalEntries.some((e) => e.type === expanded) && <ExpandedViewer entryType={expanded} />}
-      </div>
-
-      {/* Version history rail (portal-style overlay) */}
+      {/* Version history rail */}
       {versionRailFor && (
         <ArtifactVersionRail
           artifactId={versionRailFor.id}
@@ -578,9 +556,91 @@ export function ArtifactPanel({
           onRestored={() => { router.refresh(); setVersionRailFor(null); }}
         />
       )}
+
+      {/* ── Selection modal ── */}
+      {activeModal && (() => {
+        const group = PHASE_GROUPS.find((g) => g.id === activeModal)!;
+        const groupEntries = catalog.filter((c) => group.phases.includes(c.phase));
+        return (
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}
+            onClick={() => { if (!savingSelections) setActiveModal(null); }}
+          >
+            <div
+              style={{ background: C.surface, borderRadius: 14, width: 460, maxWidth: "92vw", maxHeight: "78vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 64px rgba(0,0,0,.22)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal header */}
+              <div style={{ padding: "18px 20px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: group.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{group.label} Artifacts</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: C.text3, marginTop: 3, paddingLeft: 18 }}>Select artifacts to plan and track in this phase</div>
+                </div>
+                <button onClick={() => setActiveModal(null)} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, fontSize: 20, lineHeight: 1, padding: 0, marginTop: 2 }}>×</button>
+              </div>
+
+              {/* Artifact list */}
+              <div style={{ overflowY: "auto", flex: 1, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 7 }}>
+                {groupEntries.map((entry) => {
+                  const isChecked = modalPicks.has(entry.type);
+                  const isGenerated = localArtifacts.some((a) => a.artifactType === entry.type);
+                  return (
+                    <label
+                      key={entry.type}
+                      style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${(isChecked || isGenerated) ? C.primaryBorder : C.border}`, background: (isChecked || isGenerated) ? C.primaryLight : "transparent", cursor: isGenerated ? "default" : "pointer", transition: "border-color .15s, background .15s" }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked || isGenerated}
+                        disabled={isGenerated}
+                        onChange={() => {
+                          if (isGenerated) return;
+                          setModalPicks((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(entry.type)) next.delete(entry.type);
+                            else next.add(entry.type);
+                            return next;
+                          });
+                        }}
+                        style={{ width: 15, height: 15, accentColor: C.primary, flexShrink: 0 }}
+                      />
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: C.text }}>{entry.label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, ...(entry.mandatory ? { background: "rgba(0,110,116,.1)", color: C.primary } : { background: "#f3f4f6", color: C.text3 }) }}>
+                        {entry.mandatory ? "Recommended" : "Optional"}
+                      </span>
+                      {isGenerated && (
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: C.greenLight, color: C.green }}>Generated</span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Modal footer */}
+              <div style={{ padding: "14px 16px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12, color: C.text3 }}>
+                  {modalPicks.size} selected
+                </span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setActiveModal(null)} style={{ fontSize: 13, padding: "6px 16px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, cursor: "pointer" }}>Cancel</button>
+                  <button
+                    onClick={() => applySelections(activeModal)}
+                    disabled={savingSelections}
+                    style={{ fontSize: 13, fontWeight: 600, padding: "6px 20px", borderRadius: 8, border: "none", background: C.primary, color: "#fff", cursor: savingSelections ? "default" : "pointer", opacity: savingSelections ? 0.7 : 1 }}
+                  >
+                    {savingSelections ? "Saving…" : "Apply"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
-
 }
 
 const GEN_STAGES = [
@@ -593,7 +653,6 @@ const GEN_STAGES = [
   { key: "done",            label: "Done",                          icon: "✓",  delay: null },
 ];
 
-// Single-line variant of GenerationProgress, for the lifecycle-stepper card
 function GeneratingLine({ hasCustomTemplate }: { hasCustomTemplate?: boolean }) {
   const [stage, setStage] = useState(0);
   useEffect(() => {
@@ -605,7 +664,6 @@ function GeneratingLine({ hasCustomTemplate }: { hasCustomTemplate?: boolean }) 
     }
     return () => timers.forEach(clearTimeout);
   }, []);
-  // At the AI-working stage, report whether a custom template was found
   if (stage === 3) {
     return <>{hasCustomTemplate ? "Reading custom template…" : "Using default prompt…"}</>;
   }
@@ -613,13 +671,13 @@ function GeneratingLine({ hasCustomTemplate }: { hasCustomTemplate?: boolean }) 
 }
 
 function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolean }) {
-  const [stage, setStage] = useState(0); // index into GEN_STAGES
+  const [stage, setStage] = useState(0);
 
   useEffect(() => {
     setStage(0);
     const timers: ReturnType<typeof setTimeout>[] = [];
     let acc = 0;
-    for (let i = 1; i < GEN_STAGES.length - 2; i++) { // advance through read → guardrails → ai
+    for (let i = 1; i < GEN_STAGES.length - 2; i++) {
       acc += GEN_STAGES[i - 1].delay ?? 0;
       const t = setTimeout(() => setStage(i), acc);
       timers.push(t);
@@ -645,7 +703,6 @@ function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolea
         {currentStage.label}…
       </div>
 
-      {/* Stage dots */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0, marginBottom: 12 }}>
         {GEN_STAGES.map((s, i) => {
           const isDone = i < stage;
@@ -675,7 +732,6 @@ function GenerationProgress({ label, isRegen }: { label: string; isRegen: boolea
         })}
       </div>
 
-      {/* Progress bar */}
       <div style={{ height: 4, borderRadius: 99, background: "#e5e7eb", overflow: "hidden", marginBottom: 6 }}>
         <div style={{
           height: "100%", borderRadius: 99,
@@ -780,7 +836,6 @@ function ArtifactCard({
     );
   }
 
-  // Generated card
   return (
     <div style={baseCard}>
       {selectable && <SelectBox selected={!!selected} onSelect={onSelect!} />}
