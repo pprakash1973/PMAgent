@@ -65,11 +65,20 @@ export async function POST(req: NextRequest) {
     // Truncate to 12000 chars for AI processing
     const truncated = text.slice(0, 12000);
 
-    // Run both extractions in parallel
-    const [requirements, projectFields] = await Promise.all([
-      extractRequirements(truncated),
-      generateProjectFromNL(truncated),
-    ]);
+    // AI extraction — isolated so a key/timeout failure never blocks the upload.
+    // If either call fails we degrade gracefully: the raw text is still returned
+    // so the project creation form can proceed without AI-extracted fields.
+    let requirements: Record<string, unknown> = {};
+    let projectFields: Record<string, unknown> = {};
+    try {
+      [requirements, projectFields] = await Promise.all([
+        extractRequirements(truncated),
+        generateProjectFromNL(truncated),
+      ]);
+    } catch (aiErr: any) {
+      console.error("[parse-requirements] AI extraction failed (non-fatal):", aiErr?.message ?? aiErr);
+      // Fall through — return raw text without AI fields
+    }
 
     return NextResponse.json({
       fileName: file.name,
