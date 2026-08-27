@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { generateArtifact, generateDomainContext, type ArtifactTemplateOverride } from "@/lib/ai";
+import { generateArtifact, type ArtifactTemplateOverride } from "@/lib/ai";
+import { assembleGenerationContext } from "@/lib/artifact-context";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
@@ -226,15 +227,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // ── Background: domain pre-flight + AI generation + save ──────────────────
   after(async () => {
     try {
-      const DOMAIN_AGENT_ARTIFACTS = ["wbs", "resource_plan", "risk_register"];
-      let dynamicDomainContext = "";
-      if (DOMAIN_AGENT_ARTIFACTS.includes(artifactType) && project.industry && project.description) {
-        dynamicDomainContext = await generateDomainContext(project.industry, project.description, project.customer);
-      }
+      // Evidence retrieval + domain pre-flight. `requirements` (a summary of the
+      // single most recent document) is only consulted by generateArtifact when
+      // retrieval came back empty — see the evidenceBlock branch in lib/ai.ts.
+      const { evidence, domainContext } = await assembleGenerationContext(
+        id, artifactType, project
+      );
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const content: any = await generateArtifact(
-        artifactType, projectContext, requirements, undefined, dynamicDomainContext, templateOverride
+        artifactType, projectContext, requirements, evidence, domainContext, templateOverride
       );
 
       const newHash = hashArtifactContent(content);

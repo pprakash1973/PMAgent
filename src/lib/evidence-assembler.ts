@@ -1,8 +1,11 @@
 /**
  * Evidence Assembler — Phase 2 of Grounding PRD
  *
- * Retrieves relevant DocumentChunks for a given artifact type using
- * pg full-text search (tsvector). Vector embeddings added in Phase 3.
+ * Retrieves relevant DocumentChunks for a given artifact type.
+ *
+ * Retrieval today is lexical: PostgreSQL full-text search (tsvector/ts_rank).
+ * The code is structured as independent "arms" so a semantic arm can be fused
+ * in alongside it without reshaping the caller contract.
  *
  * Partition isolation: every query is filtered by projectId so no
  * cross-project content can appear in the assembled context.
@@ -20,11 +23,19 @@ export interface EvidenceChunk {
   chunkIndex: number;
 }
 
+/** Which retrieval path actually produced the chunks — surfaced for logging and eval. */
+export type RetrievalMode =
+  | "keyword"   // full-text search returned enough results on its own
+  | "backfill"  // FTS was thin; topped up with chunks in document order
+  | "fallback"  // FTS unavailable or failed; document order only
+  | "none";     // project has no chunks at all
+
 export interface EvidenceContext {
   chunks: EvidenceChunk[];
   totalChunksInProject: number;
   queryTerms: string[];
   hasEvidence: boolean;
+  mode: RetrievalMode;
 }
 
 // Search terms used per artifact type to retrieve the most relevant chunks
@@ -56,29 +67,39 @@ const ARTIFACT_SEARCH_TERMS: Record<string, string[]> = {
   traceability_matrix:  ["requirements traceability WBS milestone acceptance criteria validation"],
 };
 
-const TOP_K = 12; // max chunks to assemble per artifact generation
+const TOP_K = 12;          // max chunks handed to the model per artifact generation
+const CANDIDATE_POOL = 30; // per-arm retrieval depth before ranking down to TOP_K
+const MIN_USEFUL_HITS = 4; // below this, top up with document-order chunks
+
+const CHUNK_SELECT = {
+  id: true, text: true, sectionTitle: true, pageNumber: true,
+  documentId: true, chunkIndex: true,
+} as const;
 
 /**
- * Assemble evidence for a given artifact type from a project's document store.
- * Uses full-text search on DocumentChunk.text filtered by projectId.
+ * Full-text search is Postgres-only. Local dev runs on SQLite (see lib/db.ts),
+ * where to_tsvector does not exist and the query throws. Detect that up front
+ * rather than relying on a driver error.
  */
-export async function assembleEvidence(
+function supportsFullTextSearch(): boolean {
+  const url = process.env.DATABASE_URL ?? "";
+  return url.length > 0 && !url.startsWith("file:");
+}
+
+/**
+ * Lexical arm — ts_rank over an English tsvector, scoped to one project.
+ *
+ * The tsvector expression must stay identical to the GIN index
+ * "DocumentChunk_text_search_idx" in scripts/migrate-neon-all.js. If they drift
+ * (a different regconfig, a different column expression) Postgres cannot use the
+ * index and silently reverts to a sequential scan — no error, just a slow query.
+ */
+async function keywordSearch(
   projectId: string,
-  artifactType: string
-): Promise<EvidenceContext> {
-  const totalChunksInProject = await prisma.documentChunk.count({
-    where: { projectId },
-  });
-
-  if (totalChunksInProject === 0) {
-    return { chunks: [], totalChunksInProject: 0, queryTerms: [], hasEvidence: false };
-  }
-
-  const terms = ARTIFACT_SEARCH_TERMS[artifactType] ?? ["project scope objectives deliverables"];
-  const searchQuery = terms.join(" ");
-
-  // Full-text search with ts_rank ordering, scoped to this project only
-  const rows = await prisma.$queryRaw<EvidenceChunk[]>(
+  query: string,
+  limit: number
+): Promise<EvidenceChunk[]> {
+  return prisma.$queryRaw<EvidenceChunk[]>(
     Prisma.sql`
       SELECT
         dc.id,
@@ -89,25 +110,69 @@ export async function assembleEvidence(
         dc."chunkIndex"
       FROM "DocumentChunk" dc
       WHERE dc."projectId" = ${projectId}
-        AND to_tsvector('english', dc.text) @@ plainto_tsquery('english', ${searchQuery})
-      ORDER BY ts_rank(to_tsvector('english', dc.text), plainto_tsquery('english', ${searchQuery})) DESC
-      LIMIT ${TOP_K}
+        AND to_tsvector('english', dc.text) @@ plainto_tsquery('english', ${query})
+      ORDER BY ts_rank(to_tsvector('english', dc.text), plainto_tsquery('english', ${query})) DESC
+      LIMIT ${limit}
     `
   );
+}
 
-  // If FTS returns few results, supplement with the first N chunks (document order)
-  let chunks = rows as EvidenceChunk[];
-  if (chunks.length < 4) {
-    const fallback = await prisma.documentChunk.findMany({
-      where: { projectId },
-      orderBy: [{ documentId: "asc" }, { chunkIndex: "asc" }],
-      take: TOP_K - chunks.length,
-      select: { id: true, text: true, sectionTitle: true, pageNumber: true, documentId: true, chunkIndex: true },
-    });
-    const existingIds = new Set(chunks.map(c => c.id));
-    for (const c of fallback) {
-      if (!existingIds.has(c.id)) chunks.push(c as EvidenceChunk);
+/** Positional arm — first N chunks in document order. Not relevance, just coverage. */
+async function documentOrderChunks(projectId: string, limit: number): Promise<EvidenceChunk[]> {
+  if (limit <= 0) return [];
+  const rows = await prisma.documentChunk.findMany({
+    where: { projectId },
+    orderBy: [{ documentId: "asc" }, { chunkIndex: "asc" }],
+    take: limit,
+    select: CHUNK_SELECT,
+  });
+  return rows as EvidenceChunk[];
+}
+
+/**
+ * Assemble evidence for a given artifact type from a project's document store.
+ */
+export async function assembleEvidence(
+  projectId: string,
+  artifactType: string
+): Promise<EvidenceContext> {
+  const totalChunksInProject = await prisma.documentChunk.count({
+    where: { projectId },
+  });
+
+  const terms = ARTIFACT_SEARCH_TERMS[artifactType] ?? ["project scope objectives deliverables"];
+
+  if (totalChunksInProject === 0) {
+    return { chunks: [], totalChunksInProject: 0, queryTerms: terms, hasEvidence: false, mode: "none" };
+  }
+
+  const searchQuery = terms.join(" ");
+
+  let chunks: EvidenceChunk[] = [];
+  let mode: RetrievalMode = "fallback";
+
+  if (supportsFullTextSearch()) {
+    try {
+      chunks = (await keywordSearch(projectId, searchQuery, CANDIDATE_POOL)).slice(0, TOP_K);
+      mode = "keyword";
+    } catch (err) {
+      // A retrieval failure must never block generation — degrade to document
+      // order, which is worse than ranked but still grounded in the real source.
+      console.error(`[evidence] keyword search failed for ${artifactType}:`, err);
+      chunks = [];
+      mode = "fallback";
     }
+  }
+
+  // Thin lexical result — top up so the model still sees real source text.
+  if (chunks.length < MIN_USEFUL_HITS) {
+    const existingIds = new Set(chunks.map((c) => c.id));
+    const filler = await documentOrderChunks(projectId, TOP_K);
+    for (const c of filler) {
+      if (chunks.length >= TOP_K) break;
+      if (!existingIds.has(c.id)) chunks.push(c);
+    }
+    if (mode === "keyword") mode = "backfill";
   }
 
   return {
@@ -115,6 +180,7 @@ export async function assembleEvidence(
     totalChunksInProject,
     queryTerms: terms,
     hasEvidence: chunks.length > 0,
+    mode,
   };
 }
 

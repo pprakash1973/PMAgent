@@ -9,6 +9,7 @@ import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
 import { hashArtifactContent } from "@/lib/artifact-hash";
 import { extractAndStoreItems } from "@/lib/item-extractor";
+import { assembleGenerationContext } from "@/lib/artifact-context";
 
 async function resolveTemplate(orgId: string, accountId: string | null | undefined, artifactType: string): Promise<ArtifactTemplateOverride | undefined> {
   const db = prisma as any;
@@ -150,9 +151,15 @@ export async function generateArtifactForProject(
     artifactType
   );
 
+  const { evidence, domainContext } = await assembleGenerationContext(
+    projectId,
+    artifactType,
+    project as { industry?: string | null; description?: string | null; customer?: string | null }
+  );
+
   let content: any;
   try {
-    content = await generateArtifact(artifactType, projectContext, requirements, undefined, undefined, templateOverride);
+    content = await generateArtifact(artifactType, projectContext, requirements, evidence, domainContext, templateOverride);
   } catch (err: any) {
     return { error: err.message ?? "AI generation failed" };
   }

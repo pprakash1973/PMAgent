@@ -5,7 +5,8 @@ import { generateArtifact, type ArtifactTemplateOverride } from "@/lib/ai";
 import { ARTIFACT_CATALOG } from "@/lib/utils";
 import { runGuardrails, GuardrailError } from "@/lib/guardrails";
 import { syncArtifactToTables } from "@/lib/artifact-sync";
-import { assembleEvidence, countGaps, extractGapFields } from "@/lib/evidence-assembler";
+import { countGaps, extractGapFields } from "@/lib/evidence-assembler";
+import { assembleGenerationContext } from "@/lib/artifact-context";
 import type { Prisma } from "@prisma/client";
 import { requireProjectAccess } from "@/lib/project-access";
 
@@ -97,10 +98,11 @@ export async function POST(
   const allowed = guardrailResults.filter((r) => !r.blocked);
   const guardBlocked = guardrailResults.filter((r) => r.blocked);
 
-  // Assemble evidence for each allowed artifact type in parallel
-  const evidenceContexts = await Promise.all(
-    allowed.map(({ type }) => assembleEvidence(id, type))
+  // Assemble evidence + domain context for each allowed artifact type in parallel
+  const generationContexts = await Promise.all(
+    allowed.map(({ type }) => assembleGenerationContext(id, type, project))
   );
+  const evidenceContexts = generationContexts.map((c) => c.evidence);
 
   // Resolve per-type templates (account-specific wins over global)
   const db = prisma as any;
@@ -123,7 +125,7 @@ export async function POST(
   // Fan out — each generateArtifact() is an independent sub-agent call
   const subAgentResults = await Promise.allSettled(
     allowed.map(({ type }, i) =>
-      generateArtifact(type, projectContext, requirements, evidenceContexts[i], undefined, templateMap.get(type))
+      generateArtifact(type, projectContext, requirements, evidenceContexts[i], generationContexts[i].domainContext, templateMap.get(type))
         .then((content) => ({ type, content, evidenceCtx: evidenceContexts[i] }))
     )
   );
@@ -150,7 +152,10 @@ export async function POST(
       const gapCount = countGaps(content);
       const gapFields = extractGapFields(content, type);
       const totalFields = Object.keys(content).length;
-      const groundingScore = evidenceCtx.hasEvidence && totalFields > 0
+      // No evidence (or retrieval failed) means there is nothing to score the
+      // output against — null, not zero, so the UI can distinguish "ungrounded"
+      // from "grounded and scored badly".
+      const groundingScore = evidenceCtx?.hasEvidence && totalFields > 0
         ? Math.max(0, Math.round(((totalFields - gapCount) / Math.max(totalFields, 1)) * 100))
         : null;
 
