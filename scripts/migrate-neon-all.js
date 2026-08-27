@@ -148,8 +148,9 @@ async function main() {
 
     await run(pool, `
       ALTER TABLE "Artifact"
-        ADD COLUMN IF NOT EXISTS "gapCount"       INT   NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS "groundingScore" FLOAT
+        ADD COLUMN IF NOT EXISTS "gapCount"              INT   NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS "groundingScore"        FLOAT,
+        ADD COLUMN IF NOT EXISTS "generationStartedAt"   TIMESTAMP
     `, "Artifact columns");
 
     await run(pool, `

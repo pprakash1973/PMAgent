@@ -10,36 +10,24 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   await auth();
   const { id } = await params;
 
-  let project;
-  try {
-    project = await prisma.project.findUnique({
-      where: { id },
-      include: {
-        pmOwner: { select: { fullName: true, email: true } },
-        account: { select: { id: true, name: true, code: true } },
-        milestones: { orderBy: { dueDate: "asc" } },
-        risks: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
-        issues: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
-        artifacts: true,
-        artifactSelections: true,
-        statusReports: {
-          orderBy: { reportDate: "desc" },
-          take: 3,
-          include: { healthScore: true },
-        },
-        requirementsDocs: { orderBy: { createdAt: "desc" }, take: 5 },
+  const project = await prisma.project.findUnique({
+    where: { id },
+    include: {
+      pmOwner: { select: { fullName: true, email: true } },
+      account: { select: { id: true, name: true, code: true } },
+      milestones: { orderBy: { dueDate: "asc" } },
+      risks: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
+      issues: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
+      artifacts: true,
+      artifactSelections: true,
+      statusReports: {
+        orderBy: { reportDate: "desc" },
+        take: 3,
+        include: { healthScore: true },
       },
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[project-page] prisma error:", msg);
-    return (
-      <div style={{ padding: 40, fontFamily: "monospace", color: "#cf3f3a" }}>
-        <strong>Project failed to load.</strong>
-        <pre style={{ marginTop: 12, fontSize: 12, whiteSpace: "pre-wrap" }}>{msg}</pre>
-      </div>
-    );
-  }
+      requirementsDocs: { orderBy: { createdAt: "desc" }, take: 5 },
+    },
+  });
 
   if (!project) notFound();
 
