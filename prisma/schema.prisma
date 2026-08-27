@@ -264,6 +264,7 @@ model Project {
   code                  String
   customer              String?
   projectType           String    @default("fixed_price")
+  engagementType        String?
   methodology           String    @default("waterfall")
   engagementMode        String    @default("detailed")
   externalExecutionTool String?

@@ -715,6 +715,18 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
             </div>
           )}
 
+          <div className="space-y-2">
+            <Label>Engagement Type</Label>
+            <Select value={(form as any).engagementType ?? ""} onValueChange={(v) => update("engagementType" as any, v || undefined)}>
+              <SelectTrigger><SelectValue placeholder="Select type…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="application_development">Application Development</SelectItem>
+                <SelectItem value="product_development">Product Development</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Agile-specific configuration */}
           {isAgile && (
             <>
