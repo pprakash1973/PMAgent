@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import { formatDate, formatCurrency, methodologyLabel, ARTIFACT_CATALOG } from "@/lib/utils";
 import { WorkspaceClient } from "@/components/workspace-client";
+import { resolveDeliveryManager, resolveDeliveryHead } from "@/lib/delivery-owners";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await auth();
@@ -14,7 +15,44 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     where: { id },
     include: {
       pmOwner: { select: { fullName: true, email: true } },
-      account: { select: { id: true, name: true, code: true } },
+      cluster: {
+        select: {
+          name: true,
+          code: true,
+          primaryDhId: true,
+          clusterAssignments: {
+            where: { isPrimary: true },
+            select: { user: { select: { fullName: true } } },
+            take: 1,
+          },
+        },
+      },
+      account: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          primaryDmId: true,
+          dmAssignments: {
+            where: { isPrimary: true },
+            select: { user: { select: { fullName: true } } },
+            take: 1,
+          },
+          cluster: {
+            select: {
+              name: true,
+              code: true,
+              primaryDhId: true,
+              clusterAssignments: {
+                where: { isPrimary: true },
+                select: { user: { select: { fullName: true } } },
+                take: 1,
+              },
+            },
+          },
+        },
+      },
+      program: { select: { id: true, name: true, code: true } },
       milestones: { orderBy: { dueDate: "asc" } },
       risks: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
       issues: { where: { status: { not: "closed" } }, orderBy: { createdAt: "desc" }, take: 10 },
@@ -22,7 +60,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       artifactSelections: true,
       statusReports: {
         orderBy: { reportDate: "desc" },
-        take: 3,
+        take: 8,
         include: { healthScore: true },
       },
       requirementsDocs: { orderBy: { createdAt: "desc" }, take: 5 },
@@ -31,9 +69,19 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   if (!project) notFound();
 
+  const clusterId = project.clusterId ?? (project.account as any)?.clusterId ?? null;
+  const [resolvedDm, resolvedDh] = await Promise.all([
+    resolveDeliveryManager(project.accountId),
+    resolveDeliveryHead(clusterId),
+  ]);
+
+  const serialized = JSON.parse(JSON.stringify(project));
+  serialized._resolvedDmName = resolvedDm.name;
+  serialized._resolvedDhName = resolvedDh.name;
+
   return (
     <WorkspaceClient
-      project={JSON.parse(JSON.stringify(project))}
+      project={serialized}
       catalog={ARTIFACT_CATALOG}
     />
   );

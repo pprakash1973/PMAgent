@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Download, ChevronDown, ChevronRight, Upload } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { Plus, Download, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "@/components/ui/toaster";
 
 const STATUS_CHIP: Record<string, { label: string; color: string; bg: string }> = {
@@ -68,16 +68,6 @@ export function DecisionsTab({ project }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [collapsedSprints, setCollapsedSprints] = useState<Set<string>>(new Set());
 
-  // Transcript upload state
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
-  const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
-  const [extracting, setExtracting] = useState(false);
-  const [extractMsg, setExtractMsg] = useState<string | null>(null);
-  const [extractedDrafts, setExtractedDrafts] = useState<any[]>([]);
-  const [selectedDrafts, setSelectedDrafts] = useState<Set<number>>(new Set());
-  const [confirmingDrafts, setConfirmingDrafts] = useState(false);
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -103,98 +93,6 @@ export function DecisionsTab({ project }: Props) {
     agreed:     decisions.filter(d => d.status === "agreed").length,
     superseded: decisions.filter(d => d.status === "superseded").length,
   };
-
-  async function handleExtractTranscript() {
-    if (!transcriptFile) return;
-    setExtracting(true);
-    setExtractMsg(null);
-    setExtractedDrafts([]);
-    setSelectedDrafts(new Set());
-    try {
-      const fd = new FormData();
-      fd.append("file", transcriptFile);
-      const res = await fetch(`/api/projects/${project.id}/decisions/extract`, { method: "POST", body: fd });
-      let data: any;
-      try { data = await res.json(); } catch { data = { error: `Server error (${res.status})` }; }
-      if (!res.ok) {
-        setExtractMsg(`✗ ${data?.error ?? "Extraction failed"}`);
-        return;
-      }
-      const drafts: any[] = data.decisions ?? [];
-      if (drafts.length === 0) {
-        setExtractMsg("No decisions found in the transcript. Try a different file.");
-        return;
-      }
-      setExtractedDrafts(drafts);
-      setSelectedDrafts(new Set(drafts.map((_: any, i: number) => i)));
-      setExtractMsg(null);
-    } catch (err: any) {
-      setExtractMsg(`✗ ${err?.message ?? "Network error"}`);
-    } finally {
-      setExtracting(false);
-    }
-  }
-
-  async function handleConfirmDrafts() {
-    const toSave = extractedDrafts.filter((_, i) => selectedDrafts.has(i));
-    if (toSave.length === 0) return;
-    setConfirmingDrafts(true);
-    let saved = 0;
-    // Indices of drafts that failed, so the panel can stay open on just those.
-    const failedIdx: number[] = [];
-    const reasons: string[] = [];
-
-    const selectedIdx = extractedDrafts.map((_, i) => i).filter((i) => selectedDrafts.has(i));
-    for (const idx of selectedIdx) {
-      const d = extractedDrafts[idx];
-      const payload: any = {
-        title: d.title ?? "",
-        rationale: d.rationale ?? "",
-        madeBy: d.madeBy ?? "",
-        madeAt: d.madeAt ?? new Date().toISOString().slice(0, 10),
-      };
-      if (isAgile) payload.category = d.category ?? "Other";
-
-      try {
-        const res = await fetch(`/api/projects/${project.id}/decisions`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-        });
-        if (res.ok) {
-          saved++;
-        } else {
-          const body = await res.json().catch(() => ({}));
-          failedIdx.push(idx);
-          reasons.push(`"${(d.title ?? "untitled").slice(0, 40)}" — ${body?.error ?? `error ${res.status}`}`);
-        }
-      } catch {
-        failedIdx.push(idx);
-        reasons.push(`"${(d.title ?? "untitled").slice(0, 40)}" — network error`);
-      }
-    }
-
-    setConfirmingDrafts(false);
-    await load();
-
-    if (failedIdx.length === 0) {
-      setExtractedDrafts([]);
-      setSelectedDrafts(new Set());
-      setTranscriptFile(null);
-      setShowTranscript(false);
-      setExtractMsg(null);
-      toast({ title: `${saved} decision${saved !== 1 ? "s" : ""} added from transcript` });
-      return;
-    }
-
-    // Keep the failures on screen with their reasons so nothing is lost silently.
-    setExtractedDrafts((prev) => prev.filter((_, i) => failedIdx.includes(i)));
-    setSelectedDrafts(new Set(failedIdx.map((_, i) => i)));
-    setExtractMsg(`${failedIdx.length} could not be saved — fix and retry: ${reasons.join("; ")}`);
-    toast({
-      title: `${saved} added, ${failedIdx.length} failed`,
-      description: "The failed decisions are still listed below.",
-      variant: "destructive",
-    });
-  }
 
   async function handleSave() {
     if (!form.title.trim()) return;
@@ -304,114 +202,6 @@ export function DecisionsTab({ project }: Props) {
     fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em",
     color: C.text2, display: "block", marginBottom: 4,
   };
-
-  // ── Transcript upload panel ────────────────────────────────────────────────────
-  const transcript_panel = showTranscript && (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 12 }}>Extract Decisions from Transcript</div>
-
-      {/* File picker */}
-      <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.md" style={{ display: "none" }}
-        onChange={e => {
-          const f = e.target.files?.[0] ?? null;
-          setTranscriptFile(f);
-          setExtractedDrafts([]);
-          setSelectedDrafts(new Set());
-          setExtractMsg(null);
-        }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-        <button onClick={() => fileInputRef.current?.click()}
-          style={{ padding: "7px 14px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, color: C.text2, background: "transparent", cursor: "pointer" }}>
-          Choose file
-        </button>
-        <span style={{ fontSize: 12, color: transcriptFile ? C.text : C.text3 }}>
-          {transcriptFile ? transcriptFile.name : "No file chosen — PDF, DOCX, or TXT"}
-        </span>
-        {transcriptFile && (
-          <button onClick={handleExtractTranscript} disabled={extracting}
-            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 16px", background: "rgba(37,99,235,.1)", border: "1px solid rgba(37,99,235,.35)", borderRadius: 6, fontSize: 12, fontWeight: 700, color: C.accent, cursor: extracting ? "wait" : "pointer" }}>
-            {extracting ? (
-              <>
-                <style>{`@keyframes dec-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ animation: "dec-spin 1s linear infinite", flexShrink: 0 }}>
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity=".3" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-                Extracting…
-              </>
-            ) : "Extract Decisions"}
-          </button>
-        )}
-      </div>
-
-      {/* Error message */}
-      {extractMsg && (
-        <div style={{ fontSize: 12, color: C.red, marginBottom: 10 }}>{extractMsg}</div>
-      )}
-
-      {/* Extracted drafts review */}
-      {extractedDrafts.length > 0 && (
-        <>
-          <div style={{ fontSize: 12, color: C.text2, marginBottom: 8 }}>
-            <strong style={{ color: C.text }}>{extractedDrafts.length} AI-suggested decision{extractedDrafts.length !== 1 ? "s" : ""}.</strong> Check each against the transcript before adding — wording and attribution can be wrong.
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-            {extractedDrafts.map((d, i) => {
-              const checked = selectedDrafts.has(i);
-              return (
-                <div key={i} style={{ display: "flex", gap: 10, padding: "10px 12px", background: checked ? "rgba(22,163,74,.06)" : C.bg, border: `1px solid ${checked ? "rgba(22,163,74,.3)" : C.border}`, borderRadius: 6, alignItems: "flex-start" }}>
-                  <input type="checkbox" checked={checked}
-                    onChange={() => setSelectedDrafts(s => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; })}
-                    style={{ marginTop: 3, flexShrink: 0, accentColor: C.green }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <input value={d.title ?? ""} onChange={e => setExtractedDrafts(prev => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
-                      style={{ ...inputStyle, marginBottom: 5, fontWeight: 600 }} placeholder="Decision statement" />
-                    <input value={d.rationale ?? ""} onChange={e => setExtractedDrafts(prev => prev.map((x, j) => j === i ? { ...x, rationale: e.target.value } : x))}
-                      style={{ ...inputStyle, marginBottom: 5, fontSize: 12 }} placeholder="Rationale (optional)" />
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input value={d.madeBy ?? ""} onChange={e => setExtractedDrafts(prev => prev.map((x, j) => j === i ? { ...x, madeBy: e.target.value } : x))}
-                        style={{ ...inputStyle, flex: 1 }} placeholder="Made by" />
-                      <input type="date" value={d.madeAt?.slice(0, 10) ?? ""} onChange={e => setExtractedDrafts(prev => prev.map((x, j) => j === i ? { ...x, madeAt: e.target.value } : x))}
-                        style={{ ...inputStyle, flex: 1 }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.text2, cursor: "pointer" }}>
-              <input type="checkbox"
-                checked={selectedDrafts.size === extractedDrafts.length}
-                onChange={() => setSelectedDrafts(selectedDrafts.size === extractedDrafts.length ? new Set() : new Set(extractedDrafts.map((_, i) => i)))}
-                style={{ accentColor: C.green }} />
-              Select all
-            </label>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setShowTranscript(false); setExtractedDrafts([]); setTranscriptFile(null); setExtractMsg(null); }}
-                style={{ padding: "6px 14px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, color: C.text2, background: "transparent", cursor: "pointer" }}>
-                Cancel
-              </button>
-              <button onClick={handleConfirmDrafts} disabled={confirmingDrafts || selectedDrafts.size === 0}
-                style={{ padding: "6px 16px", background: "rgba(22,163,74,.12)", border: "1px solid rgba(22,163,74,.4)", borderRadius: 6, fontSize: 12, fontWeight: 700, color: C.green, cursor: confirmingDrafts || selectedDrafts.size === 0 ? "not-allowed" : "pointer" }}>
-                {confirmingDrafts ? "Adding…" : `Add ${selectedDrafts.size} Decision${selectedDrafts.size !== 1 ? "s" : ""}`}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* No drafts yet: show cancel */}
-      {extractedDrafts.length === 0 && !extracting && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={() => { setShowTranscript(false); setTranscriptFile(null); setExtractMsg(null); }}
-            style={{ padding: "6px 14px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, color: C.text2, background: "transparent", cursor: "pointer" }}>
-            Cancel
-          </button>
-        </div>
-      )}
-    </div>
-  );
 
   // ── Summary strip ──────────────────────────────────────────────────────────────
   const strip = (
@@ -649,18 +439,13 @@ export function DecisionsTab({ project }: Props) {
           <button style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 12px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, color: C.text2, background: "transparent", cursor: "pointer" }}>
             <Download size={13} /> Export
           </button>
-          <button onClick={() => { setShowTranscript(s => !s); setShowForm(false); }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 12px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12, color: C.text2, background: showTranscript ? C.surface : "transparent", cursor: "pointer" }}>
-            <Upload size={13} /> From Transcript
-          </button>
-          <button onClick={() => { setShowForm(s => !s); setEditingId(null); setForm(EMPTY_FORM); setShowTranscript(false); }}
+          <button onClick={() => { setShowForm(s => !s); setEditingId(null); setForm(EMPTY_FORM); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", background: "rgba(22,163,74,.1)", border: "1px solid rgba(22,163,74,.35)", borderRadius: 6, fontSize: 12, fontWeight: 700, color: C.green, cursor: "pointer" }}>
             <Plus size={13} /> Add Decision
           </button>
         </div>
       </div>
 
-      {transcript_panel}
       {form_el}
 
       {/* Content */}
