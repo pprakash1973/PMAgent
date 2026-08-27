@@ -34,6 +34,7 @@ const createSchema = z.object({
   externalExecutionTool: z.string().optional(),
   // Requirements doc fields (from file upload flow)
   requirementsText: z.string().optional(),
+  requirementsFullText: z.string().optional(),
   requirementsFileName: z.string().optional(),
   requirementsFileFormat: z.string().optional(),
   requirementsExtracted: z.record(z.string(), z.unknown()).optional(),
@@ -186,9 +187,11 @@ export async function POST(req: NextRequest) {
       })),
     });
 
-    // Save requirements document + chunks if file was uploaded
+    // Save requirements document + chunks if file was uploaded.
+    // Prefer the full extracted text for chunking (covers entire document);
+    // requirementsText is AI-truncated to 12 000 chars and only used as fallback.
     if (data.requirementsText && data.requirementsFileName) {
-      const rawText = data.requirementsText;
+      const rawText = data.requirementsFullText ?? data.requirementsText;
       const chunks = chunkText(rawText);
       const doc = await db.requirementsDocument.create({
         data: {

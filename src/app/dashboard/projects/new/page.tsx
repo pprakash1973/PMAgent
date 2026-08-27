@@ -20,6 +20,7 @@ interface UploadedDoc {
   summary: string[];
   parsed?: {
     requirementsText: string;
+    requirementsFullText: string;
     requirementsFileName: string;
     requirementsFileFormat: string;
     requirementsExtracted: Record<string, unknown>;
@@ -232,8 +233,8 @@ export default function NewProjectPage() {
       setDocs((prev) =>
         prev.map((d, i) =>
           i === idx ? { ...d, status: "done", summary: bullets, parsed: {
-            requirementsText: data.extractedText, requirementsFileName: data.fileName,
-            requirementsFileFormat: data.fileFormat, requirementsExtracted: req,
+            requirementsText: data.extractedText, requirementsFullText: data.fullText ?? data.extractedText,
+            requirementsFileName: data.fileName, requirementsFileFormat: data.fileFormat, requirementsExtracted: req,
           } } : d
         )
       );
@@ -282,6 +283,7 @@ export default function NewProjectPage() {
       const doneDocs = docs.filter((d) => d.status === "done" && d.parsed);
       if (doneDocs.length > 0) {
         payload.requirementsText = doneDocs.map((d) => d.parsed!.requirementsText).join("\n\n---\n\n");
+        payload.requirementsFullText = doneDocs.map((d) => d.parsed!.requirementsFullText).join("\n\n---\n\n");
         payload.requirementsFileName = doneDocs.map((d) => d.parsed!.requirementsFileName).join(", ");
         payload.requirementsFileFormat = doneDocs[0].parsed!.requirementsFileFormat;
         payload.requirementsExtracted = doneDocs.reduce((acc, d) => ({ ...acc, ...d.parsed!.requirementsExtracted }), {});

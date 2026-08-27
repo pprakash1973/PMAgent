@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
       fileName: file.name,
       fileFormat: ext,
       extractedText: truncated,
+      fullText: text,
       requirements,
       projectFields,
     });
