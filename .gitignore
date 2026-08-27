@@ -48,3 +48,7 @@ dev.db
 *.db
 
 .vercel
+
+# Local test files
+*.stackdump
+UST_*.xlsx
