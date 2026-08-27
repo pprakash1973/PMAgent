@@ -318,10 +318,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       console.log(`[artifact] background generation complete: ${artifactType}`);
     } catch (err: any) {
-      console.error(`[artifact] background generation failed for ${artifactType}:`, err);
+      const errMsg: string = err?.message ?? String(err);
+      console.error(`[artifact] background generation failed for ${artifactType}:`, errMsg, err?.stack ?? "");
       await prisma.artifact.update({
         where: { id: pendingArtifact.id },
-        data: { status: "failed", generationStartedAt: null },
+        // Store error message in content so the UI can show it instead of a blank "failed" state
+        data: { status: "failed", generationStartedAt: null, content: { _error: errMsg } as object },
       }).catch(() => {});
     }
   });

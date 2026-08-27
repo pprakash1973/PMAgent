@@ -69,6 +69,7 @@ function stageOf(artifact: Artifact | undefined, isGen: boolean): number {
   if (isGen) return 1;
   if (!artifact) return 0;
   const s = (artifact.status ?? "draft").toLowerCase();
+  if (s === "failed") return -1;
   if (s === "approved") return 4;
   if (s === "reviewed" || s === "in_review") return 3;
   return 2;
@@ -76,6 +77,7 @@ function stageOf(artifact: Artifact | undefined, isGen: boolean): number {
 
 function stageText(stage: number, isGen: boolean): { label: string; color: string } {
   if (isGen) return { label: "Generating…", color: C.primaryAlt };
+  if (stage === -1) return { label: "⚠ Generation failed", color: C.red };
   switch (stage) {
     case 4: return { label: "✓ Approved", color: C.green };
     case 3: return { label: "◐ In review", color: C.primaryAlt };
@@ -377,6 +379,7 @@ export function ArtifactPanel({
     const idle = !artifact && !isGen;
     const guardrail = guardrailErrors[entry.type];
     const hasCustomTemplate = !!artifact?.versions?.[0]?.appliedTemplateId;
+    const failedMsg = stage === -1 ? (artifact?.content?._error as string | undefined) : undefined;
 
     const segStyle = (i: number): React.CSSProperties => {
       const base: React.CSSProperties = { flex: 1, height: 4, borderRadius: 99, background: "#e5e7eb", transition: "background .4s" };
@@ -429,6 +432,9 @@ export function ArtifactPanel({
 
           {guardrail && (
             <div style={{ fontSize: 10, color: C.red, lineHeight: 1.35, marginBottom: 8 }}>{guardrail}</div>
+          )}
+          {failedMsg && (
+            <div style={{ fontSize: 10, color: C.red, lineHeight: 1.35, marginBottom: 8, wordBreak: "break-word" as const }}>{failedMsg}</div>
           )}
 
           {hasCustomTemplate && (
