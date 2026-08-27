@@ -59,15 +59,14 @@
 body {
   background: var(--bg);
   color: var(--text);
-  /* Aptos is available on Windows 11; Calibri is the approved fallback */
-  font-family: 'Aptos', 'Calibri', system-ui, -apple-system, sans-serif;
+  /* Inter for the UI; Aptos/Calibri are reserved for generated documents (DOCX/PPTX) */
+  font-family: var(--font-inter), 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   margin: 0;
 }
 
-/* Aptos Display is the heading face; Calibri Light is the approved fallback */
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Aptos Display', 'Calibri Light', 'Aptos', 'Calibri', system-ui, sans-serif;
+  font-family: var(--font-inter), 'Inter', system-ui, sans-serif;
 }
 
 .mono { font-family: 'Aptos Mono', 'Consolas', monospace; }
