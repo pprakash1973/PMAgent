@@ -3809,9 +3809,9 @@ function ScopeControlTab({ project }: { project: any }) {
     return !!latestBaseline;
   }
 
-  const activeReqs = reqs.filter(r => r.isActive && r.status !== "rejected");
-  // Live removed reqs (isActive:false) — drives the strikethrough row in the table
-  const removedReqs = reqs.filter(r => !r.isActive && r.status !== "rejected");
+  const activeReqs = reqs.filter(r => r.status !== "removed" && r.status !== "rejected");
+  // Explicitly removed requirements — show as struck-through rows with restore button
+  const removedReqs = reqs.filter(r => r.status === "removed");
   const basedReqs = latestBaseline
     ? activeReqs.filter(r => blSnapshot.includes(r.requirementKey))
     : [];

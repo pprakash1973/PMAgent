@@ -21,9 +21,9 @@ export async function PATCH(
   let data: Record<string, unknown> = {};
 
   if (action === "remove") {
-    data = { isActive: false };
+    data = { status: "removed" };
   } else if (action === "restore") {
-    data = { isActive: true };
+    data = { status: "proposed" };
   } else if (action === "edit") {
     if (!statement?.trim()) return NextResponse.json({ error: "statement required" }, { status: 400 });
     data = { statement: statement.trim() };
