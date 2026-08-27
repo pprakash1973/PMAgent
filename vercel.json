@@ -2,5 +2,9 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "functions": {
+    "src/app/api/projects/[id]/risks/regenerate/route.ts": { "maxDuration": 60 },
+    "src/app/api/projects/[id]/artifacts/route.ts": { "maxDuration": 60 }
+  }
 }
