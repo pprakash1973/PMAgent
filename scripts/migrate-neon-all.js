@@ -36,6 +36,31 @@ async function runOptional(pool, sql, label) {
   }
 }
 
+/**
+ * Prefer plain TCP, fall back to Neon's WebSocket driver over 443.
+ *
+ * Many corporate networks allow 443 but block outbound 5432, which appears as
+ * an ECONNRESET ~20s into the handshake rather than a refusal. Mirrors the
+ * DATABASE_DRIVER=neon path in src/lib/db.ts so a release run from inside such
+ * a network behaves the same as one from CI.
+ */
+async function openPool(url) {
+  try {
+    const p = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
+    await p.query("SELECT 1");
+    console.log("• transport: tcp");
+    return p;
+  } catch (tcpErr) {
+    if (!/neon\.tech/.test(url)) throw tcpErr;
+    const { Pool: WsPool, neonConfig } = require("@neondatabase/serverless");
+    if (!neonConfig.webSocketConstructor) neonConfig.webSocketConstructor = globalThis.WebSocket;
+    const p = new WsPool({ connectionString: url });
+    await p.query("SELECT 1");
+    console.log(`• transport: websocket (TCP 5432 unreachable: ${tcpErr.message || tcpErr.code})`);
+    return p;
+  }
+}
+
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url || url.startsWith("file:")) {
@@ -43,7 +68,7 @@ async function main() {
     return;
   }
 
-  const pool = new Pool({ connectionString: url, ssl: { rejectUnauthorized: false } });
+  const pool = await openPool(url);
 
   try {
     // ── 1. Extend core tables (columns added incrementally) ─────────────────────

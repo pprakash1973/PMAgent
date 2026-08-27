@@ -13,6 +13,30 @@ function createPrisma(): PrismaClient {
 
   if (!url) throw new Error("DATABASE_URL is not set");
 
+  // Neon over WebSocket (443) rather than raw Postgres (5432).
+  //
+  // Opt-in via DATABASE_DRIVER=neon. Many corporate networks permit 443 but
+  // block outbound 5432, which surfaces as an ECONNRESET ~20s into the TCP
+  // handshake rather than a clean refusal — hard to diagnose and impossible to
+  // work around with the pg driver. The Neon driver carries the same wire
+  // protocol over WSS, including real session transactions.
+  //
+  // Not automatic on hostname: hosts that can reach 5432 should keep using pg,
+  // which avoids the WebSocket hop. TLS here is terminated by the driver
+  // against Neon's public certificate, so DATABASE_CA_CERT does not apply.
+  if (process.env.DATABASE_DRIVER === "neon") {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { neonConfig } = require("@neondatabase/serverless");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrismaNeon } = require("@prisma/adapter-neon");
+    // Node 22+ has a global WebSocket; the driver needs it wired up explicitly.
+    if (!neonConfig.webSocketConstructor) neonConfig.webSocketConstructor = globalThis.WebSocket;
+    // PrismaNeon takes a PoolConfig and owns the pool itself — passing a Pool
+    // instance silently yields a client with no connection string at all.
+    const adapter = new PrismaNeon({ connectionString: url });
+    return new PrismaClient({ adapter } as any);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Pool } = require("pg");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
