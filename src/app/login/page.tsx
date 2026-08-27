@@ -166,7 +166,7 @@ export default function LoginPage() {
               Welcome back
             </h2>
             <p style={{ fontSize: 15, color: "#5b616e", marginTop: 8 }}>
-              Sign in to your PMO workspace
+              Sign in to your Workspace
             </p>
           </div>
 
