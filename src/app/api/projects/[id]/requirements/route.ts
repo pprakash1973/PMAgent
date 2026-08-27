@@ -101,9 +101,23 @@ async function extractFileText(file: File): Promise<string> {
   const buffer = Buffer.from(arrayBuffer);
 
   if (ext === "pdf") {
-    const pdfParse = require("pdf-parse/lib/pdf-parse");
-    const result = await pdfParse(buffer);
-    return result.text;
+    try {
+      const pdfParse = require("pdf-parse/lib/pdf-parse");
+      const result = await pdfParse(buffer);
+      return result.text;
+    } catch (pdfParseErr: any) {
+      console.warn("[requirements/upload] pdf-parse failed, falling back to pdfjs-dist:", pdfParseErr?.message);
+      const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
+      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer), verbosity: 0 });
+      const pdfjsDoc = await loadingTask.promise;
+      const pages: string[] = [];
+      for (let p = 1; p <= pdfjsDoc.numPages; p++) {
+        const page = await pdfjsDoc.getPage(p);
+        const content = await page.getTextContent();
+        pages.push((content.items as any[]).map((it: any) => it.str).join(" "));
+      }
+      return pages.join("\n");
+    }
   }
   if (ext === "docx") {
     const mammoth = require("mammoth");
