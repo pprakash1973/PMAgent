@@ -4196,6 +4196,11 @@ function ScopeControlTab({ project }: { project: any }) {
             disabled={extracting || docs.length === 0}
             style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, background: extracting ? C.surface2 : "#0f766e", color: extracting ? C.text3 : "#fff", border: "none", borderRadius: 7, padding: "6px 13px", cursor: extracting || docs.length === 0 ? "not-allowed" : "pointer", opacity: docs.length === 0 ? 0.5 : 1 }}
           >
+            {extracting && (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10" stroke={C.text3} strokeWidth="2.5" strokeDasharray="31" strokeDashoffset="10" />
+              </svg>
+            )}
             {extracting ? "Extracting…" : "Extract Requirements"}
           </button>
           <button
@@ -4208,7 +4213,16 @@ function ScopeControlTab({ project }: { project: any }) {
         </div>
       </div>
 
-      {extractError && (
+      {extracting && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 500, color: "#0f766e", background: "#f0fdf9", border: "1px solid #99f6e4", borderRadius: 8, padding: "10px 14px", marginBottom: 10 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10" stroke="#0f766e" strokeWidth="2.5" strokeDasharray="31" strokeDashoffset="10" />
+          </svg>
+          Extracting requirements from documents… this may take 20–30 seconds.
+        </div>
+      )}
+
+      {!extracting && extractError && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: C.red, fontSize: 12, background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
           <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path strokeLinecap="round" d="M12 8v4m0 4h.01"/></svg>
           {extractError}

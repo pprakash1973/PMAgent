@@ -94,11 +94,15 @@ Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "..
   const text = message.content[0].type === "text" ? message.content[0].text : "{}";
   let extracted: ExtractedRequirement[] = [];
   try {
+    // Try fenced code block first, then bare JSON object (handles preamble text)
     const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
-    const parsed = JSON.parse(fenced ? fenced[1] : text);
+    const candidate = fenced ? fenced[1] : (text.match(/\{[\s\S]*\}/) ?? [text])[0];
+    const parsed = JSON.parse(candidate);
     extracted = parsed.requirements ?? [];
   } catch {
-    return NextResponse.json({ error: "Extraction failed — AI did not return valid JSON" }, { status: 500 });
+    console.error("[extract] AI response not valid JSON:", text.slice(0, 600));
+    // Treat as 0 results rather than a hard error so the UI shows a retry prompt
+    extracted = [];
   }
 
   // Find chunk IDs that best match each sourceQuote
