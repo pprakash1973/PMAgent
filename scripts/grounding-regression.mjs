@@ -150,6 +150,25 @@ check("retrieval is scoped to one project", () => {
   return `${selects.length} raw quer(y|ies) + ORM paths all project-scoped`;
 });
 
+check("the keyword arm uses OR semantics, not AND", () => {
+  const src = readCode("src/lib/evidence-assembler.ts");
+
+  if (/plainto_tsquery|websearch_to_tsquery/.test(src)) {
+    throw new Error(
+      "plainto_tsquery/websearch_to_tsquery join every term with AND. The search " +
+      "terms are 8-10 word topic lists, so a ~500-char chunk would have to contain " +
+      "all of them — the arm returns nothing and retrieval silently degrades to " +
+      "document order. Use to_tsquery with '|'-joined terms."
+    );
+  }
+  if (!/to_tsquery\('english'/.test(src)) throw new Error("no to_tsquery call in the keyword arm");
+  if (!/join\(" \| "\)/.test(src)) throw new Error("terms are not OR-joined");
+  if (!/split\(\/\[\^a-z0-9\]\+\/\)/.test(src)) {
+    throw new Error("tokens are not stripped to [a-z0-9] before reaching to_tsquery");
+  }
+  return "to_tsquery with sanitised, OR-joined terms";
+});
+
 check("the tsvector expression matches the deployed GIN index", () => {
   const assembler = readCode("src/lib/evidence-assembler.ts");
   const migration = read("scripts/migrate-neon-all.js");

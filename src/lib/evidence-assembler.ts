@@ -149,6 +149,31 @@ function supportsFullTextSearch(): boolean {
 }
 
 /**
+ * Turn a term list into a disjunctive tsquery: "risks impact owner" →
+ * "risks | impact | owner".
+ *
+ * This must NOT use plainto_tsquery (or websearch_to_tsquery), which both join
+ * every term with AND. The search terms above are 8-10 word topic lists, so
+ * AND semantics require a single ~500-character chunk to contain all of them —
+ * which effectively never happens, and the arm returns nothing. OR semantics
+ * are what a bag-of-keywords query means; ts_rank then does the discriminating,
+ * scoring chunks by how many of the terms they hit and how often.
+ *
+ * Tokens are stripped to [a-z0-9] before being joined, so no tsquery operator
+ * can reach to_tsquery even though these strings are developer-authored today.
+ */
+function toOrTsQuery(terms: string[]): string | null {
+  const tokens = new Set(
+    terms
+      .join(" ")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((t) => t.length > 1)
+  );
+  return tokens.size ? [...tokens].join(" | ") : null;
+}
+
+/**
  * Lexical arm — ts_rank over an English tsvector, scoped to one project.
  *
  * The tsvector expression must stay identical to the GIN index
@@ -158,7 +183,7 @@ function supportsFullTextSearch(): boolean {
  */
 async function keywordSearch(
   projectId: string,
-  query: string,
+  orQuery: string,
   limit: number
 ): Promise<EvidenceChunk[]> {
   return prisma.$queryRaw<EvidenceChunk[]>(
@@ -172,8 +197,8 @@ async function keywordSearch(
         dc."chunkIndex"
       FROM "DocumentChunk" dc
       WHERE dc."projectId" = ${projectId}
-        AND to_tsvector('english', dc.text) @@ plainto_tsquery('english', ${query})
-      ORDER BY ts_rank(to_tsvector('english', dc.text), plainto_tsquery('english', ${query})) DESC
+        AND to_tsvector('english', dc.text) @@ to_tsquery('english', ${orQuery})
+      ORDER BY ts_rank(to_tsvector('english', dc.text), to_tsquery('english', ${orQuery})) DESC
       LIMIT ${limit}
     `
   );
@@ -273,7 +298,7 @@ export async function assembleEvidence(
     return { chunks: [], totalChunksInProject: 0, queryTerms: terms, hasEvidence: false, mode: "none" };
   }
 
-  const searchQuery = terms.join(" ");
+  const searchQuery = toOrTsQuery(terms);
   const intent = ARTIFACT_SEARCH_INTENT[artifactType] ?? DEFAULT_INTENT;
 
   // Both arms run concurrently; neither can fail the other. Each resolves to an
@@ -325,10 +350,10 @@ export async function assembleEvidence(
 /** Lexical arm, isolated so its failure cannot take down the semantic arm. */
 async function runKeywordArm(
   projectId: string,
-  query: string,
+  query: string | null,
   artifactType: string
 ): Promise<EvidenceChunk[]> {
-  if (!supportsFullTextSearch()) return [];
+  if (!supportsFullTextSearch() || !query) return [];
   try {
     return await keywordSearch(projectId, query, CANDIDATE_POOL);
   } catch (err) {

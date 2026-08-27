@@ -20,7 +20,39 @@
  */
 import "dotenv/config";
 import fs from "node:fs";
-import { Pool } from "pg";
+import { Pool as TcpPool } from "pg";
+
+/**
+ * Open a pool, preferring plain TCP and falling back to Neon's WebSocket
+ * driver. Corporate egress commonly blocks outbound 5432 while allowing 443,
+ * which shows up as ECONNRESET a few seconds into the handshake rather than as
+ * a refusal. The WebSocket driver carries the same wire protocol over 443 and
+ * supports real session transactions, so BEGIN/ROLLBACK still holds.
+ */
+async function openPool(connectionString, { sslVerify = true } = {}) {
+  const isLocal = /@(localhost|127\.0\.0\.1)/.test(connectionString);
+
+  try {
+    const pool = new TcpPool({
+      connectionString,
+      ssl: isLocal ? false : { rejectUnauthorized: sslVerify },
+      connectionTimeoutMillis: 15_000,
+      max: 1,
+    });
+    await pool.query("SELECT 1");
+    return { pool, transport: "tcp" };
+  } catch (tcpErr) {
+    if (isLocal || !/neon\.tech/.test(connectionString)) throw tcpErr;
+
+    const { Pool: WsPool, neonConfig } = await import("@neondatabase/serverless");
+    if (!neonConfig.webSocketConstructor) {
+      neonConfig.webSocketConstructor = globalThis.WebSocket;
+    }
+    const pool = new WsPool({ connectionString });
+    await pool.query("SELECT 1");
+    return { pool, transport: `websocket (TCP 5432 unreachable: ${tcpErr.message || tcpErr.code})` };
+  }
+}
 
 // .env.local is Next.js's convention and dotenv/config does not read it.
 for (const f of [".env.local", ".env"]) {
@@ -52,22 +84,20 @@ async function main() {
     process.exit(2);
   }
 
-  const isLocal = /@(localhost|127\.0\.0\.1)/.test(URL_ARG);
-  const pool = new Pool({
-    connectionString: URL_ARG,
-    ssl: isLocal ? false : { rejectUnauthorized: true },
-    connectionTimeoutMillis: 15_000,
-    max: 1,
-  });
-
+  const { pool, transport } = await openPool(URL_ARG);
   const client = await pool.connect();
+
   let host = "unknown";
   try {
     host = new URL(URL_ARG.replace(/^postgres(ql)?:/, "http:")).host;
   } catch { /* opaque URL — never print the raw string, it holds the password */ }
 
+  const server = await client.query("SELECT version() AS v");
+
   console.log(`\n  Retrieval SQL verification`);
-  console.log(`  Host: ${host}`);
+  console.log(`  Host:      ${host}`);
+  console.log(`  Server:    ${server.rows[0].v.split(" ").slice(0, 2).join(" ")}`);
+  console.log(`  Transport: ${transport}`);
   console.log(`  All work runs inside a transaction and is rolled back.\n`);
 
   try {
@@ -155,13 +185,30 @@ async function main() {
     record("fixture created", true, `${chunks.length} chunks`);
 
     // ── Keyword arm: the exact query from evidence-assembler.ts ─────────────
-    const kwQuery = "risks probability impact mitigation owner category threats opportunities";
+    const terms = "risks probability impact mitigation owner category threats opportunities";
+    const kwQuery = [...new Set(terms.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1))].join(" | ");
+
+    // Guard the bug this fixture exists to catch: plainto_tsquery ANDs every
+    // term, so an 8-term topic list can only match a chunk containing all
+    // eight — which never happens, and the arm silently returns nothing.
+    const andSemantics = await client.query(
+      `SELECT to_tsvector('english', $1) @@ plainto_tsquery('english', $2) AS matched`,
+      [chunks[0][1], terms]
+    );
+    record(
+      "keyword query does not use AND semantics",
+      !andSemantics.rows[0].matched === true,
+      andSemantics.rows[0].matched
+        ? "plainto_tsquery matched — fixture no longer proves the bug"
+        : "confirmed: plainto_tsquery would return nothing here; to_tsquery with | is required"
+    );
+
     const kw = await client.query(
       `SELECT dc.id, dc.text
        FROM "DocumentChunk" dc
        WHERE dc."projectId" = $1
-         AND to_tsvector('english', dc.text) @@ plainto_tsquery('english', $2)
-       ORDER BY ts_rank(to_tsvector('english', dc.text), plainto_tsquery('english', $2)) DESC
+         AND to_tsvector('english', dc.text) @@ to_tsquery('english', $2)
+       ORDER BY ts_rank(to_tsvector('english', dc.text), to_tsquery('english', $2)) DESC
        LIMIT $3`,
       [projectId, kwQuery, 30]
     );
@@ -187,7 +234,7 @@ async function main() {
         `EXPLAIN (FORMAT JSON)
          SELECT dc.id FROM "DocumentChunk" dc
          WHERE dc."projectId" = $1
-           AND to_tsvector('english', dc.text) @@ plainto_tsquery('english', $2)`,
+           AND to_tsvector('english', dc.text) @@ to_tsquery('english', $2)`,
         [projectId, kwQuery]
       );
       const planText = JSON.stringify(plan.rows[0]);
@@ -305,20 +352,25 @@ async function main() {
     await pool.end().catch(() => {});
   }
 
-  // ── Confirm nothing persisted ─────────────────────────────────────────────
-  const check = new Pool({
-    connectionString: URL_ARG,
-    ssl: isLocal ? false : { rejectUnauthorized: true },
-    max: 1,
-  });
+  // ── Confirm nothing persisted, on a brand-new connection ─────────────────
   try {
-    const left = await check.query(`SELECT COUNT(*) AS c FROM "Project" WHERE id = 'verify-proj-rollback'`);
-    record("rollback left nothing behind", Number(left.rows[0].c) === 0,
-      `${left.rows[0].c} fixture row(s) remain (must be 0)`);
+    const { pool: check } = await openPool(URL_ARG);
+    try {
+      const left = await check.query(
+        `SELECT
+           (SELECT COUNT(*) FROM "Project" WHERE id = 'verify-proj-rollback') AS projects,
+           (SELECT COUNT(*) FROM "DocumentChunk" WHERE "projectId" = 'verify-proj-rollback') AS chunks,
+           (SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'verify_fts_idx') AS indexes`
+      );
+      const { projects, chunks, indexes } = left.rows[0];
+      const clean = Number(projects) === 0 && Number(chunks) === 0 && Number(indexes) === 0;
+      record("rollback left nothing behind", clean,
+        `projects=${projects}, chunks=${chunks}, indexes=${indexes} (all must be 0)`);
+    } finally {
+      await check.end().catch(() => {});
+    }
   } catch (e) {
     record("rollback left nothing behind", false, e.message);
-  } finally {
-    await check.end().catch(() => {});
   }
 
   let failed = 0;
