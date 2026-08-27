@@ -16,7 +16,8 @@
     "test": "npm run test:security && npm run test:grounding && npm run test:retrieval && tsc --noEmit",
     "test:grounding": "node scripts/grounding-regression.mjs",
     "test:retrieval": "tsx scripts/test-evidence-assembler.ts",
-    "embeddings:backfill": "tsx scripts/backfill-embeddings.ts"
+    "embeddings:backfill": "tsx scripts/backfill-embeddings.ts",
+    "verify:sql": "node scripts/verify-retrieval-sql.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
