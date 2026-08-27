@@ -1229,14 +1229,15 @@ model AuditLog {
 }
 
 model ModelConfig {
-  id        String   @id @default(cuid())
-  agent     String   @unique
-  model     String
-  provider  String   @default("anthropic")
-  maxTokens Int      @default(8192)
-  notes     String?
-  updatedAt DateTime @updatedAt
-  updatedBy String?
+  id          String   @id @default(cuid())
+  agent       String   @unique
+  model       String
+  provider    String   @default("anthropic")
+  maxTokens   Int      @default(8192)
+  temperature Float    @default(0)
+  notes       String?
+  updatedAt   DateTime @updatedAt
+  updatedBy   String?
 }
 
 model SystemSetting {

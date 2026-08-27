@@ -321,8 +321,9 @@ async function main() {
         "updatedBy" TEXT
       );
       ALTER TABLE "ModelConfig"
-        ADD COLUMN IF NOT EXISTS "provider" TEXT NOT NULL DEFAULT 'anthropic'
-    `, "ModelConfig table + provider column");
+        ADD COLUMN IF NOT EXISTS "provider"     TEXT  NOT NULL DEFAULT 'anthropic',
+        ADD COLUMN IF NOT EXISTS "temperature"  FLOAT NOT NULL DEFAULT 0
+    `, "ModelConfig table + provider/temperature columns");
 
     await run(pool, `
       CREATE TABLE IF NOT EXISTS "SystemSetting" (

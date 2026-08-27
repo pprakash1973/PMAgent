@@ -1,72 +1,49 @@
 import { prisma } from "./db";
 import type { Provider } from "./providers/types";
+import {
+  AGENTS, AVAILABLE_MODELS, AGENT_ALLOWED_TIERS,
+  DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+  allowedModelsForAgent, isModelUncertified,
+  type AgentId,
+} from "./model-tiers";
+
+// Re-export pure client-safe symbols for callers that imported from this module
+export {
+  AGENTS, AVAILABLE_MODELS, AGENT_ALLOWED_TIERS,
+  DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
+  allowedModelsForAgent, isModelUncertified,
+  type AgentId,
+};
 
 export interface AgentConfig {
   model: string;
   maxTokens: number;
   provider: Provider;
+  temperature: number;
 }
-
-// All logical AI agents in the platform
-export const AGENTS = [
-  { id: "artifact",          label: "Artifact Generation",      description: "Generates all 25 PMBOK artifact types (WBS, risk, charter, status, etc.)" },
-  { id: "nl_project",        label: "NL Project Creation",      description: "Infers structured project fields from a natural-language brief" },
-  { id: "status_questions",  label: "Status Questions",         description: "Generates contextual questions for weekly/monthly status reports" },
-  { id: "status_summary",    label: "Status Summary",           description: "Drafts the narrative summary section of status reports" },
-  { id: "schedule_recovery", label: "Schedule Recovery",        description: "Analyses delayed tasks and proposes a recovery plan" },
-  { id: "requirements",      label: "Requirements Extraction",  description: "Parses uploaded requirement documents and extracts structured fields" },
-  { id: "chat",              label: "Project Chat",             description: "Answers questions and executes commands within a single project context" },
-  { id: "portfolio_chat",    label: "Portfolio Chat",           description: "Cross-project portfolio Q&A for PMs, DMs, and Delivery Heads" },
-] as const;
-
-export type AgentId = typeof AGENTS[number]["id"];
-
-export const AVAILABLE_MODELS: {
-  id: string;
-  label: string;
-  provider: Provider;
-  tier: string;
-}[] = [
-  // ── Anthropic ────────────────────────────────────────────────────────────
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5",   provider: "anthropic", tier: "Fast" },
-  { id: "claude-sonnet-4-6",         label: "Claude Sonnet 4.6",  provider: "anthropic", tier: "Balanced" },
-  { id: "claude-sonnet-5",           label: "Claude Sonnet 5",    provider: "anthropic", tier: "Latest" },
-  { id: "claude-opus-4-8",           label: "Claude Opus 4.8",    provider: "anthropic", tier: "Quality" },
-  // ── OpenAI ───────────────────────────────────────────────────────────────
-  { id: "gpt-4o-mini",               label: "GPT-4o mini",        provider: "openai",    tier: "Fast" },
-  { id: "gpt-4o",                    label: "GPT-4o",             provider: "openai",    tier: "Balanced" },
-  { id: "o3-mini",                   label: "o3-mini",            provider: "openai",    tier: "Smart" },
-  { id: "gpt-4.1",                   label: "GPT-4.1",            provider: "openai",    tier: "Quality" },
-  // ── DeepSeek ─────────────────────────────────────────────────────────────
-  { id: "deepseek-chat",             label: "DeepSeek Chat",      provider: "deepseek",  tier: "Balanced" },
-  { id: "deepseek-reasoner",         label: "DeepSeek Reasoner",  provider: "deepseek",  tier: "Smart" },
-];
-
-export const DEFAULT_MODEL     = "claude-sonnet-4-6";
-export const DEFAULT_PROVIDER: Provider = "anthropic";
-export const DEFAULT_MAX_TOKENS = 8192;
 
 // In-process TTL cache — avoids a DB hit on every generation call
 const cache = new Map<string, AgentConfig & { exp: number }>();
-const TTL_MS = 60_000; // 1 minute; invalidated immediately on admin save
+const TTL_MS = 60_000;
 
 export async function resolveModel(agent: AgentId): Promise<AgentConfig> {
   const now = Date.now();
   const hit = cache.get(agent);
-  if (hit && hit.exp > now) return { model: hit.model, maxTokens: hit.maxTokens, provider: hit.provider };
+  if (hit && hit.exp > now) return { model: hit.model, maxTokens: hit.maxTokens, provider: hit.provider, temperature: hit.temperature };
 
-  const row = await prisma.modelConfig.findUnique({ where: { agent } });
+  type ExtendedRow = { model: string; maxTokens: number; provider?: string; temperature?: number } | null;
+  const row = await prisma.modelConfig.findUnique({ where: { agent } }) as ExtendedRow;
 
-  // Derive provider from the model list if the DB row doesn't have it yet
-  const storedProvider = (row as any)?.provider as Provider | undefined;
+  const storedProvider = row?.provider as Provider | undefined;
   const derivedProvider: Provider = storedProvider
     ?? AVAILABLE_MODELS.find((m) => m.id === row?.model)?.provider
     ?? DEFAULT_PROVIDER;
 
   const result: AgentConfig = {
-    model:     row?.model     ?? DEFAULT_MODEL,
-    maxTokens: row?.maxTokens ?? DEFAULT_MAX_TOKENS,
-    provider:  derivedProvider,
+    model:       row?.model       ?? DEFAULT_MODEL,
+    maxTokens:   row?.maxTokens   ?? DEFAULT_MAX_TOKENS,
+    provider:    derivedProvider,
+    temperature: row?.temperature ?? DEFAULT_TEMPERATURE,
   };
   cache.set(agent, { ...result, exp: now + TTL_MS });
   return result;
