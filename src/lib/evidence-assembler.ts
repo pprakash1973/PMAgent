@@ -130,6 +130,10 @@ const DEFAULT_INTENT = "What does this project involve — its scope, objectives
 
 const TOP_K = 12;          // max chunks handed to the model per artifact generation
 const CANDIDATE_POOL = 30; // per-arm retrieval depth before ranking down to TOP_K
+// Both arms tie-break on dc.id. Near-duplicate chunks score identically, and
+// without a deterministic second key Postgres is free to return a different
+// subset of a tied group on each run — which would make the same generation
+// non-reproducible and the retrieval eval unrepeatable.
 const MIN_USEFUL_HITS = 4; // below this, top up with document-order chunks
 const RRF_K = 60;          // standard RRF damping; tune against the Phase 4 eval, not by feel
 
@@ -198,7 +202,7 @@ async function keywordSearch(
       FROM "DocumentChunk" dc
       WHERE dc."projectId" = ${projectId}
         AND to_tsvector('english', dc.text) @@ to_tsquery('english', ${orQuery})
-      ORDER BY ts_rank(to_tsvector('english', dc.text), to_tsquery('english', ${orQuery})) DESC
+      ORDER BY ts_rank(to_tsvector('english', dc.text), to_tsquery('english', ${orQuery})) DESC, dc.id
       LIMIT ${limit}
     `
   );
@@ -232,7 +236,7 @@ async function semanticSearch(
       FROM "DocumentChunk" dc
       WHERE dc."projectId" = ${projectId}
         AND dc."embedding" IS NOT NULL
-      ORDER BY dc."embedding" <=> ${literal}::vector
+      ORDER BY dc."embedding" <=> ${literal}::vector, dc.id
       LIMIT ${limit}
     `
   );
