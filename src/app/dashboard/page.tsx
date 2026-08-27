@@ -216,7 +216,7 @@ export default async function DashboardPage() {
                     background: "#f4f6f8", border: "0.5px solid #DDE3E8", color: "#6B7E8A",
                     whiteSpace: "nowrap" as const,
                   }}>
-                    {engLabel(p.engagementType)}
+                    {engLabel((p as any).engagementType ?? "")}
                   </span>
                   <Link href={`/dashboard/projects/${p.id}`} style={{ textDecoration: "none" }}>
                     <span className="pm-open" style={{
