@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Azure (A1): App Service / Container Apps need a self-contained server bundle.
-  // Without this the deploy must ship the whole node_modules tree, or fails outright.
-  output: "standalone",
+  // Azure App Service needs a self-contained bundle; Vercel manages its own output.
+  // Set AZURE_BUILD=true in the Azure pipeline / App Service build settings.
+  ...(process.env.AZURE_BUILD === "true" ? { output: "standalone" } : {}),
 
   experimental: {
     serverActions: {
