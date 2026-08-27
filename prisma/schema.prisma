@@ -340,6 +340,17 @@ model Project {
   commercialSnapshots  CommercialSnapshot[]
 
   @@unique([orgId, code])
+
+  // ── ported from pprakash/main (phase 1) ──
+  decisions            Decision[]
+  scopeBaselines       ScopeBaseline[]
+  assumptions          Assumption[]
+  dependencies         Dependency[]
+  budgetRevisions      BudgetRevision[]
+  taskAssignments      TaskAssignment[]
+  collectionCycles     CollectionCycle[]
+  collectionTokens     CollectionToken[]
+  taskActuals          TaskActualsLedger[]
 }
 
 model RequirementsDocument {
@@ -492,6 +503,10 @@ model Artifact {
   sourceReq RequirementsDocument? @relation(fields: [sourceReqId], references: [id])
   versions  ArtifactVersion[]
   gaps      Gap[]
+
+  // ── ported from pprakash/main (phase 1) ──
+  scopeBaselineId String?
+  scopeBaseline   ScopeBaseline? @relation(fields: [scopeBaselineId], references: [id])
 }
 
 model ArtifactVersion {
@@ -739,6 +754,9 @@ model ChangeRequest {
   updatedAt      DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id])
+
+  // ── ported from pprakash/main (phase 1) ──
+  budgetRevisions BudgetRevision[]
 }
 
 model Milestone {
@@ -1156,6 +1174,10 @@ model ScheduleTask {
 
   project  Project          @relation(fields: [projectId], references: [id])
   resource ProjectResource? @relation(fields: [resourceId], references: [id])
+
+  // ── ported from pprakash/main (phase 1) ──
+  assignments TaskAssignment[]
+  actuals     TaskActualsLedger[]
 }
 
 model ProjectResource {
@@ -1175,6 +1197,11 @@ model ProjectResource {
 
   project       Project        @relation(fields: [projectId], references: [id])
   scheduleTasks ScheduleTask[]
+
+  // ── ported from pprakash/main (phase 1) ──
+  assignments TaskAssignment[]
+  tokens      CollectionToken[]
+  actuals     TaskActualsLedger[]
 }
 
 model CostEntry {
@@ -1476,4 +1503,201 @@ model DmReviewNote {
 
   @@index([projectId])
   @@map("dm_review_notes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Ported from pprakash/main — phase 1 of the personal-repo reconciliation.
+//
+// These 9 models back features that exist on the personal repo but never
+// reached the corporate line: decisions, assumptions, dependencies, scope
+// baselines, budget revisions, and the task-actuals collection flow.
+//
+// Copied verbatim rather than re-derived, so the ported route handlers work
+// against the field names they already expect.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Assumption {
+  id         String   @id @default(cuid())
+  projectId  String
+  statement  String
+  category   String   @default("general")
+  source     String   @default("manual")
+  status     String   @default("open")
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("assumptions")
+}
+
+model BudgetRevision {
+  id               String    @id @default(cuid())
+  projectId        String
+  changeRequestId  String?
+  previousBudget   Decimal
+  newBudget        Decimal
+  delta            Decimal
+  reason           String
+  approvedById     String?
+  createdAt        DateTime  @default(now())
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  changeRequest ChangeRequest? @relation(fields: [changeRequestId], references: [id])
+
+  @@index([projectId])
+  @@map("budget_revisions")
+}
+
+model CollectionCycle {
+  id          String    @id @default(cuid())
+  projectId   String
+  cycleNumber Int
+  label       String?   // e.g. "Sprint 4 actuals"
+  startDate   DateTime
+  endDate     DateTime
+  status      String    @default("open") // open | closed | processing | complete
+  taskIds     Json      @default("[]")   // specific task IDs included; empty = all tasks
+  dispatchedAt DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  createdBy   String?
+
+  project Project           @relation(fields: [projectId], references: [id])
+  tokens  CollectionToken[]
+  actuals TaskActualsLedger[]
+
+  @@unique([projectId, cycleNumber])
+  @@index([projectId, status])
+}
+
+model CollectionToken {
+  id         String    @id @default(cuid())
+  cycleId    String
+  resourceId String
+  projectId  String
+  tokenHash  String    @unique  // SHA-256 of raw 32-byte token; raw token is emailed, never stored
+  expiresAt  DateTime
+  usedAt     DateTime?
+  status     String    @default("pending") // pending | submitted | expired
+  emailSentAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  cycle    CollectionCycle @relation(fields: [cycleId], references: [id])
+  resource ProjectResource @relation(fields: [resourceId], references: [id])
+  project  Project         @relation(fields: [projectId], references: [id])
+  actuals  TaskActualsLedger[]
+
+  @@index([cycleId])
+  @@index([resourceId])
+}
+
+model Decision {
+  id          String    @id @default(cuid())
+  projectId   String
+  decisionId  String?   // D-001, D-002 …
+  title       String
+  rationale   String?
+  madeBy      String?
+  madeAt      DateTime  @default(now())
+  reviewAt    DateTime?
+  status      String    @default("open")  // open | agreed | superseded
+  linkedRef   String?   // free-text milestone label or CR number
+  linkedType  String?   // "milestone" | "cr"
+  sprintId    String?   // agile: sprint ID (no FK — avoids back-relation noise)
+  sprintLabel String?   // agile: "Sprint 6" — denormalised for display
+  category    String?   // Architecture | Scope | Process | Tooling | Team | Other
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, status])
+  @@map("decisions")
+}
+
+model Dependency {
+  id          String    @id @default(cuid())
+  projectId   String
+  description String
+  type        String    @default("external")
+  owner       String?
+  dueDate     DateTime?
+  status      String    @default("open")
+  source      String    @default("manual")
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("dependencies")
+}
+
+model ScopeBaseline {
+  id               String   @id @default(cuid())
+  projectId        String
+  version          Int
+  label            String
+  snapshot         Json     @default("[]")
+  removedSnapshot  Json     @default("[]")
+  impactSummary    Json?
+  requirementCount Int      @default(0)
+  deltaReviewed    Boolean  @default(false)
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  artifacts Artifact[]
+
+  @@unique([projectId, version])
+  @@index([projectId])
+  @@map("scope_baselines")
+}
+
+model TaskActualsLedger {
+  id              String   @id @default(cuid())
+  projectId       String
+  taskId          String
+  resourceId      String
+  cycleId         String
+  tokenId         String
+
+  hoursWorked     Float
+  percentComplete Int
+  etcHours        Float?   // Estimate To Complete
+  disposition     String   // confirmed_as_planned | actual | forecast | estimated | unknown
+  notes           String?
+
+  submittedAt     DateTime @default(now())
+  supersededById  String?  // points to a newer ledger entry that corrects this one
+
+  project  Project         @relation(fields: [projectId], references: [id])
+  task     ScheduleTask    @relation(fields: [taskId], references: [id])
+  resource ProjectResource @relation(fields: [resourceId], references: [id])
+  cycle    CollectionCycle @relation(fields: [cycleId], references: [id])
+  token    CollectionToken @relation(fields: [tokenId], references: [id])
+
+  @@index([projectId, cycleId])
+  @@index([taskId, cycleId])
+  @@index([tokenId])
+}
+
+model TaskAssignment {
+  id         String   @id @default(cuid())
+  taskId     String
+  resourceId String
+  projectId  String
+  role       String?  // Lead | Support | Reviewer
+  createdAt  DateTime @default(now())
+
+  task     ScheduleTask    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  resource ProjectResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  project  Project         @relation(fields: [projectId], references: [id])
+
+  @@unique([taskId, resourceId])
+  @@index([projectId])
 }
