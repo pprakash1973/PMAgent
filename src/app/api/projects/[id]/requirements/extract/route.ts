@@ -38,17 +38,34 @@ export async function POST(
     select: { id: true, text: true, sectionTitle: true, pageNumber: true },
   });
 
-  if (chunks.length === 0) {
-    return NextResponse.json({ error: "No document chunks found. Upload source documents first." }, { status: 400 });
-  }
-
   // Build corpus — cap at ~12 000 chars to stay inside context limits
   let corpus = "";
-  for (const chunk of chunks) {
-    const prefix = chunk.sectionTitle ? `[${chunk.sectionTitle}] ` : "";
-    const candidate = `${prefix}${chunk.text}\n`;
-    if (corpus.length + candidate.length > 12000) break;
-    corpus += candidate;
+
+  if (chunks.length > 0) {
+    for (const chunk of chunks) {
+      const prefix = chunk.sectionTitle ? `[${chunk.sectionTitle}] ` : "";
+      const candidate = `${prefix}${chunk.text}\n`;
+      if (corpus.length + candidate.length > 12000) break;
+      corpus += candidate;
+    }
+  } else {
+    // Docs uploaded during project creation are stored without chunks — fall back to
+    // the raw text saved in extractedContent.rawText on the RequirementsDocument record.
+    const legacyDocs = await prisma.requirementsDocument.findMany({
+      where: { projectId: id, deletedAt: null },
+      select: { extractedContent: true, fileName: true },
+      orderBy: { createdAt: "asc" },
+    });
+    for (const doc of legacyDocs) {
+      const raw = (doc.extractedContent as any)?.rawText as string | undefined;
+      if (raw) {
+        corpus += `\n=== ${doc.fileName} ===\n${raw.slice(0, 6000)}\n`;
+        if (corpus.length > 12000) break;
+      }
+    }
+    if (!corpus.trim()) {
+      return NextResponse.json({ error: "No document content found. Upload source documents first." }, { status: 400 });
+    }
   }
 
   const message = await anthropic.messages.create({

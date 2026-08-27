@@ -3736,6 +3736,7 @@ function ScopeControlTab({ project }: { project: any }) {
   const [extracting, setExtracting] = React.useState(false);
   const [extractError, setExtractError] = React.useState<string | null>(null);
   const [extractingDocIds, setExtractingDocIds] = React.useState<Set<string>>(new Set());
+  const autoExtractedRef = React.useRef(false);
 
   // Impact analysis
   const [selectedDocIds, setSelectedDocIds] = React.useState<Set<string>>(new Set());
@@ -3775,9 +3776,28 @@ function ScopeControlTab({ project }: { project: any }) {
     if (Array.isArray(rData)) setReqs(rData);
     if (Array.isArray(bData)) setBaselines(bData);
     setLoading(false);
+    return { rData, bData };
   }
 
-  React.useEffect(() => { loadData(); }, [project.id]);
+  React.useEffect(() => {
+    loadData().then(({ rData, bData }) => {
+      // Auto-extract on first open when docs exist but no requirements have been extracted yet.
+      // Covers docs uploaded during project creation which bypass the Scope Control upload path.
+      if (!autoExtractedRef.current && docs.length > 0 && rData.length === 0 && bData.length === 0) {
+        autoExtractedRef.current = true;
+        setExtracting(true);
+        setExtractError(null);
+        fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" })
+          .then(r => r.json())
+          .then(async data => {
+            if (data.extracted > 0) await loadData();
+            else setExtractError(data.error || "No requirements found — click Extract to retry.");
+          })
+          .catch(() => setExtractError("Auto-extraction failed — click Extract to retry."))
+          .finally(() => setExtracting(false));
+      }
+    });
+  }, [project.id]);
 
   const latestBaseline = baselines[0] ?? null; // ordered desc by version
   const blSnapshot: string[] = latestBaseline
