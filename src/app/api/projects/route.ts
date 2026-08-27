@@ -193,7 +193,9 @@ export async function POST(req: NextRequest) {
           fileName: data.requirementsFileName,
           fileFormat: data.requirementsFileFormat || "txt",
           storageUri: `inline:${project.id}`,
-          extractedContent: (data.requirementsExtracted ?? { rawText: data.requirementsText }) as object,
+          // Always persist rawText so the requirements/extract fallback can read it
+          // when no DocumentChunks exist (docs uploaded via project creation bypass chunking).
+          extractedContent: { ...(data.requirementsExtracted ?? {}), rawText: data.requirementsText } as object,
           pmConfirmed: true,
           uploadedById: user.id,
         },
