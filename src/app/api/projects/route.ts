@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateProjectFromNL } from "@/lib/ai";
 import { DEFAULT_DETAILED_ARTIFACTS, DEFAULT_HIGH_LEVEL_ARTIFACTS } from "@/lib/utils";
+import { chunkText } from "@/lib/chunk-text";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -185,21 +186,33 @@ export async function POST(req: NextRequest) {
       })),
     });
 
-    // Save requirements document if file was uploaded
+    // Save requirements document + chunks if file was uploaded
     if (data.requirementsText && data.requirementsFileName) {
-      await db.requirementsDocument.create({
+      const rawText = data.requirementsText;
+      const chunks = chunkText(rawText);
+      const doc = await db.requirementsDocument.create({
         data: {
           projectId: project.id,
           fileName: data.requirementsFileName,
           fileFormat: data.requirementsFileFormat || "txt",
           storageUri: `inline:${project.id}`,
-          // Always persist rawText so the requirements/extract fallback can read it
-          // when no DocumentChunks exist (docs uploaded via project creation bypass chunking).
-          extractedContent: { ...(data.requirementsExtracted ?? {}), rawText: data.requirementsText } as object,
+          extractedContent: { ...(data.requirementsExtracted ?? {}), rawText } as object,
           pmConfirmed: true,
           uploadedById: user.id,
+          ingestionState: "ready",
+          chunkCount: chunks.length,
         },
       });
+      if (chunks.length > 0) {
+        await db.documentChunk.createMany({
+          data: chunks.map(c => ({
+            id: `${doc.id}-${c.chunkIndex}`,
+            documentId: doc.id,
+            projectId: project.id,
+            ...c,
+          })),
+        });
+      }
     }
 
     return NextResponse.json(

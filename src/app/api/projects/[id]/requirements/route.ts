@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
 import { requireProjectAccess } from "@/lib/project-access";
 import { embedAndStoreChunks } from "@/lib/chunk-embeddings";
+import { chunkText } from "@/lib/chunk-text";
 
 // Doc class → points toward evidence readiness score
 const DOC_CLASS_POINTS: Record<string, number> = {
@@ -36,63 +37,6 @@ async function computeAndSaveReadiness(projectId: string) {
     data: { evidenceReadinessScore: score, evidenceReadinessBand: band },
   });
   return { score, band };
-}
-
-// Chunk raw text into ~500-char segments with locator metadata
-function chunkText(text: string): Array<{
-  chunkIndex: number; pageNumber: number; charStart: number; charEnd: number;
-  sectionTitle: string | null; text: string; tokenCount: number;
-}> {
-  const CHARS_PER_PAGE = 3000;
-  const TARGET_CHUNK = 500;
-
-  // Split on paragraph boundaries first
-  const paragraphs = text.split(/\n{2,}/);
-  const chunks: ReturnType<typeof chunkText> = [];
-  let chunkIndex = 0;
-  let globalChar = 0;
-  let currentText = "";
-  let currentStart = 0;
-  let currentSection: string | null = null;
-
-  function flush() {
-    const t = currentText.trim();
-    if (!t) return;
-    const charStart = currentStart;
-    const charEnd = charStart + t.length;
-    chunks.push({
-      chunkIndex: chunkIndex++,
-      pageNumber: Math.floor(charStart / CHARS_PER_PAGE) + 1,
-      charStart,
-      charEnd,
-      sectionTitle: currentSection,
-      text: t,
-      tokenCount: Math.ceil(t.length / 4), // rough token estimate
-    });
-    currentText = "";
-  }
-
-  for (const para of paragraphs) {
-    const trimmed = para.trim();
-    if (!trimmed) { globalChar += para.length + 2; continue; }
-
-    // Detect section headings (all-caps lines or lines ending with : under 80 chars)
-    if ((trimmed === trimmed.toUpperCase() && trimmed.length < 80 && /[A-Z]/.test(trimmed))
-      || (trimmed.endsWith(":") && trimmed.length < 80)) {
-      flush();
-      currentSection = trimmed;
-      globalChar += para.length + 2;
-      continue;
-    }
-
-    if (currentText.length + trimmed.length > TARGET_CHUNK) flush();
-
-    if (!currentText) currentStart = globalChar;
-    currentText += (currentText ? " " : "") + trimmed;
-    globalChar += para.length + 2;
-  }
-  flush();
-  return chunks;
 }
 
 async function extractFileText(file: File): Promise<string> {
