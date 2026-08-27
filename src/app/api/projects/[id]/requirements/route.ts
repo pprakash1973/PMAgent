@@ -8,6 +8,7 @@ import { anthropic } from "@/lib/ai";
 import { requireProjectAccess } from "@/lib/project-access";
 import { embedAndStoreChunks } from "@/lib/chunk-embeddings";
 import { chunkText } from "@/lib/chunk-text";
+import { pdfToMarkdown } from "@/lib/pdf-to-markdown";
 
 // Doc class → points toward evidence readiness score
 const DOC_CLASS_POINTS: Record<string, number> = {
@@ -50,17 +51,8 @@ async function extractFileText(file: File): Promise<string> {
       const result = await pdfParse(buffer);
       return result.text;
     } catch (pdfParseErr: any) {
-      console.warn("[requirements/upload] pdf-parse failed, falling back to pdfjs-dist:", pdfParseErr?.message);
-      const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
-      const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer), verbosity: 0 });
-      const pdfjsDoc = await loadingTask.promise;
-      const pages: string[] = [];
-      for (let p = 1; p <= pdfjsDoc.numPages; p++) {
-        const page = await pdfjsDoc.getPage(p);
-        const content = await page.getTextContent();
-        pages.push((content.items as any[]).map((it: any) => it.str).join(" "));
-      }
-      return pages.join("\n");
+      console.warn("[requirements/upload] pdf-parse failed, falling back to pdfjs markdown:", pdfParseErr?.message);
+      return pdfToMarkdown(buffer);
     }
   }
   if (ext === "docx") {

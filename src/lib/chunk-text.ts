@@ -45,12 +45,15 @@ export function chunkText(text: string): TextChunk[] {
     const trimmed = para.trim();
     if (!trimmed) { globalChar += para.length + 2; continue; }
 
+    const mdHeading = trimmed.match(/^(#{1,3})\s+(.+)$/);
     if (
+      mdHeading ||
       (trimmed === trimmed.toUpperCase() && trimmed.length < 80 && /[A-Z]/.test(trimmed)) ||
       (trimmed.endsWith(":") && trimmed.length < 80)
     ) {
       flush();
-      currentSection = trimmed;
+      // Strip leading # markers so sectionTitle is clean prose
+      currentSection = mdHeading ? mdHeading[2] : trimmed;
       globalChar += para.length + 2;
       continue;
     }

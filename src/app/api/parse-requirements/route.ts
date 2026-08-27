@@ -4,6 +4,7 @@ export const maxDuration = 120;
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { extractRequirements, generateProjectFromNL } from "@/lib/ai";
+import { pdfToMarkdown } from "@/lib/pdf-to-markdown";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -46,18 +47,8 @@ export async function POST(req: NextRequest) {
         const result = await pdfParse(buffer);
         text = result.text;
       } catch (pdfParseErr: any) {
-        console.warn("[parse-requirements] pdf-parse failed, falling back to pdfjs-dist:", pdfParseErr?.message);
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const pdfjs = require("pdfjs-dist/legacy/build/pdf.js");
-        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(buffer), verbosity: 0 });
-        const pdfjsDoc = await loadingTask.promise;
-        const pages: string[] = [];
-        for (let p = 1; p <= pdfjsDoc.numPages; p++) {
-          const page = await pdfjsDoc.getPage(p);
-          const content = await page.getTextContent();
-          pages.push((content.items as any[]).map((it: any) => it.str).join(" "));
-        }
-        text = pages.join("\n");
+        console.warn("[parse-requirements] pdf-parse failed, falling back to pdfjs markdown:", pdfParseErr?.message);
+        text = await pdfToMarkdown(buffer);
       }
     } else if (ext === "docx") {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
