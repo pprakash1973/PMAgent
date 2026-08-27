@@ -577,25 +577,85 @@ Return JSON with:
   })
 - powerInterestSummary (string): overall stakeholder landscape narrative`,
 
-    initiation_deck: `Generate a Project Initiation Deck for CXO stakeholder presentation per PMBOK 6th Ed 4.1 and pmi-charter best practices.
+    initiation_deck: `Generate a Project Initiation Deck for CXO stakeholder presentation per PMBOK 6th Ed 4.1 and PMI charter best practices.
+Structure the output as individual slides so each section maps directly to a PowerPoint slide.
 Return JSON with:
 - projectTitle (string)
-- projectDescription (string)
-- date (string)
-- sponsor (string)
-- objectives (array of strings): 3–5 SMART objectives
-- scope (object): {inScope (array of strings), outOfScope (array of strings)}
-- deliverables (array of strings)
-- milestones (array of {name, targetDate}): key milestones
-- stakeholders (array of {name, role, interest})
-- budget (string): order-of-magnitude budget with currency
-- timeline (string): start to end date range
-- risks (array of strings): top 5 risks only
-- assumptions (array of strings)
-- constraints (array of strings)
-- governance (object): {sponsor (string), pm (string), steeringCommittee (string), reportingCadence (string)}
-- approvalSignatures (array of {role})
-- nextSteps (array of strings): immediate actions post-approval`,
+- projectCode (string)
+- date (string): ISO date
+- preparedBy (string): PM name
+- version (string): "1.0"
+- slides (array of slide objects — one object per slide, in presentation order):
+    SLIDE 1 — Cover
+    { slideNumber: 1, title: "Cover", layout: "cover",
+      projectTitle (string), tagline (string): one-sentence value proposition,
+      sponsor (string), pm (string), date (string), confidentiality (string): e.g. "Confidential — For Steering Committee" }
+
+    SLIDE 2 — Agenda
+    { slideNumber: 2, title: "Agenda", layout: "agenda",
+      items (array of strings): slide titles in order }
+
+    SLIDE 3 — Executive Summary
+    { slideNumber: 3, title: "Executive Summary", layout: "summary",
+      headline (string): one punchy sentence,
+      problemStatement (string): the business problem or opportunity,
+      proposedSolution (string): what this project will deliver,
+      strategicAlignment (array of strings): how it aligns to org strategy,
+      expectedOutcome (string): what success looks like }
+
+    SLIDE 4 — Business Case & Objectives
+    { slideNumber: 4, title: "Business Case & Objectives", layout: "objectives",
+      businessCase (string): why now, why this investment,
+      objectives (array of {objective (string), measure (string), target (string)}): 3–5 SMART objectives,
+      successCriteria (array of strings) }
+
+    SLIDE 5 — Project Scope
+    { slideNumber: 5, title: "Project Scope", layout: "scope",
+      inScope (array of strings): key deliverables explicitly included,
+      outOfScope (array of strings): explicit exclusions,
+      assumptions (array of strings),
+      constraints (array of strings) }
+
+    SLIDE 6 — Key Deliverables
+    { slideNumber: 6, title: "Key Deliverables", layout: "deliverables",
+      deliverables (array of {name (string), description (string), phase (string), owner (string)}) }
+
+    SLIDE 7 — Timeline & Milestones
+    { slideNumber: 7, title: "Timeline & Milestones", layout: "timeline",
+      startDate (string), endDate (string), duration (string): e.g. "9 months",
+      phases (array of {name (string), startDate (string), endDate (string)}),
+      milestones (array of {id (string): M1…, name (string), targetDate (string), description (string), isCritical (boolean)}) }
+
+    SLIDE 8 — Budget & Resources
+    { slideNumber: 8, title: "Budget & Resources", layout: "budget",
+      totalBudget (string): with currency,
+      budgetBreakdown (array of {category (string), amount (string), percentage (string)}),
+      teamSize (number),
+      keyRoles (array of {role (string), count (number), notes (string)}),
+      fundingSource (string),
+      contingencyReserve (string) }
+
+    SLIDE 9 — Stakeholders & Governance
+    { slideNumber: 9, title: "Stakeholders & Governance", layout: "governance",
+      stakeholders (array of {name (string), role (string), organization (string), power (string): High|Medium|Low, interest (string): High|Medium|Low, engagementLevel (string)}),
+      governance (object): {sponsor (string), pm (string), steeringCommittee (string), escalationPath (string), reportingCadence (string), decisionAuthority (string)} }
+
+    SLIDE 10 — Risks & Mitigation
+    { slideNumber: 10, title: "Top Risks & Mitigation", layout: "risks",
+      risks (array of {id (string): R1…, risk (string), probability (string): High|Medium|Low, impact (string): High|Medium|Low, mitigation (string), owner (string)}) — top 5 risks only }
+
+    SLIDE 11 — Benefits & ROI
+    { slideNumber: 11, title: "Expected Benefits & ROI", layout: "benefits",
+      quantitativeBenefits (array of {benefit (string), value (string), timeframe (string)}),
+      qualitativeBenefits (array of strings),
+      roi (string): estimated ROI or payback period,
+      kpis (array of {kpi (string), baseline (string), target (string), owner (string)}) }
+
+    SLIDE 12 — Next Steps & Approvals
+    { slideNumber: 12, title: "Next Steps & Approvals", layout: "approval",
+      immediateActions (array of {action (string), owner (string), dueDate (string)}),
+      decisionRequired (string): what the steering committee must decide today,
+      approvalSignatures (array of {role (string), name (string)}) }`,
 
     assumption_log: `Generate an Assumption Log per PMBOK 6th Ed (Initiating — used across all process groups).
 Return JSON with:

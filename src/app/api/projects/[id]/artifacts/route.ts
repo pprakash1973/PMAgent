@@ -187,9 +187,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }),
   };
 
-  const requirements = project.requirementsDocs[0]?.extractedContent
-    ? JSON.stringify(project.requirementsDocs[0].extractedContent)
-    : undefined;
+  // Strip rawText (the full document body) before serialising to the prompt —
+  // it can be 100 k+ chars and is already covered by the RAG evidence context.
+  const requirements = (() => {
+    const ec = project.requirementsDocs[0]?.extractedContent as Record<string, unknown> | null | undefined;
+    if (!ec) return undefined;
+    const { rawText: _drop, ...rest } = ec;
+    const s = JSON.stringify(rest);
+    return s.length > 8000 ? s.slice(0, 8000) + "…" : s;
+  })();
 
   const templateOverride = await resolveTemplate(
     (user as any).orgId,
