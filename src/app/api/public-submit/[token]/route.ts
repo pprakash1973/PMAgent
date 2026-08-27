@@ -1,0 +1,301 @@
+export const dynamic = "force-dynamic";
+
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import crypto from "crypto";
+import { computeAllowedTaskIds } from "@/lib/submit-validation";
+
+// GET /api/public-submit/[token]
+// Returns a self-contained HTML page — no Next.js layout, no auth providers.
+// This page works on any browser, any machine, with no login required.
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  const { token } = await params;
+
+  // Validate token immediately so we can show the right state in the HTML
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const record = await prisma.collectionToken.findUnique({
+    where: { tokenHash },
+    include: {
+      resource: { select: { id: true, name: true, role: true } },
+      project: { select: { id: true, name: true } },
+      cycle: {
+        select: {
+          id: true, cycleNumber: true, label: true,
+          startDate: true, endDate: true, status: true, taskIds: true,
+        },
+      },
+    },
+  });
+
+  // Use a relative path so it works regardless of NEXTAUTH_URL / domain
+  const submitApiUrl = `/api/submit/${encodeURIComponent(token)}`;
+
+  // ── Error states ─────────────────────────────────────────────────────────────
+  if (!record) {
+    return htmlResponse(errorPage("Invalid link", "This submission link is invalid or has already been used."));
+  }
+  if (record.status === "submitted") {
+    return htmlResponse(errorPage("Already submitted", "Your actuals for this cycle have already been recorded. Contact your project manager if you need to make corrections."));
+  }
+  if (record.status === "expired" || record.expiresAt < new Date()) {
+    return htmlResponse(errorPage("Link expired", "This submission link has expired. Please contact your project manager for a new link."));
+  }
+  if (record.cycle.status !== "open") {
+    return htmlResponse(errorPage("Cycle closed", "The collection cycle has been closed by the project manager."));
+  }
+
+  // ── Resolve tasks ─────────────────────────────────────────────────────────────
+  const cycleTaskIds: string[] = Array.isArray(record.cycle.taskIds) ? record.cycle.taskIds as string[] : [];
+
+  // Only show tasks this resource is authorised to submit for this cycle.
+  // Never falls back to the full project task list (prevents info disclosure).
+  const allowedTaskIds = await computeAllowedTaskIds({
+    projectId: record.projectId,
+    resourceId: record.resourceId,
+    cycleTaskIds,
+  });
+
+  const tasks = allowedTaskIds.size === 0
+    ? []
+    : await prisma.scheduleTask.findMany({
+        where: { projectId: record.projectId, id: { in: Array.from(allowedTaskIds) } },
+        orderBy: { sortOrder: "asc" },
+      });
+
+  const startStr = new Date(record.cycle.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const endStr = new Date(record.cycle.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const cyclePeriod = `${startStr} – ${endStr}`;
+
+  const tasksJson = escapeJsonForScript(JSON.stringify(tasks.map(t => ({
+    id: t.id,
+    wbsCode: t.wbsCode,
+    name: t.name,
+    phase: t.phase,
+    plannedHours: t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 1) * 8,
+    percentComplete: t.percentComplete,
+    baselineStart: new Date(t.baselineStart).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+    baselineFinish: new Date(t.baselineFinish).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+  }))));
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Submit Task Actuals – ${escHtml(record.project.name)}</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:#1e293b;min-height:100vh;padding:24px 16px}
+.wrap{max-width:740px;margin:0 auto}
+.header{background:#1e3a8a;color:#fff;border-radius:16px;padding:24px 28px;margin-bottom:20px}
+.header .eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px}
+.header h1{font-size:20px;font-weight:700;margin-bottom:4px}
+.header .sub{font-size:13px;color:#bfdbfe}
+.intro{background:#fff;border-radius:12px;padding:18px 22px;margin-bottom:16px;font-size:14px;line-height:1.6;color:#475569;border:1px solid #e2e8f0}
+.task-card{background:#fff;border-radius:12px;padding:22px;margin-bottom:14px;border:1px solid #e2e8f0}
+.task-header{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
+.wbs{font-family:monospace;font-size:11px;background:#f1f5f9;color:#64748b;padding:3px 7px;border-radius:4px;flex-shrink:0;margin-top:2px}
+.task-name{font-weight:600;font-size:14px;color:#0f172a;line-height:1.3}
+.task-meta{font-size:12px;color:#94a3b8;margin-top:3px}
+.plan-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:10px 12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0}
+.plan-item{display:flex;flex-direction:column;gap:2px;min-width:80px}
+.plan-label{font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em}
+.plan-value{font-size:13px;font-weight:600;color:#1e3a8a}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:520px){.grid2{grid-template-columns:1fr}}
+label{display:block;font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:8px 11px;font-size:13px;color:#0f172a;background:#fff;outline:none;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.pct-wrap{position:relative}
+.pct-suffix{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:13px;pointer-events:none}
+.bar-track{margin-top:6px;height:4px;background:#e2e8f0;border-radius:999px;overflow:hidden}
+.bar-fill{height:100%;background:#3b82f6;border-radius:999px;transition:width .2s}
+.submit-btn{display:block;width:100%;padding:14px;background:#1e3a8a;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;margin-top:20px;transition:background .15s}
+.submit-btn:hover{background:#1e40af}
+.submit-btn:disabled{background:#94a3b8;cursor:not-allowed}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.notice{text-align:center;font-size:12px;color:#94a3b8;margin-top:10px}
+.success{background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:32px;text-align:center;margin-top:20px}
+.success-icon{width:52px;height:52px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+.success h2{font-size:17px;font-weight:700;color:#166534;margin-bottom:6px}
+.success p{font-size:13px;color:#4ade80;color:#15803d}
+.error-card{background:#fff;border-radius:12px;padding:40px 28px;text-align:center;border:1px solid #e2e8f0;max-width:400px;margin:60px auto}
+.error-icon{width:48px;height:48px;background:#fee2e2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+.error-card h2{font-size:17px;font-weight:700;color:#0f172a;margin-bottom:8px}
+.error-card p{font-size:13px;color:#64748b;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="eyebrow">PM Agent · Task Actuals</div>
+    <h1>${escHtml(record.project.name)}</h1>
+    <div class="sub">${escHtml(record.cycle.label ?? `Cycle ${record.cycle.cycleNumber}`)} &nbsp;·&nbsp; ${escHtml(cyclePeriod)}</div>
+  </div>
+
+  <div class="intro">
+    Hi <strong>${escHtml(record.resource.name)}</strong>, please review your assigned tasks below and submit your actuals.
+    Fields marked * are required.
+  </div>
+
+  <div id="form-area"></div>
+</div>
+
+<!-- Full-screen thank-you overlay — hidden until submission succeeds -->
+<div id="success-area" style="display:none;position:fixed;inset:0;background:#f0fdf4;z-index:999;display:none;align-items:center;justify-content:center;padding:24px">
+  <div style="text-align:center;max-width:420px">
+    <div style="width:72px;height:72px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">
+      <svg width="36" height="36" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+    </div>
+    <h2 style="font-size:22px;font-weight:700;color:#14532d;margin-bottom:10px">Thank you, ${escHtml(record.resource.name)}!</h2>
+    <p style="font-size:15px;color:#166534;line-height:1.6;margin-bottom:8px">Your actuals for <strong>${escHtml(record.project.name)}</strong> have been recorded successfully.</p>
+    <p style="font-size:13px;color:#15803d">Your project manager will be notified. You can close this window.</p>
+  </div>
+</div>
+
+<script>
+(function(){
+  var TASKS = ${tasksJson};
+  var API_URL = "${submitApiUrl}";
+  var submissions = {};
+
+  TASKS.forEach(function(t){
+    submissions[t.id] = {
+      taskId: t.id,
+      hoursWorked: 0,
+      percentComplete: t.percentComplete,
+      etcHours: null,
+      disposition: "actual",
+      notes: ""
+    };
+  });
+
+  function h(str){ return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+  function renderForm(){
+    var html = "";
+    TASKS.forEach(function(t){
+      html += '<div class="task-card">'
+        +'<div class="task-header">'
+          +'<span class="wbs">'+h(t.wbsCode)+'</span>'
+          +'<div><div class="task-name">'+h(t.name)+'</div>'
+          +'<div class="task-meta">'+h(t.phase)+'</div></div>'
+        +'</div>'
+        +'<div class="plan-row">'
+          +'<div class="plan-item"><span class="plan-label">Planned effort</span><span class="plan-value">'+h(t.plannedHours)+'h</span></div>'
+          +'<div class="plan-item"><span class="plan-label">Start</span><span class="plan-value">'+h(t.baselineStart)+'</span></div>'
+          +'<div class="plan-item"><span class="plan-label">End</span><span class="plan-value">'+h(t.baselineFinish)+'</span></div>'
+        +'</div>'
+        +'<div class="grid2">'
+          +'<div><label>Actual hours worked *</label>'
+            +'<input type="number" min="0" step="0.5" required data-id="'+t.id+'" data-field="hoursWorked" value="0" placeholder="e.g. 6.5"></div>'
+          +'<div><label>% Complete *</label>'
+            +'<div class="pct-wrap">'
+              +'<input type="number" min="0" max="100" required data-id="'+t.id+'" data-field="percentComplete" value="'+h(t.percentComplete)+'">'
+              +'<span class="pct-suffix">%</span>'
+            +'</div>'
+            +'<div class="bar-track"><div class="bar-fill" id="bar-'+t.id+'" style="width:'+h(t.percentComplete)+'%"></div></div>'
+          +'</div>'
+        +'</div>'
+      +'</div>';
+    });
+    html += '<button class="submit-btn" id="submit-btn" type="button">Submit</button>'
+           +'<p class="notice">This link is single-use — contact your PM if you need to make corrections.</p>';
+    document.getElementById("form-area").innerHTML = html;
+
+    // Wire up events
+    document.getElementById("form-area").addEventListener("input", function(e){
+      var el = e.target;
+      var id = el.getAttribute("data-id");
+      var field = el.getAttribute("data-field");
+      if(!id||!field) return;
+      submissions[id][field] = parseFloat(el.value)||0;
+      if(field==="percentComplete"){
+        var bar = document.getElementById("bar-"+id);
+        if(bar) bar.style.width = Math.min(100, parseFloat(el.value)||0)+"%";
+      }
+    });
+
+    document.getElementById("submit-btn").addEventListener("click", function(){
+      var btn = document.getElementById("submit-btn");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Submitting…';
+      var payload = Object.values(submissions);
+      fetch(API_URL, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({submissions: payload})
+      })
+      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+      .then(function(r){
+        if(r.ok){
+          document.querySelector(".wrap").style.display="none";
+          var s=document.getElementById("success-area");
+          s.style.display="flex";
+        } else {
+          alert(r.data.error||"Submission failed. Please try again.");
+          btn.disabled=false;
+          btn.innerHTML="Submit actuals for ${tasks.length} task${tasks.length !== 1 ? 's' : ''}";
+        }
+      })
+      .catch(function(err){
+        alert("Network error — please check your connection and try again.");
+        btn.disabled=false;
+        btn.innerHTML="Submit actuals for ${tasks.length} task${tasks.length !== 1 ? 's' : ''}";
+      });
+    });
+  }
+
+  renderForm();
+})();
+</script>
+</body>
+</html>`;
+
+  return htmlResponse(html);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function htmlResponse(html: string) {
+  return new NextResponse(html, {
+    status: 200,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
+}
+
+// Escape a JSON string for safe embedding inside an inline <script> block.
+// Prevents a task name containing "</script>" (or U+2028/U+2029) from breaking
+// out of the script context — a stored-XSS vector.
+function escapeJsonForScript(json: string): string {
+  return json
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+}
+
+function escHtml(str: string | null | undefined): string {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function errorPage(title: string, message: string): string {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtml(title)} – PM Agent</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{background:#fff;border-radius:14px;padding:40px 28px;text-align:center;border:1px solid #e2e8f0;max-width:400px;width:100%}.icon{width:48px;height:48px;background:#fee2e2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}h2{font-size:17px;font-weight:700;color:#0f172a;margin-bottom:8px}p{font-size:13px;color:#64748b;line-height:1.6}</style>
+</head><body>
+<div class="card">
+  <div class="icon"><svg width="22" height="22" fill="none" stroke="#ef4444" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" d="M12 8v4m0 4h.01"/></svg></div>
+  <h2>${escHtml(title)}</h2>
+  <p>${escHtml(message)}</p>
+</div>
+</body></html>`;
+}

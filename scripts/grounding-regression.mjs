@@ -98,10 +98,10 @@ function findCallSites() {
 }
 
 // ── Every generation path must be grounded ──────────────────────────────────
-check("all three generateArtifact call sites exist", () => {
+check("all generateArtifact call sites exist", () => {
   const sites = findCallSites();
-  if (sites.length !== 3) {
-    throw new Error(`expected 3 call sites, found ${sites.length}: ${sites.map(s => s.file).join(", ")}`);
+  if (sites.length !== 4) {
+    throw new Error(`expected 4 call sites, found ${sites.length}: ${sites.map(s => s.file).join(", ")}`);
   }
   return sites.map((s) => path.basename(s.file)).join(", ");
 });
@@ -113,7 +113,7 @@ check("no generation path passes undefined evidence", () => {
       `these paths generate artifacts without reading the document store:\n    ${bad.map(b => b.file).join("\n    ")}`
     );
   }
-  return "all 3 paths retrieve evidence";
+  return "all 4 paths retrieve evidence";
 });
 
 check("no generation path passes undefined domain context", () => {
@@ -121,7 +121,7 @@ check("no generation path passes undefined domain context", () => {
   if (bad.length) {
     throw new Error(`missing domain context in:\n    ${bad.map(b => b.file).join("\n    ")}`);
   }
-  return "all 3 paths pass domain context";
+  return "all 4 paths pass domain context";
 });
 
 check("grounding inputs come from the shared assembler", () => {
@@ -129,6 +129,7 @@ check("grounding inputs come from the shared assembler", () => {
     "src/app/api/projects/[id]/artifacts/route.ts",
     "src/app/api/projects/[id]/artifacts/batch/route.ts",
     "src/lib/generate-artifact-for-project.ts",
+    "src/app/api/projects/[id]/risks/regenerate/route.ts",
   ].filter((rel) => !/assembleGenerationContext\(/.test(readCode(rel)));
   if (missing.length) {
     throw new Error(`bypassing lib/artifact-context.ts:\n    ${missing.join("\n    ")}`);
