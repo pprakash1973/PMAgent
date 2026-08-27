@@ -3,9 +3,20 @@
  *
  * Retrieves relevant DocumentChunks for a given artifact type.
  *
- * Retrieval today is lexical: PostgreSQL full-text search (tsvector/ts_rank).
- * The code is structured as independent "arms" so a semantic arm can be fused
- * in alongside it without reshaping the caller contract.
+ * Retrieval is hybrid: a lexical arm (PostgreSQL tsvector/ts_rank) and a
+ * semantic arm (pgvector cosine KNN) run concurrently and are fused by
+ * Reciprocal Rank Fusion. Each arm gets a query shaped for what it is good at —
+ * see ARTIFACT_SEARCH_TERMS vs ARTIFACT_SEARCH_INTENT below.
+ *
+ * Every arm is optional. Semantic retrieval needs pgvector plus a configured
+ * embedding endpoint plus chunks that have actually been embedded; when any of
+ * those is missing the arm returns empty and retrieval proceeds keyword-only.
+ * The ladder, worst case last:
+ *
+ *   hybrid    both arms returned; RRF fused
+ *   keyword   one arm returned (usually lexical; vectors not yet backfilled)
+ *   backfill  arms were thin; topped up with chunks in document order
+ *   fallback  no search available at all; document order only
  *
  * Partition isolation: every query is filtered by projectId so no
  * cross-project content can appear in the assembled context.
@@ -13,6 +24,8 @@
 
 import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import { embedQuery, toVectorLiteral } from "@/lib/embeddings";
+import { hasVectorSupport } from "@/lib/chunk-embeddings";
 
 export interface EvidenceChunk {
   id: string;
@@ -21,14 +34,20 @@ export interface EvidenceChunk {
   pageNumber: number | null;
   documentId: string;
   chunkIndex: number;
+  /** Provenance — populated by the fusion step, absent on raw arm output. */
+  matchedBy?: MatchedBy;
 }
 
 /** Which retrieval path actually produced the chunks — surfaced for logging and eval. */
 export type RetrievalMode =
-  | "keyword"   // full-text search returned enough results on its own
-  | "backfill"  // FTS was thin; topped up with chunks in document order
-  | "fallback"  // FTS unavailable or failed; document order only
+  | "hybrid"    // keyword and semantic arms both ran, fused by RRF
+  | "keyword"   // lexical only (no vectors available, or the semantic arm failed)
+  | "backfill"  // retrieval was thin; topped up with chunks in document order
+  | "fallback"  // no search available at all; document order only
   | "none";     // project has no chunks at all
+
+/** Which arm(s) surfaced a given chunk. Drives eval and "why was this cited". */
+export type MatchedBy = "keyword" | "semantic" | "both" | "position";
 
 export interface EvidenceContext {
   chunks: EvidenceChunk[];
@@ -67,9 +86,52 @@ const ARTIFACT_SEARCH_TERMS: Record<string, string[]> = {
   traceability_matrix:  ["requirements traceability WBS milestone acceptance criteria validation"],
 };
 
+/**
+ * Natural-language intent per artifact type — the semantic arm's query.
+ *
+ * Deliberately NOT the same strings as ARTIFACT_SEARCH_TERMS above. That map is
+ * a bag of PM vocabulary, which is what plainto_tsquery wants and close to the
+ * worst possible input to an embedding model: embeddings encode meaning, and a
+ * keyword soup has no coherent meaning to encode. Each arm gets the query form
+ * it is actually good at.
+ *
+ * These strings are static, so their vectors are computed once and cached —
+ * query-side embedding cost is effectively zero.
+ */
+const ARTIFACT_SEARCH_INTENT: Record<string, string> = {
+  project_charter:      "What is this project for? Its objectives, scope, deliverables, sponsor, budget and timeline, and who authorises it.",
+  business_case:        "Why is this project worth doing? The problem, the proposed solution, expected benefits, costs and return on investment.",
+  stakeholder_register: "Who is involved in this project? Sponsors, decision makers, affected teams, their roles, influence and interest.",
+  initiation_deck:      "An overview of the project for kickoff: what it delivers, when, for whom, at what cost, and how it is governed.",
+  assumption_log:       "What is being assumed or taken for granted? External dependencies, preconditions and constraints the plan relies on.",
+  benefits_register:    "What value does this project create, how is it measured, what is the baseline and target, and when is it realised?",
+  scope_statement:      "What is included in this project and what is explicitly excluded? Deliverables, boundaries and acceptance criteria.",
+  wbs:                  "How is the work decomposed? The phases, deliverables and work packages that must be built, tested and delivered.",
+  milestone_plan:       "What are the key dates and checkpoints? Phase gates, delivery dates and completion events.",
+  resource_plan:        "Who is needed to do the work? Roles, skills, headcount, allocation and how the team is staffed over time.",
+  cost_plan:            "What will this cost? Budget breakdown, estimates, rates, funding, contingency and reserve.",
+  raid_register:        "What risks, assumptions, issues and dependencies affect delivery, and who owns each?",
+  risk_register:        "What could go wrong on this project? Threats, how likely each is, its impact, and who owns mitigating it.",
+  communication_plan:   "How will the project communicate? Who needs what information, how often, and through which channel.",
+  raci_matrix:          "Who is responsible, accountable, consulted and informed for each activity or decision?",
+  quality_plan:         "How will quality be assured? Standards, acceptance criteria, metrics, testing and validation approach.",
+  action_log:           "What actions need doing, by whom, and by when?",
+  issue_register:       "What problems and blockers exist right now, how severe are they, and how are they being resolved?",
+  decision_log:         "What decisions have been made, why, what alternatives were considered, and what was their impact?",
+  weekly_status:        "How is the project progressing this week against schedule and budget? Accomplishments, risks and next steps.",
+  monthly_status:       "How has the project performed this month? Executive summary, milestone progress, budget position and outlook.",
+  change_log:           "What changes have been requested to scope, cost or schedule, and how were they assessed and approved?",
+  lessons_learned:      "What went well, what went badly, and what should be done differently next time?",
+  closure_report:       "Was the project completed as intended? Objectives achieved, deliverables accepted, final budget and sign-off.",
+  traceability_matrix:  "How does each requirement map to the work that delivers it and the tests that verify it?",
+};
+
+const DEFAULT_INTENT = "What does this project involve — its scope, objectives and deliverables?";
+
 const TOP_K = 12;          // max chunks handed to the model per artifact generation
 const CANDIDATE_POOL = 30; // per-arm retrieval depth before ranking down to TOP_K
 const MIN_USEFUL_HITS = 4; // below this, top up with document-order chunks
+const RRF_K = 60;          // standard RRF damping; tune against the Phase 4 eval, not by feel
 
 const CHUNK_SELECT = {
   id: true, text: true, sectionTitle: true, pageNumber: true,
@@ -117,6 +179,71 @@ async function keywordSearch(
   );
 }
 
+/**
+ * Semantic arm — exact cosine KNN over this project's embedded chunks.
+ *
+ * `embedding IS NOT NULL` is not optional: chunks predating the backfill, and
+ * restricted-tier chunks on an out-of-tenant endpoint, legitimately have no
+ * vector. Without the filter pgvector treats NULL as maximally distant and they
+ * would crowd out real matches at the tail of the result set.
+ *
+ * No ANN index by design — see the note in scripts/migrate-neon-all.js.
+ */
+async function semanticSearch(
+  projectId: string,
+  queryVector: number[],
+  limit: number
+): Promise<EvidenceChunk[]> {
+  const literal = toVectorLiteral(queryVector);
+  return prisma.$queryRaw<EvidenceChunk[]>(
+    Prisma.sql`
+      SELECT
+        dc.id,
+        dc.text,
+        dc."sectionTitle",
+        dc."pageNumber",
+        dc."documentId",
+        dc."chunkIndex"
+      FROM "DocumentChunk" dc
+      WHERE dc."projectId" = ${projectId}
+        AND dc."embedding" IS NOT NULL
+      ORDER BY dc."embedding" <=> ${literal}::vector
+      LIMIT ${limit}
+    `
+  );
+}
+
+/**
+ * Reciprocal Rank Fusion.
+ *
+ *   score(chunk) = Σ over arms of  1 / (RRF_K + rank_in_that_arm)
+ *
+ * Rank-based rather than score-based because ts_rank (unbounded, corpus
+ * dependent) and cosine distance (0–2) are not comparable, and normalising them
+ * needs per-query calibration that drifts as the corpus grows. RRF sidesteps
+ * that entirely: a chunk both arms rank well beats one that dominates a single
+ * arm, which is the whole point of running two.
+ */
+function rrfFuse(arms: Array<{ name: MatchedBy; chunks: EvidenceChunk[] }>): EvidenceChunk[] {
+  const scores = new Map<string, { chunk: EvidenceChunk; score: number; arms: Set<MatchedBy> }>();
+
+  for (const arm of arms) {
+    arm.chunks.forEach((chunk, rank) => {
+      const entry = scores.get(chunk.id) ?? { chunk, score: 0, arms: new Set<MatchedBy>() };
+      entry.score += 1 / (RRF_K + rank + 1); // rank is 0-based; RRF is 1-based
+      entry.arms.add(arm.name);
+      scores.set(chunk.id, entry);
+    });
+  }
+
+  return [...scores.values()]
+    .sort((a, b) => b.score - a.score)
+    .map(({ chunk, arms: hit }) => ({
+      ...chunk,
+      matchedBy: hit.size > 1 ? ("both" as const) : ([...hit][0] ?? "keyword"),
+    }));
+}
+
 /** Positional arm — first N chunks in document order. Not relevance, just coverage. */
 async function documentOrderChunks(projectId: string, limit: number): Promise<EvidenceChunk[]> {
   if (limit <= 0) return [];
@@ -147,32 +274,43 @@ export async function assembleEvidence(
   }
 
   const searchQuery = terms.join(" ");
+  const intent = ARTIFACT_SEARCH_INTENT[artifactType] ?? DEFAULT_INTENT;
+
+  // Both arms run concurrently; neither can fail the other. Each resolves to an
+  // empty array on any problem so fusion degrades to whichever arm did return.
+  const [keywordHits, semanticHits] = await Promise.all([
+    runKeywordArm(projectId, searchQuery, artifactType),
+    runSemanticArm(projectId, intent, artifactType),
+  ]);
 
   let chunks: EvidenceChunk[] = [];
-  let mode: RetrievalMode = "fallback";
+  let mode: RetrievalMode;
 
-  if (supportsFullTextSearch()) {
-    try {
-      chunks = (await keywordSearch(projectId, searchQuery, CANDIDATE_POOL)).slice(0, TOP_K);
-      mode = "keyword";
-    } catch (err) {
-      // A retrieval failure must never block generation — degrade to document
-      // order, which is worse than ranked but still grounded in the real source.
-      console.error(`[evidence] keyword search failed for ${artifactType}:`, err);
-      chunks = [];
-      mode = "fallback";
-    }
+  if (keywordHits.length && semanticHits.length) {
+    chunks = rrfFuse([
+      { name: "keyword", chunks: keywordHits },
+      { name: "semantic", chunks: semanticHits },
+    ]).slice(0, TOP_K);
+    mode = "hybrid";
+  } else if (keywordHits.length || semanticHits.length) {
+    const only = keywordHits.length ? keywordHits : semanticHits;
+    const name: MatchedBy = keywordHits.length ? "keyword" : "semantic";
+    chunks = only.slice(0, TOP_K).map((c) => ({ ...c, matchedBy: name }));
+    mode = "keyword";
+  } else {
+    chunks = [];
+    mode = "fallback";
   }
 
-  // Thin lexical result — top up so the model still sees real source text.
+  // Thin result — top up so the model still sees real source text.
   if (chunks.length < MIN_USEFUL_HITS) {
     const existingIds = new Set(chunks.map((c) => c.id));
     const filler = await documentOrderChunks(projectId, TOP_K);
     for (const c of filler) {
       if (chunks.length >= TOP_K) break;
-      if (!existingIds.has(c.id)) chunks.push(c);
+      if (!existingIds.has(c.id)) chunks.push({ ...c, matchedBy: "position" });
     }
-    if (mode === "keyword") mode = "backfill";
+    if (mode !== "fallback") mode = "backfill";
   }
 
   return {
@@ -182,6 +320,64 @@ export async function assembleEvidence(
     hasEvidence: chunks.length > 0,
     mode,
   };
+}
+
+/** Lexical arm, isolated so its failure cannot take down the semantic arm. */
+async function runKeywordArm(
+  projectId: string,
+  query: string,
+  artifactType: string
+): Promise<EvidenceChunk[]> {
+  if (!supportsFullTextSearch()) return [];
+  try {
+    return await keywordSearch(projectId, query, CANDIDATE_POOL);
+  } catch (err) {
+    console.error(`[evidence] keyword arm failed for ${artifactType}:`, err);
+    return [];
+  }
+}
+
+/**
+ * Semantic arm. Returns [] — not an error — whenever vectors are unavailable:
+ * no pgvector on this cluster, no embedding endpoint configured, or the query
+ * embedding call failed. Retrieval then proceeds keyword-only.
+ */
+async function runSemanticArm(
+  projectId: string,
+  intent: string,
+  artifactType: string
+): Promise<EvidenceChunk[]> {
+  try {
+    if (!(await hasVectorSupport())) return [];
+
+    const vector = await embedIntent(intent);
+    if (!vector) return [];
+
+    return await semanticSearch(projectId, vector, CANDIDATE_POOL);
+  } catch (err) {
+    console.error(`[evidence] semantic arm failed for ${artifactType}:`, err);
+    return [];
+  }
+}
+
+/**
+ * The 25 intent strings are static, so each is embedded at most once per
+ * process. In-flight promises are cached too, so concurrent batch generation
+ * cannot fire the same request several times.
+ */
+const _intentVectors = new Map<string, Promise<number[] | null>>();
+
+function embedIntent(intent: string): Promise<number[] | null> {
+  let pending = _intentVectors.get(intent);
+  if (!pending) {
+    pending = embedQuery(intent).then((vec) => {
+      // Don't cache a failure — the endpoint may just have been briefly down.
+      if (!vec) _intentVectors.delete(intent);
+      return vec;
+    });
+    _intentVectors.set(intent, pending);
+  }
+  return pending;
 }
 
 /**

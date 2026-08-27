@@ -190,6 +190,116 @@ check("non-Postgres databases skip full-text search", () => {
   return "guarded";
 });
 
+// ── Hybrid retrieval ────────────────────────────────────────────────────────
+check("the semantic arm excludes chunks that have no vector", () => {
+  const src = readCode("src/lib/evidence-assembler.ts");
+  const knn = src.match(/FROM "DocumentChunk"[\s\S]*?<=>[\s\S]*?LIMIT/);
+  if (!knn) throw new Error("no cosine KNN query found — the semantic arm is missing");
+  if (!/"embedding" IS NOT NULL/.test(knn[0])) {
+    throw new Error(
+      "KNN query does not exclude NULL embeddings — unembedded chunks sort as " +
+      "maximally distant and crowd out real matches"
+    );
+  }
+  return "IS NOT NULL enforced";
+});
+
+check("each arm gets a query shaped for it", () => {
+  const src = readCode("src/lib/evidence-assembler.ts");
+  if (!/ARTIFACT_SEARCH_INTENT/.test(src)) {
+    throw new Error("no intent map — the semantic arm is embedding keyword soup");
+  }
+  const terms = Object.keys(parseMapKeys(src, "ARTIFACT_SEARCH_TERMS"));
+  const intents = Object.keys(parseMapKeys(src, "ARTIFACT_SEARCH_INTENT"));
+  const missing = terms.filter((t) => !intents.includes(t));
+  if (missing.length) {
+    throw new Error(`artifact types with no semantic intent: ${missing.join(", ")}`);
+  }
+  return `${terms.length} types have both a term list and an intent`;
+});
+
+check("embeddings never block generation", () => {
+  const emb = readCode("src/lib/embeddings.ts");
+  if (!/return null/.test(emb)) throw new Error("embedTexts has no null return path");
+  if (!/catch\s*\(err\)[\s\S]{0,200}?return null/.test(emb)) {
+    throw new Error("an embedding request failure is not converted to null");
+  }
+  const chunks = readCode("src/lib/chunk-embeddings.ts");
+  if (/throw new Error/.test(chunks.split("export async function embedAndStoreChunks")[1] ?? "")) {
+    throw new Error("embedAndStoreChunks can throw — it must always return a result");
+  }
+  return "both layers degrade instead of throwing";
+});
+
+check("restricted documents are only embedded in-tenant", () => {
+  const src = readCode("src/lib/embeddings.ts");
+  if (!/canEmbedTier/.test(src)) throw new Error("no confidentiality gate");
+  if (!/tier === "restricted"/.test(src)) throw new Error("gate does not special-case the restricted tier");
+  if (!/return isInTenant\(ep\)/.test(src)) {
+    throw new Error("restricted tier is not gated on an in-tenant endpoint");
+  }
+  const writer = readCode("src/lib/chunk-embeddings.ts");
+  if (!/canEmbedTier\(opts\.confidentialityTier/.test(writer)) {
+    throw new Error("the write path does not consult the tier gate");
+  }
+  const upload = readCode("src/app/api/projects/[id]/requirements/route.ts");
+  if (!/confidentialityTier/.test(upload.split("embedAndStoreChunks")[1] ?? "")) {
+    throw new Error("upload does not pass the document's tier to the embedder");
+  }
+  return "gated at policy, write and call site";
+});
+
+check("pgvector is deployed as an optional capability", () => {
+  const src = read("scripts/migrate-neon-all.js");
+  if (!/CREATE EXTENSION IF NOT EXISTS vector/.test(src)) throw new Error("pgvector is never created");
+  if (!/runOptional\(pool, `CREATE EXTENSION IF NOT EXISTS vector`/.test(src)) {
+    throw new Error(
+      "pgvector is created with run() not runOptional() — a cluster lacking the " +
+      "extension (or the privilege to create it) would fail the whole deploy"
+    );
+  }
+  if (!/ADD COLUMN IF NOT EXISTS "embedding"\s+vector\(1536\)/.test(src)) {
+    throw new Error("the embedding column is not created at the expected dimensionality");
+  }
+  return "extension and column both best-effort";
+});
+
+check("stored and query vectors share one dimensionality", () => {
+  const lib = readCode("src/lib/embeddings.ts");
+  const dims = lib.match(/EMBEDDING_DIMENSIONS\s*=\s*(\d+)/);
+  if (!dims) throw new Error("EMBEDDING_DIMENSIONS is not defined");
+
+  const schema = read("prisma/schema.prisma").match(/Unsupported\("vector\((\d+)\)"\)/);
+  if (!schema) throw new Error("schema.prisma has no vector column");
+
+  const migration = read("scripts/migrate-neon-all.js").match(/"embedding"\s+vector\((\d+)\)/);
+  if (!migration) throw new Error("migrate-neon-all.js has no vector column");
+
+  if (dims[1] !== schema[1] || dims[1] !== migration[1]) {
+    throw new Error(
+      `dimension mismatch — code ${dims[1]}, schema ${schema[1]}, migration ${migration[1]}. ` +
+      `Vectors written at one size cannot be searched at another.`
+    );
+  }
+  return `${dims[1]} everywhere`;
+});
+
+/** Crude key extraction for a `const NAME: Record<string,...> = { key: ... }` literal. */
+function parseMapKeys(src, name) {
+  const start = src.indexOf(`const ${name}`);
+  if (start < 0) return {};
+  const open = src.indexOf("{", start);
+  let depth = 0, end = open;
+  for (; end < src.length; end++) {
+    if (src[end] === "{") depth++;
+    else if (src[end] === "}") { depth--; if (depth === 0) break; }
+  }
+  const body = src.slice(open + 1, end);
+  const keys = {};
+  for (const m of body.matchAll(/^\s*(\w+)\s*:/gm)) keys[m[1]] = true;
+  return keys;
+}
+
 // ── Report ──────────────────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.pass);
 

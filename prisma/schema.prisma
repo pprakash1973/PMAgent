@@ -386,6 +386,17 @@ model DocumentChunk {
   tokenCount   Int?
   createdAt    DateTime @default(now())
 
+  // Semantic retrieval. Prisma has no native vector type, so this is declared
+  // Unsupported: it cannot be selected or written through Prisma Client and is
+  // only touched by raw SQL in lib/evidence-assembler.ts. Nullable by design —
+  // chunks predating the backfill, chunks on a cluster without pgvector, and
+  // restricted-tier chunks on an out-of-tenant endpoint all legitimately have
+  // none, and the semantic arm filters them out rather than failing.
+  // embeddingModel records what produced the vector so a model change is
+  // detectable instead of silently corrupting similarity scores.
+  embedding      Unsupported("vector(1536)")?
+  embeddingModel String?
+
   document     RequirementsDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   requirements Requirement[]
 

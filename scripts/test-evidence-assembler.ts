@@ -16,31 +16,58 @@ import path from "node:path";
 type Chunk = {
   id: string; text: string; sectionTitle: string | null;
   pageNumber: number | null; documentId: string; chunkIndex: number;
+  /** Set by the fusion step, not by the stubbed arms. */
+  matchedBy?: "keyword" | "semantic" | "both" | "position";
 };
 
 const stub = {
   count: 0,
   ftsRows: [] as Chunk[],
   ftsThrows: false,
+  vecRows: [] as Chunk[],
+  vecThrows: false,
+  hasVectors: false,
+  queryVector: [0.1, 0.2] as number[] | null,
   orderedRows: [] as Chunk[],
-  queryRawCalls: 0,
+  ftsCalls: 0,
+  vecCalls: 0,
+  embedCalls: 0,
 };
 
 function chunk(i: number, text = `chunk ${i}`): Chunk {
   return { id: `c${i}`, text, sectionTitle: null, pageNumber: 1, documentId: "d1", chunkIndex: i };
 }
 
-// ── Intercept "@/lib/db" and "@prisma/client" before the module under test ──
+// ── Intercept the module's dependencies before it loads ─────────────────────
 const prismaStub = {
   documentChunk: {
     count: async () => stub.count,
     findMany: async ({ take }: { take: number }) => stub.orderedRows.slice(0, take),
   },
-  $queryRaw: async () => {
-    stub.queryRawCalls++;
-    if (stub.ftsThrows) throw new Error("relation does not exist");
+  // Both arms go through $queryRaw; tell them apart by the SQL they carry.
+  $queryRaw: async (q: { strings?: string[] }) => {
+    const sql = (q?.strings ?? []).join(" ");
+    if (sql.includes("<=>")) {
+      stub.vecCalls++;
+      if (stub.vecThrows) throw new Error("operator does not exist: vector <=> unknown");
+      return stub.vecRows;
+    }
+    stub.ftsCalls++;
+    if (stub.ftsThrows) throw new Error("function to_tsvector does not exist");
     return stub.ftsRows;
   },
+};
+
+const embeddingsStub = {
+  embedQuery: async () => {
+    stub.embedCalls++;
+    return stub.queryVector;
+  },
+  toVectorLiteral: (v: number[]) => `[${v.join(",")}]`,
+};
+
+const chunkEmbeddingsStub = {
+  hasVectorSupport: async () => stub.hasVectors,
 };
 
 // _load is private API — the only interception point that works for the CJS
@@ -54,9 +81,17 @@ const origLoad = loader._load;
 
 loader._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === "@/lib/db") return { prisma: prismaStub };
+  if (request === "@/lib/embeddings") return embeddingsStub;
+  if (request === "@/lib/chunk-embeddings") return chunkEmbeddingsStub;
   if (request === "@prisma/client") {
-    // Prisma.sql is a tagged template; the stub only needs it not to throw.
-    return { Prisma: { sql: (strings: TemplateStringsArray, ...vals: unknown[]) => ({ strings, vals }) } };
+    // Prisma.sql is a tagged template; the stub only needs to preserve the SQL
+    // text so the $queryRaw stub can tell the two arms apart.
+    return {
+      Prisma: {
+        sql: (strings: TemplateStringsArray, ...vals: unknown[]) => ({ strings: [...strings], vals }),
+        join: (parts: unknown[]) => ({ strings: [], vals: parts }),
+      },
+    };
   }
   return origLoad.call(this, request, parent, isMain);
 };
@@ -83,7 +118,9 @@ function eq(actual: unknown, expected: unknown, label: string) {
 
 function reset(overrides: Partial<typeof stub> = {}) {
   Object.assign(stub, {
-    count: 0, ftsRows: [], ftsThrows: false, orderedRows: [], queryRawCalls: 0,
+    count: 0, ftsRows: [], ftsThrows: false, vecRows: [], vecThrows: false,
+    hasVectors: false, queryVector: [0.1, 0.2], orderedRows: [],
+    ftsCalls: 0, vecCalls: 0, embedCalls: 0,
   }, overrides);
 }
 
@@ -110,7 +147,7 @@ async function main() {
   const ctx = await assembleEvidence("p1", "risk_register");
   eq(ctx.mode, "keyword", "mode");
   eq(ctx.chunks.length, 8, "chunks");
-  eq(stub.queryRawCalls, 1, "fts calls");
+  eq(stub.ftsCalls, 1, "fts calls");
   });
 
   await test("TOP_K caps the candidate pool at 12", async () => {
@@ -153,7 +190,7 @@ async function main() {
   reset({ count: 50, orderedRows: Array.from({ length: 20 }, (_, i) => chunk(i)) });
   const ctx = await assembleEvidence("p1", "wbs");
   eq(ctx.mode, "fallback", "mode");
-  eq(stub.queryRawCalls, 0, "must not issue a to_tsvector query on SQLite");
+  eq(stub.ftsCalls, 0, "must not issue a to_tsvector query on SQLite");
   eq(ctx.chunks.length, 12, "chunks");
   });
 
@@ -165,6 +202,136 @@ async function main() {
   if (!ctx.queryTerms[0].includes("scope")) {
     throw new Error(`expected generic fallback terms, got ${ctx.queryTerms[0]}`);
   }
+  });
+
+  // ── Hybrid: both arms ─────────────────────────────────────────────────────
+
+  await test("both arms returning yields mode=hybrid", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({
+      count: 50,
+      hasVectors: true,
+      ftsRows: Array.from({ length: 6 }, (_, i) => chunk(i)),
+      vecRows: Array.from({ length: 6 }, (_, i) => chunk(i + 3)),
+    });
+    const ctx = await assembleEvidence("p1", "cost_plan");
+    eq(ctx.mode, "hybrid", "mode");
+    eq(stub.ftsCalls, 1, "keyword arm ran");
+    eq(stub.vecCalls, 1, "semantic arm ran");
+  });
+
+  await test("RRF ranks a chunk found by both arms above either arm's top hit", async () => {
+    process.env.DATABASE_URL = PG;
+    // keyword: A B C   semantic: C D E
+    // C scores 1/(60+3) + 1/(60+1); A only 1/(60+1). C must win.
+    reset({
+      count: 50,
+      hasVectors: true,
+      ftsRows: [chunk(1, "A"), chunk(2, "B"), chunk(3, "C")].map((c, i) => ({ ...c, id: ["A", "B", "C"][i] })),
+      vecRows: [chunk(3, "C"), chunk(4, "D"), chunk(5, "E")].map((c, i) => ({ ...c, id: ["C", "D", "E"][i] })),
+    });
+    const ctx = await assembleEvidence("p1", "quality_plan");
+    eq(ctx.mode, "hybrid", "mode");
+    eq(ctx.chunks[0].id, "C", "chunk found by both arms must rank first");
+    eq(ctx.chunks[0].matchedBy, "both", "provenance");
+    const ids = ctx.chunks.map((c: Chunk) => c.id);
+    eq(new Set(ids).size, ids.length, "fusion must dedup across arms");
+    eq(ids.length, 5, "union of both arms, deduped");
+  });
+
+  await test("provenance distinguishes single-arm hits", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({
+      count: 50,
+      hasVectors: true,
+      ftsRows: [{ ...chunk(1), id: "kw-only" }],
+      vecRows: [{ ...chunk(2), id: "sem-only" }],
+      orderedRows: Array.from({ length: 20 }, (_, i) => chunk(i)),
+    });
+    const ctx = await assembleEvidence("p1", "raci_matrix");
+    const byId = Object.fromEntries(ctx.chunks.map((c: Chunk) => [c.id, c.matchedBy]));
+    eq(byId["kw-only"], "keyword", "keyword-only provenance");
+    eq(byId["sem-only"], "semantic", "semantic-only provenance");
+    if (!ctx.chunks.some((c: Chunk) => c.matchedBy === "position")) {
+      throw new Error("document-order filler must be marked as positional, not as a search hit");
+    }
+  });
+
+  // ── Degradation ladder ────────────────────────────────────────────────────
+
+  await test("no pgvector means no semantic query is attempted", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({ count: 50, hasVectors: false, ftsRows: Array.from({ length: 8 }, (_, i) => chunk(i)) });
+    const ctx = await assembleEvidence("p1", "change_log");
+    eq(ctx.mode, "keyword", "mode");
+    eq(stub.vecCalls, 0, "must not query a column that does not exist");
+    eq(stub.embedCalls, 0, "must not spend an embedding call it cannot use");
+  });
+
+  await test("unconfigured embedding endpoint degrades to keyword", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({
+      count: 50,
+      hasVectors: true,
+      queryVector: null, // embedQuery returns null when no endpoint is configured
+      ftsRows: Array.from({ length: 8 }, (_, i) => chunk(i)),
+    });
+    const ctx = await assembleEvidence("p1", "decision_log");
+    eq(ctx.mode, "keyword", "mode");
+    eq(stub.vecCalls, 0, "no vector query without a query vector");
+    eq(ctx.chunks.length, 8, "keyword results survive intact");
+  });
+
+  await test("semantic arm failure cannot take down the keyword arm", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({
+      count: 50,
+      hasVectors: true,
+      vecThrows: true,
+      ftsRows: Array.from({ length: 8 }, (_, i) => chunk(i)),
+    });
+    const ctx = await assembleEvidence("p1", "issue_register");
+    eq(ctx.mode, "keyword", "mode");
+    eq(ctx.chunks.length, 8, "keyword results survive");
+  });
+
+  await test("keyword arm failure still returns semantic results", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({
+      count: 50,
+      hasVectors: true,
+      ftsThrows: true,
+      vecRows: Array.from({ length: 8 }, (_, i) => chunk(i)),
+    });
+    const ctx = await assembleEvidence("p1", "lessons_learned");
+    eq(ctx.hasEvidence, true, "semantic arm alone is still evidence");
+    eq(ctx.chunks.length, 8, "chunks");
+    eq(ctx.chunks[0].matchedBy, "semantic", "provenance");
+  });
+
+  await test("both arms failing still degrades to document order", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({
+      count: 50,
+      hasVectors: true,
+      ftsThrows: true,
+      vecThrows: true,
+      orderedRows: Array.from({ length: 20 }, (_, i) => chunk(i)),
+    });
+    const ctx = await assembleEvidence("p1", "closure_report");
+    eq(ctx.mode, "fallback", "mode");
+    eq(ctx.chunks.length, 12, "chunks");
+  });
+
+  await test("intent vectors are embedded once, not per generation", async () => {
+    process.env.DATABASE_URL = PG;
+    reset({ count: 50, hasVectors: true, vecRows: [chunk(0)], ftsRows: [chunk(1)] });
+    // Same artifact type three times — the intent string is identical, so its
+    // vector must be computed once and reused.
+    await assembleEvidence("p1", "benefits_register");
+    await assembleEvidence("p2", "benefits_register");
+    await assembleEvidence("p3", "benefits_register");
+    eq(stub.embedCalls, 1, "embedQuery calls for three generations of one type");
   });
 
 // ── Report ──────────────────────────────────────────────────────────────────

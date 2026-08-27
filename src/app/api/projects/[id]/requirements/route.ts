@@ -1,11 +1,12 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
 import { requireProjectAccess } from "@/lib/project-access";
+import { embedAndStoreChunks } from "@/lib/chunk-embeddings";
 
 // Doc class → points toward evidence readiness score
 const DOC_CLASS_POINTS: Record<string, number> = {
@@ -226,6 +227,25 @@ Extract as much detail as possible. Use null/empty arrays for missing sections.`
 
   // Recompute evidence readiness
   const readiness = await computeAndSaveReadiness(id);
+
+  // ── Background: embed the new chunks for semantic retrieval ───────────────
+  // Detached from the response so upload latency is unchanged. The document is
+  // already fully usable — keyword retrieval needs no vectors — so a failure
+  // here degrades hybrid search to lexical rather than breaking anything.
+  // Anything missed is picked up by scripts/backfill-embeddings.ts.
+  if (chunks.length > 0) {
+    after(async () => {
+      const result = await embedAndStoreChunks(
+        chunks.map((c) => ({ id: `${doc.id}-${c.chunkIndex}`, text: c.text })),
+        { confidentialityTier }
+      );
+      if (result.skipped) {
+        console.warn(`[embeddings] ${doc.fileName}: skipped — ${result.reason}`);
+      } else {
+        console.info(`[embeddings] ${doc.fileName}: ${result.stored}/${result.attempted} chunks embedded`);
+      }
+    });
+  }
 
   return NextResponse.json({ doc, extractedContent, readiness, chunkCount: chunks.length }, { status: 201 });
 }

@@ -16,6 +16,26 @@ async function run(pool, sql, label) {
   }
 }
 
+/**
+ * Same as run(), but a failure is reported and the deploy continues.
+ *
+ * Reserved for capabilities the app degrades around rather than depends on.
+ * CREATE EXTENSION needs privileges the deploy role may not hold, and on Azure
+ * Database for PostgreSQL "vector" must additionally be allowlisted in the
+ * azure.extensions server parameter. Neither should be able to fail a release:
+ * without pgvector, retrieval simply stays keyword-only.
+ */
+async function runOptional(pool, sql, label) {
+  try {
+    await pool.query(sql);
+    console.log(`✓ ${label}`);
+    return true;
+  } catch (e) {
+    console.warn(`⚠ ${label} — skipped: ${e.message}`);
+    return false;
+  }
+}
+
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url || url.startsWith("file:")) {
@@ -1003,6 +1023,35 @@ async function main() {
       ADD COLUMN IF NOT EXISTS "appliedTemplateId" TEXT`);
 
     console.log("✓ ArtifactTemplate table + ArtifactVersion.appliedTemplateId");
+
+    // ── Semantic retrieval (optional capability) ────────────────────────────
+    // Every statement here is best-effort. The app checks for the column at
+    // runtime and falls back to keyword-only retrieval when it is absent, so a
+    // cluster without pgvector deploys and runs normally.
+    const hasVector = await runOptional(pool, `CREATE EXTENSION IF NOT EXISTS vector`, "pgvector extension");
+
+    if (hasVector) {
+      await runOptional(pool, `
+        ALTER TABLE "DocumentChunk"
+          ADD COLUMN IF NOT EXISTS "embedding"      vector(1536),
+          ADD COLUMN IF NOT EXISTS "embeddingModel" TEXT
+      `, "DocumentChunk.embedding");
+
+      // Deliberately NO HNSW/IVFFlat index.
+      //
+      // Every semantic query filters WHERE "projectId" = $1 first. Approximate
+      // indexes are traversed globally and then post-filtered, so a project
+      // holding a small fraction of the corpus can return far fewer than k
+      // rows — silently degraded recall, which is worse than a slow query.
+      // Exact KNN over one project's chunks is single-digit milliseconds at the
+      // scale this runs at. Revisit only if a single project exceeds ~50k chunks.
+      await runOptional(pool, `
+        CREATE INDEX IF NOT EXISTS "DocumentChunk_embedding_pending_idx"
+          ON "DocumentChunk"("projectId")
+          WHERE "embedding" IS NULL
+      `, "DocumentChunk backfill index");
+    }
+
     console.log("✓ All migrations complete");
 
   } catch (err) {
