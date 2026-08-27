@@ -11,7 +11,8 @@ function isLocal() { return dbUrl()?.startsWith("file:"); }
 
 function localDbPath(): string {
   const p = dbUrl().replace(/^file:/, "");
-  return p.startsWith(".") ? path.resolve(process.cwd(), p) : p;
+  // turbopackIgnore: path is runtime-derived from DATABASE_URL (local-only, never runs on Vercel)
+  return p.startsWith(".") ? path.resolve(/* turbopackIgnore: true */ process.cwd(), p) : p;
 }
 
 // Singleton pg pool for production
