@@ -50,6 +50,7 @@ const nextConfig: NextConfig = {
     "pg",
     "@prisma/adapter-pg",
     "pdf-parse",
+    "pdfjs-dist",
     "mammoth",
     "pptxgenjs",
     "docx",

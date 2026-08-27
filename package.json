@@ -56,7 +56,7 @@
     "nodemailer": "^8.0.11",
     "openai": "^7.2.0",
     "pdf-parse": "1.1.1",
-    "pdfjs-dist": "^6.2.108",
+    "pdfjs-dist": "^3.11.174",
     "pg": "^8.22.0",
     "pptxgenjs": "^4.0.1",
     "prisma": "^7.8.0",
