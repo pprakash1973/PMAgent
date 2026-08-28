@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { anthropic } from "@/lib/ai";
 import { requireProjectAccess } from "@/lib/project-access";
+import { resolveModel } from "@/lib/model-router";
 
 interface ExtractedRequirement {
   requirementKey: string;
@@ -16,8 +17,49 @@ interface ExtractedRequirement {
   sourceQuote: string;
 }
 
+/**
+ * Parse the AI's JSON response, with graceful fallback for truncated output.
+ * When max_tokens is reached mid-response the JSON array is incomplete;
+ * instead of throwing, we salvage every complete requirement object already emitted.
+ */
+function parseRequirementsJson(raw: string): ExtractedRequirement[] {
+  // Strip fenced code block if present
+  const fenced = raw.match(/```json\s*([\s\S]*?)\s*```/);
+  const candidate = fenced ? fenced[1] : raw;
+
+  // 1. Happy path — well-formed JSON
+  try {
+    const parsed = JSON.parse(candidate);
+    if (Array.isArray(parsed?.requirements)) return parsed.requirements;
+  } catch {
+    // fall through to salvage path
+  }
+
+  // 2. Salvage path — truncated JSON (hit max_tokens mid-array).
+  //    Extract every complete { ... } object whose "statement" field is non-empty.
+  const salvaged: ExtractedRequirement[] = [];
+  const objRegex = /\{[^{}]*"statement"\s*:\s*"[^"]{3,}"[^{}]*\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = objRegex.exec(candidate)) !== null) {
+    try {
+      const obj = JSON.parse(m[0]) as Partial<ExtractedRequirement>;
+      if (obj.statement) salvaged.push(obj as ExtractedRequirement);
+    } catch {
+      // skip malformed object
+    }
+  }
+  if (salvaged.length > 0) {
+    console.warn(`[extract] JSON was truncated; salvaged ${salvaged.length} complete requirements`);
+    return salvaged;
+  }
+
+  // 3. Nothing salvageable — return empty (caller will get extracted:0, no error)
+  console.warn("[extract] Could not parse any requirements from AI response");
+  return [];
+}
+
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await auth();
@@ -27,33 +69,50 @@ export async function POST(
   if (_acc.error) return _acc.error;
   const { id } = await params;
 
+  // Pagination params — client sends chunkOffset to resume from where it left off
+  const body = await req.json().catch(() => ({}));
+  const chunkOffset = Math.max(0, Number(body.chunkOffset) || 0);
+  const batchLimit = Math.min(20, Math.max(1, Number(body.batchLimit) || 10));
+
   const project = await prisma.project.findUnique({ where: { id }, select: { id: true, name: true } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  // Pull chunks for this project — enough to cover a large BRD end-to-end.
-  // claude-sonnet-4-6 has a 200k context window so we can send substantially
-  // more text than the old 12k limit (which only covered the intro/TOC section).
-  const CORPUS_CHAR_LIMIT = 60_000;
-  const chunks = await prisma.documentChunk.findMany({
+  // Fetch one batch of chunks starting at chunkOffset.
+  // Fetch BATCH_CHUNK_FETCH+1 so we know if there are more beyond this batch.
+  const BATCH_CHAR_LIMIT = 20_000;
+  const BATCH_CHUNK_FETCH = 80;
+  const rawChunks = await prisma.documentChunk.findMany({
     where: { projectId: id },
     orderBy: [{ documentId: "asc" }, { chunkIndex: "asc" }],
-    take: 500,
+    skip: chunkOffset,
+    take: BATCH_CHUNK_FETCH + 1,
     select: { id: true, text: true, sectionTitle: true, pageNumber: true },
   });
 
-  // Build corpus — spread across the document rather than just the first N chars.
-  let corpus = "";
+  const hasMoreBeyondFetch = rawChunks.length > BATCH_CHUNK_FETCH;
+  const batchChunks = hasMoreBeyondFetch ? rawChunks.slice(0, BATCH_CHUNK_FETCH) : rawChunks;
 
-  if (chunks.length > 0) {
-    for (const chunk of chunks) {
+  // Build corpus for this batch, stopping at char limit
+  let corpus = "";
+  let chunksConsumed = 0;
+  let hasMore = false;
+
+  if (batchChunks.length > 0) {
+    for (const chunk of batchChunks) {
       const prefix = chunk.sectionTitle ? `[${chunk.sectionTitle}] ` : "";
       const candidate = `${prefix}${chunk.text}\n`;
-      if (corpus.length + candidate.length > CORPUS_CHAR_LIMIT) break;
+      if (corpus.length + candidate.length > BATCH_CHAR_LIMIT) {
+        hasMore = true; // stopped early — more chunks remain in this fetch
+        break;
+      }
       corpus += candidate;
+      chunksConsumed++;
     }
+    if (!hasMore && hasMoreBeyondFetch) hasMore = true;
   } else {
     // Docs uploaded during project creation are stored without chunks — fall back to
     // the raw text saved in extractedContent.rawText on the RequirementsDocument record.
+    // No pagination for legacy docs — extract all in one shot.
     const legacyDocs = await prisma.requirementsDocument.findMany({
       where: { projectId: id, deletedAt: null },
       select: { extractedContent: true, fileName: true },
@@ -63,7 +122,7 @@ export async function POST(
       const raw = (doc.extractedContent as any)?.rawText as string | undefined;
       if (raw) {
         corpus += `\n=== ${doc.fileName} ===\n${raw.slice(0, 30000)}\n`;
-        if (corpus.length > CORPUS_CHAR_LIMIT) break;
+        if (corpus.length > 60_000) break;
       }
     }
     if (!corpus.trim()) {
@@ -71,16 +130,21 @@ export async function POST(
     }
   }
 
+  const nextChunkOffset = chunkOffset + chunksConsumed;
+
+  // Resolve model via router — defaults to Haiku for speed but allows DB override
+  const { model: extractModel, maxTokens: extractMaxTokens } = await resolveModel("extraction");
+
   let extracted: ExtractedRequirement[] = [];
   try {
-    // Haiku: ~10× faster than Sonnet for structured extraction — keeps well within
+    // Router defaults to Haiku (~10× faster than Sonnet), keeping well within
     // the 220s maxDuration even for large corpora (60k chars).
     // 170s SDK timeout as a safety net for the DB work that follows.
     const message = await anthropic.messages.create(
       {
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 8000,
-        system: `You are a senior business analyst. Extract ALL discrete requirements from the source document corpus provided.
+        model: extractModel,
+        max_tokens: Math.min(extractMaxTokens, 16000),
+        system: `You are a senior business analyst. Extract up to ${batchLimit} discrete requirements from the source document corpus provided.
 A "requirement" is any statement that specifies:
 - A functional need (what the system/project must do)
 - A non-functional need (performance, security, compliance)
@@ -91,22 +155,20 @@ Rules:
 - Only extract statements clearly present in the text — never infer or fabricate
 - Each requirement must have a verbatim sourceQuote (exact text from the document proving it)
 - Assign confidence: 1.0 = verbatim, 0.8 = paraphrased but clear, 0.6 = implied
+- Return at most ${batchLimit} requirements — prioritise the most specific and actionable
 - Return JSON only
 
 Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "...", "type": "functional|non-functional|constraint|assumption", "category": "scope|budget|timeline|quality|security|compliance|technical|resource|other", "confidence": 0.0-1.0, "sourceQuote": "exact verbatim text from source" } ] }`,
         messages: [{
           role: "user",
-          content: `Project: ${project.name}\n\nSource corpus:\n${corpus}\n\nExtract all requirements. Return JSON only.`,
+          content: `Project: ${project.name}\n\nSource corpus (document section ${chunkOffset === 0 ? "start" : `from chunk ${chunkOffset}`}):\n${corpus}\n\nExtract up to ${batchLimit} requirements. Return JSON only.`,
         }],
       },
       { timeout: 170_000 }
     );
 
     const text = message.content[0].type === "text" ? message.content[0].text : "{}";
-    const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
-    const candidate = fenced ? fenced[1] : (text.match(/\{[\s\S]*\}/) ?? [text])[0];
-    const parsed = JSON.parse(candidate);
-    extracted = parsed.requirements ?? [];
+    extracted = parseRequirementsJson(text);
   } catch (err: any) {
     console.error("[extract] AI call failed:", err?.message ?? err);
     return NextResponse.json(
@@ -116,7 +178,7 @@ Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "..
   }
 
   // Find chunk IDs that best match each sourceQuote
-  const chunkTextMap = chunks.map(c => ({ id: c.id, text: c.text.toLowerCase() }));
+  const chunkTextMap = batchChunks.map(c => ({ id: c.id, text: c.text.toLowerCase() }));
 
   function findChunkId(quote: string): string | null {
     const q = quote.toLowerCase().slice(0, 80);
@@ -167,5 +229,10 @@ Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "..
     created++;
   }
 
-  return NextResponse.json({ extracted: created, requirements: extracted });
+  return NextResponse.json({
+    extracted: created,
+    requirements: extracted,
+    nextChunkOffset,
+    hasMore,
+  });
 }

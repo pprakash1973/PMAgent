@@ -3737,6 +3737,23 @@ function ScopeControlTab({ project }: { project: any }) {
   const [extractError, setExtractError] = React.useState<string | null>(null);
   const [extractingDocIds, setExtractingDocIds] = React.useState<Set<string>>(new Set());
   const autoExtractedRef = React.useRef(false);
+  // Paginated extraction cursor — persisted to localStorage so refresh survives
+  const [nextChunkOffset, setNextChunkOffset] = React.useState<number>(() => {
+    try { return parseInt(localStorage.getItem(`extract_cursor_${project.id}`) ?? "0", 10) || 0; } catch { return 0; }
+  });
+  const [hasMoreChunks, setHasMoreChunks] = React.useState<boolean>(() => {
+    try { return localStorage.getItem(`extract_has_more_${project.id}`) === "true"; } catch { return false; }
+  });
+  const [loadingMore, setLoadingMore] = React.useState(false);
+
+  function saveExtractionCursor(offset: number, more: boolean) {
+    setNextChunkOffset(offset);
+    setHasMoreChunks(more);
+    try {
+      localStorage.setItem(`extract_cursor_${project.id}`, String(offset));
+      localStorage.setItem(`extract_has_more_${project.id}`, String(more));
+    } catch { /* ignore */ }
+  }
 
   // Impact analysis
   const [selectedDocIds, setSelectedDocIds] = React.useState<Set<string>>(new Set());
@@ -3787,11 +3804,19 @@ function ScopeControlTab({ project }: { project: any }) {
         autoExtractedRef.current = true;
         setExtracting(true);
         setExtractError(null);
-        fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" })
+        fetch(`/api/projects/${project.id}/requirements/extract`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chunkOffset: 0, batchLimit: 10 }),
+        })
           .then(r => r.json())
           .then(async data => {
-            if (data.extracted > 0) await loadData();
-            else setExtractError(data.error || "No requirements found — click Extract to retry.");
+            if (data.extracted > 0) {
+              saveExtractionCursor(data.nextChunkOffset ?? 0, data.hasMore ?? false);
+              await loadData();
+            } else {
+              setExtractError(data.error || "No requirements found — click Extract to retry.");
+            }
           })
           .catch(() => setExtractError("Auto-extraction failed — click Extract to retry."))
           .finally(() => setExtracting(false));
@@ -3822,17 +3847,43 @@ function ScopeControlTab({ project }: { project: any }) {
   async function handleExtract() {
     setExtracting(true);
     setExtractError(null);
+    saveExtractionCursor(0, false);
     try {
-      const res = await fetch(`/api/projects/${project.id}/requirements/extract`, { method: "POST" });
+      const res = await fetch(`/api/projects/${project.id}/requirements/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkOffset: 0, batchLimit: 10 }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Extraction failed");
       if ((data.extracted ?? 0) === 0)
         throw new Error("No requirements found in the uploaded documents.");
+      saveExtractionCursor(data.nextChunkOffset ?? 0, data.hasMore ?? false);
       await loadData();
     } catch (err: any) {
       setExtractError(err.message);
     } finally {
       setExtracting(false);
+    }
+  }
+
+  async function handleLoadMore() {
+    setLoadingMore(true);
+    setExtractError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/requirements/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chunkOffset: nextChunkOffset, batchLimit: 10 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Extraction failed");
+      saveExtractionCursor(data.nextChunkOffset ?? nextChunkOffset, data.hasMore ?? false);
+      await loadData();
+    } catch (err: any) {
+      setExtractError(err.message);
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -4218,7 +4269,7 @@ function ScopeControlTab({ project }: { project: any }) {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
             <circle cx="12" cy="12" r="10" stroke="#0f766e" strokeWidth="2.5" strokeDasharray="31" strokeDashoffset="10" />
           </svg>
-          Extracting requirements from documents… this may take 20–30 seconds.
+          Extracting first 10 requirements… this may take 15–20 seconds.
         </div>
       )}
 
@@ -4597,6 +4648,25 @@ function ScopeControlTab({ project }: { project: any }) {
                   )}
                 </div>
               ))}
+
+              {/* Load more — shown when paginated extraction has more chunks to process */}
+              {hasMoreChunks && activeReqs.length > 0 && (
+                <div style={{ padding: "12px 16px", textAlign: "center" as const, borderTop: `1px solid ${C.borderLight}` }}>
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, background: loadingMore ? C.surface2 : "#f0fdf9", color: loadingMore ? C.text3 : "#0f766e", border: "1px solid #99f6e4", borderRadius: 7, padding: "7px 18px", cursor: loadingMore ? "not-allowed" : "pointer" }}
+                  >
+                    {loadingMore && (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+                        <circle cx="12" cy="12" r="10" stroke={C.text3} strokeWidth="2.5" strokeDasharray="31" strokeDashoffset="10" />
+                      </svg>
+                    )}
+                    {loadingMore ? "Extracting more…" : "+ Load next 10 requirements"}
+                  </button>
+                  <div style={{ fontSize: 11, color: C.text3, marginTop: 5 }}>Review and edit above before loading more</div>
+                </div>
+              )}
 
               {activeReqs.length === 0 && removedReqs.length === 0 && (
                 <div style={{ padding: "24px 16px", textAlign: "center" as const, color: C.text3, fontSize: 13 }}>

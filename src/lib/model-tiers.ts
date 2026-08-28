@@ -8,6 +8,7 @@ export const AGENTS = [
   { id: "status_summary",    label: "Status Summary",           description: "Drafts the narrative summary section of status reports" },
   { id: "schedule_recovery", label: "Schedule Recovery",        description: "Analyses delayed tasks and proposes a recovery plan" },
   { id: "requirements",      label: "Requirements Extraction",  description: "Parses uploaded requirement documents and extracts structured fields" },
+  { id: "extraction",        label: "Scope Control Extraction", description: "Extracts discrete requirements from chunked documents in scope control (defaults to Haiku for speed)" },
   { id: "chat",              label: "Project Chat",             description: "Answers questions and executes commands within a single project context" },
   { id: "portfolio_chat",    label: "Portfolio Chat",           description: "Cross-project portfolio Q&A for PMs, DMs, and Delivery Heads" },
 ] as const;
@@ -52,8 +53,15 @@ export const AGENT_ALLOWED_TIERS: Record<AgentId, string[] | null> = {
   status_summary:    ["Balanced", "Latest", "Quality", "Smart"],
   schedule_recovery: ["Balanced", "Latest", "Quality", "Smart"],
   requirements:      ["Balanced", "Latest", "Quality", "Smart"],
+  extraction:        ["Fast", "Balanced", "Latest", "Quality", "Smart"],
   chat:              null,
   portfolio_chat:    null,
+};
+
+/** Per-agent default model used when no ModelConfig DB row exists for that agent.
+ *  Only specify when the agent-level default should differ from DEFAULT_MODEL. */
+export const AGENT_DEFAULT_MODELS: Partial<Record<AgentId, string>> = {
+  extraction: "claude-haiku-4-5-20251001",
 };
 
 /** Returns the subset of AVAILABLE_MODELS permitted for a given agent. */

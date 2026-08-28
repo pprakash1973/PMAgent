@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import type { Provider } from "./providers/types";
 import {
-  AGENTS, AVAILABLE_MODELS, AGENT_ALLOWED_TIERS,
+  AGENTS, AVAILABLE_MODELS, AGENT_ALLOWED_TIERS, AGENT_DEFAULT_MODELS,
   DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
   allowedModelsForAgent, isModelUncertified,
   type AgentId,
@@ -9,7 +9,7 @@ import {
 
 // Re-export pure client-safe symbols for callers that imported from this module
 export {
-  AGENTS, AVAILABLE_MODELS, AGENT_ALLOWED_TIERS,
+  AGENTS, AVAILABLE_MODELS, AGENT_ALLOWED_TIERS, AGENT_DEFAULT_MODELS,
   DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
   allowedModelsForAgent, isModelUncertified,
   type AgentId,
@@ -39,8 +39,9 @@ export async function resolveModel(agent: AgentId): Promise<AgentConfig> {
     ?? AVAILABLE_MODELS.find((m) => m.id === row?.model)?.provider
     ?? DEFAULT_PROVIDER;
 
+  const agentDefault = AGENT_DEFAULT_MODELS[agent] ?? DEFAULT_MODEL;
   const result: AgentConfig = {
-    model:       row?.model       ?? DEFAULT_MODEL,
+    model:       row?.model       ?? agentDefault,
     maxTokens:   row?.maxTokens   ?? DEFAULT_MAX_TOKENS,
     provider:    derivedProvider,
     temperature: row?.temperature ?? DEFAULT_TEMPERATURE,
