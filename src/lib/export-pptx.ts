@@ -385,7 +385,33 @@ function buildCharter(pptx: any, content: any, projectName: string) {
   if (sponsor) cov.addText(`Sponsor: ${sponsor}`, { x: 0.55, y: 5.05, w: 6.7, h: 0.3, fontSize: 9.5, color: DARK_GRAY, fontFace: FONT_BODY });
   cov.addText(FOOTER_TEXT, { x: 0.4, y: 6.95, w: 7.0, h: 0.3, fontSize: 7, color: DARK_GRAY, fontFace: FONT_BODY });
 
-  // ── Slide 2: Executive Summary — 3 icon columns + dark KPI strip ──
+  // ── Slide 2: Agenda ──
+  const agendaSlide = contentSlide(pptx, "Agenda", projectName, page++);
+  const agendaItems = [
+    "Executive Summary",
+    "Project Scope",
+    "Objectives & Success Criteria",
+    "Key Milestones & Timeline",
+    "Stakeholder Overview",
+    "RACI Matrix — Roles & Responsibilities",
+    "Escalation Matrix",
+    "Top Risks at Initiation",
+    "Budget & Resources",
+    "Authorization & Sign-off",
+  ];
+  agendaItems.forEach((item, i) => {
+    const col = Math.floor(i / 5);
+    const row = i % 5;
+    const x = 0.4 + col * 6.5;
+    const y = 0.95 + row * 1.05;
+    const itemColor = PHASE_COLORS[i % PHASE_COLORS.length];
+    agendaSlide.addShape(pptx.ShapeType.roundRect, { x, y, w: 6.1, h: 0.88, fill: { color: WASH }, line: { color: itemColor, width: 1.5 }, rectRadius: 0.08 });
+    agendaSlide.addShape(pptx.ShapeType.rect, { x, y, w: 0.42, h: 0.88, fill: { color: itemColor } });
+    agendaSlide.addText(String(i + 1).padStart(2, "0"), { x, y, w: 0.42, h: 0.88, fontSize: 11, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: FONT_HEADING });
+    agendaSlide.addText(item, { x: x + 0.52, y, w: 5.5, h: 0.88, fontSize: 11, color: SOFT_BLACK, valign: "middle", fontFace: FONT_BODY });
+  });
+
+  // ── Slide 3: Executive Summary — 3 icon columns + dark KPI strip ──
   const s2 = contentSlide(pptx, "Executive Summary", projectName, page++);
   const cols3 = [
     { label: "Business Problem", icon: "◈", color: RED, text: safeStr(content.businessCase ?? content.projectDescription ?? "") },
