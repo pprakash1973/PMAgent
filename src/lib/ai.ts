@@ -173,8 +173,7 @@ function parseAIJson(text: string, stopReason: string, label: string): Record<st
 }
 
 const PMI_SYSTEM_PROMPT = `You are a senior PMO AI assistant with deep expertise in:
-- PMBOK® Guide 6th Edition (process groups, knowledge areas, ITTOs)
-- PMBOK® Guide 7th Edition (12 principles, 8 performance domains)
+- PMBOK® Guide (process groups, knowledge areas, ITTOs, 12 principles, 8 performance domains)
 - PMI best practices across Initiating, Planning, Executing, Monitoring & Controlling, and Closing
 - EVM (Earned Value Management): PV, EV, AC, CPI, SPI, EAC, VAC, TCPI
 - Risk management: cause→event→effect statements, P×I matrix, RBS categories, threat/opportunity strategies
@@ -182,7 +181,7 @@ const PMI_SYSTEM_PROMPT = `You are a senior PMO AI assistant with deep expertise
 - Stakeholder management: power/interest grid, engagement levels (Unaware→Resistant→Neutral→Supportive→Leading)
 - RACI accountability: exactly one Accountable per activity, clear R/A/C/I distinctions
 - Change control: integrated change control, CCB governance, baseline protection
-- Benefits realization and project closure per PMBOK 4.7
+- Benefits realization and project closure per PMBOK
 
 Generate concise, PMBOK-aligned project management artifacts.
 Return ONLY valid JSON — no prose, no markdown outside the JSON block.
@@ -374,7 +373,7 @@ export async function generateStatusSummary(
 
   const config = await resolveModel("status_summary");
   const system = `You are a PMO AI. Generate a structured Weekly Status Report from the PM's Q&A responses.
-Apply PMBOK Monitoring & Controlling (4.5) principles. Do not introduce figures not in the inputs.
+Apply PMBOK Monitoring & Controlling principles. Do not introduce figures not in the inputs.
 When live EVM data is provided, use those exact numbers in metricsNarrative and spi field — do not override them.
 
 Return JSON with:
@@ -429,7 +428,7 @@ Return JSON with:
 
 export async function extractRequirements(text: string): Promise<Record<string, unknown>> {
   const config = await resolveModel("requirements");
-  const system = `You are a PMO AI. Extract structured project requirements from documents per PMBOK 5.2 (Collect Requirements).
+  const system = `You are a PMO AI. Extract structured project requirements from documents per PMBOK (Collect Requirements).
 Return JSON with:
 - goals (array of strings): business/project goals
 - scopeItems (array of strings): in-scope deliverables
@@ -524,7 +523,7 @@ function buildArtifactContent(
 
     // ── INITIATING ────────────────────────────────────────────────────────────
 
-    project_charter: `Generate a Project Charter per PMI's 12 Core Charter Components (PMBOK® Process 4.1).
+    project_charter: `Generate a Project Charter per PMI's 12 Core Charter Components.
 CONCISENESS: every text field ≤1 sentence; every string array ≤4 items; every object array ≤4 items.
 Return JSON — no extra keys, no markdown outside the JSON block:
 
@@ -588,7 +587,7 @@ Return JSON with:
 - constraints (array of strings)
 - recommendation (string): clear recommendation for approval`,
 
-    stakeholder_register: `Generate a Stakeholder Register per PMBOK Process 13.1 (Identify Stakeholders) and 9.1 (Plan Resource Management).
+    stakeholder_register: `Generate a Stakeholder Register per PMBOK (Identify Stakeholders) and (Plan Resource Management).
 Return JSON with:
 - stakeholders (array of {
     id (string): S001, S002…
@@ -607,7 +606,7 @@ Return JSON with:
   })
 - powerInterestSummary (string): overall stakeholder landscape narrative`,
 
-    initiation_deck: `Generate a Project Initiation Deck summary for CXO presentation per PMBOK 4.1 and PMI charter best practices.
+    initiation_deck: `Generate a Project Initiation Deck summary for CXO presentation per PMI charter best practices.
 CONCISENESS: every text field ≤1 sentence; every array ≤4 items.
 Return JSON:
 - projectTitle (string)
@@ -649,7 +648,7 @@ Return JSON with:
     notes (string)
   })`,
 
-    benefits_register: `Generate a Benefits Register per PMBOK 4.7 (Close Project) and Benefits Management Plan inputs.
+    benefits_register: `Generate a Benefits Register per PMBOK (Close Project) and Benefits Management Plan inputs.
 Return JSON with:
 - benefits (array of {
     id (string): B001, B002…
@@ -669,7 +668,7 @@ Return JSON with:
 
     // ── PLANNING ─────────────────────────────────────────────────────────────
 
-    scope_statement: `Generate a Scope Statement per PMBOK Processes 5.2 (Collect Requirements) and 5.3 (Define Scope).
+    scope_statement: `Generate a Scope Statement per PMBOK (Collect Requirements) and (Define Scope).
 Return JSON with:
 - projectName (string)
 - version (string)
@@ -687,7 +686,7 @@ Return JSON with:
 - acceptanceCriteria (string): overall project acceptance criteria
 - approvalRequirements (string)`,
 
-    wbs: `Generate a Work Breakdown Structure per PMBOK Process 5.4 (Create WBS).
+    wbs: `Generate a Work Breakdown Structure per PMBOK (Create WBS).
 Use deliverable-oriented decomposition: every element is a noun/noun-phrase outcome, never a verb or activity.
 Include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
 CONCISENESS RULE: ≤5 phases; ≤4 deliverables per phase; ≤4 work packages per deliverable; every text field ≤1 sentence.
@@ -722,54 +721,43 @@ Return JSON with:
     note (string)
   }`,
 
-    milestone_plan: `Generate a Milestone Plan per PMBOK Processes 6.2 (Define Activities) and 6.5 (Develop Schedule).
+    milestone_plan: `Generate a Milestone Plan per PMBOK (Define Activities) and (Develop Schedule).
+CONCISENESS RULE: ≤8 milestones; every text field ≤1 sentence; deliverables ≤3 per milestone.
 Return JSON with:
 - projectName (string)
 - startDate (string)
 - endDate (string)
-- baselineDate (string): when baseline was set
-- milestones (array of {
+- milestones (array ≤8 of {
     id (string): M001, M002…
     name (string)
-    description (string)
     phase (string)
-    plannedDate (string): ISO date — baseline
-    forecastDate (string): current forecast
-    actualDate (string | null)
+    plannedDate (string): ISO date
     status (string): Not Started | On Track | At Risk | Slipped | Complete
-    isCritical (boolean): true if on critical path
-    deliverables (array of strings): what is produced at this milestone
+    isCritical (boolean)
+    deliverables (string[] ≤3)
     owner (string)
-    predecessors (array of strings): milestone IDs this depends on
-    variance (string): e.g. "+3 days" or "On schedule"
-    notes (string)
   })
-- criticalPathSummary (string): description of the critical path
-- schedulePerformanceIndex (string): SPI if data available, else "TBD"`,
+- criticalPathSummary (string)`,
 
-    resource_plan: `Generate a Resource Management Plan per PMBOK Process 9.1 (Plan Resource Management) and 9.2 (Estimate Activity Resources).
+    resource_plan: `Generate a Resource Management Plan per PMBOK (Plan Resource Management) and (Estimate Activity Resources).
+CONCISENESS RULE: ≤8 team members; skills ≤4 per member; skillsMatrix ≤6 rows; trainingNeeds ≤4; resourceConstraints ≤4; every text field ≤1 sentence.
 Return JSON with:
 - projectName (string)
-- teamDirectory (array of {
+- teamDirectory (array ≤8 of {
     id (string): R001, R002…
     name (string)
     role (string)
     department (string)
-    skills (array of strings)
+    skills (string[] ≤4)
     allocationPercent (number): 0-100
     startDate (string)
     endDate (string)
-    location (string)
-    dailyRate (number | null): optional
-    currency (string)
-    notes (string)
   })
-- resourceCalendar (object): {workingDays (array of strings), holidays (array of strings), notes (string)}
-- skillsMatrix (array of {skill, required (boolean), team members who have it (array of strings)})
-- resourceConstraints (array of strings)
-- trainingNeeds (array of {role, skill, trainingType, targetDate})`,
+- skillsMatrix (array ≤6 of {skill (string), required (boolean), members (string[])})
+- resourceConstraints (string[] ≤4)
+- trainingNeeds (array ≤4 of {role, skill, trainingType})`,
 
-    cost_plan: `Generate a Cost Management Plan and Budget per PMBOK Processes 7.1 (Plan Cost Management), 7.2 (Estimate Costs), 7.3 (Determine Budget), and 7.4 (Control Costs — EVM setup).
+    cost_plan: `Generate a Cost Management Plan and Budget per PMBOK (Plan Cost Management, Estimate Costs, Determine Budget, and Control Costs — EVM setup).
 Return JSON with:
 - projectName (string)
 - currency (string)
@@ -802,7 +790,7 @@ Return JSON with:
   }
 - fundingRequirements (array of {period (string), amount (number), cumulativeAmount (number)})`,
 
-    raid_register: `Generate a RAID Register per PMBOK Risk Management (11.1–11.7), covering Risks, Assumptions, Issues, and Dependencies.
+    raid_register: `Generate a RAID Register per PMBOK Risk Management, covering Risks, Assumptions, Issues, and Dependencies.
 CONCISENESS RULE: risks ≤6; assumptions ≤5; issues ≤5; dependencies ≤5; responseActions ≤3 per risk; every text field ≤1 sentence.
 Return JSON with:
 - risks (array ≤6):
@@ -859,7 +847,7 @@ Return JSON with:
     status (string): On Track | At Risk | Delayed | Resolved
   }`,
 
-    risk_register: `Generate a Risk Register per PMBOK Processes 11.1–11.7 (full risk management lifecycle).
+    risk_register: `Generate a Risk Register per PMBOK (full risk management lifecycle).
 CONCISENESS RULE: ≤8 risks; responseActions ≤3 per risk; every text field ≤1 sentence.
 Return JSON with:
 - projectName (string)
@@ -890,7 +878,7 @@ Return JSON with:
   }
 - riskExposureSummary (object): {totalRisks, criticalCount, highCount, mediumCount, lowCount, topRisk (string)}`,
 
-    communication_plan: `Generate a Communications Management Plan per PMBOK Process 10.1 (Plan Communications Management).
+    communication_plan: `Generate a Communications Management Plan per PMBOK (Plan Communications Management).
 Apply the communications channels formula: n(n−1)/2.
 Return JSON with:
 - projectName (string)
@@ -911,7 +899,7 @@ Return JSON with:
   })
 - meetingCadence (array of {meeting, attendees (array), frequency, duration, owner, agenda (array of strings)})`,
 
-    raci_matrix: `Generate a RACI Matrix per PMBOK Process 9.1 (Plan Resource Management) — Responsibility Assignment Matrix.
+    raci_matrix: `Generate a RACI Matrix per PMBOK (Plan Resource Management) — Responsibility Assignment Matrix.
 CRITICAL RULES: (1) Exactly ONE Accountable (A) per activity — two A's means none. (2) At least one Responsible (R) per activity. (3) R/A/C/I only in role cells.
 Return JSON with:
 - projectName (string)
@@ -934,7 +922,7 @@ Return JSON with:
   })
 - raciSummary (object): {activitiesCount, rolesCount, accountabilityCheck (string): "Pass" if every activity has exactly one A}`,
 
-    quality_plan: `Generate a Quality Management Plan per PMBOK Processes 8.1 (Plan Quality Management), 8.2 (Manage Quality), 8.3 (Control Quality).
+    quality_plan: `Generate a Quality Management Plan per PMBOK (Plan Quality Management, Manage Quality, Control Quality).
 Return JSON with:
 - projectName (string)
 - qualityPolicy (string): project quality policy statement
@@ -1007,7 +995,7 @@ Return JSON:
   }
 - interpretationTable (array of {metric, formula, value, interpretation}): one row each for SV, CV, SPI, CPI, EAC, ETC, SAC, VAC cost, VAC schedule, TCPI`,
 
-    traceability_matrix: `Generate a Requirements Traceability Matrix (RTM) per PMBOK Process 5.5 (Validate Scope) and IEEE 830.
+    traceability_matrix: `Generate a Requirements Traceability Matrix (RTM) per PMBOK (Validate Scope) and IEEE 830.
 CRITICAL: Every requirement MUST be sourced ONLY from the requirements document provided below. Do NOT invent requirements.
 Map each requirement forward to: WBS/deliverable → schedule milestone → acceptance criteria → test/validation approach.
 
@@ -1054,7 +1042,7 @@ Return JSON with:
     description (string)
   })`,
 
-    action_log: `Generate an Action Log for project execution tracking per PMBOK 4.3 (Direct and Manage Project Work).
+    action_log: `Generate an Action Log for project execution tracking per PMBOK (Direct and Manage Project Work).
 Return JSON with:
 - actions (array of {
     id (string): ACT001…
@@ -1071,7 +1059,7 @@ Return JSON with:
     notes (string)
   })`,
 
-    issue_register: `Generate an Issue Register per PMBOK 4.5 (Monitor and Control Project Work).
+    issue_register: `Generate an Issue Register per PMBOK (Monitor and Control Project Work).
 Return JSON with:
 - issues (array of {
     id (string): ISS001…
@@ -1093,7 +1081,7 @@ Return JSON with:
     lessonsLearned (string | null)
   })`,
 
-    decision_log: `Generate a Decision Log per PMBOK 4.4 (Manage Project Knowledge) and 4.5 (Monitor and Control).
+    decision_log: `Generate a Decision Log per PMBOK (Manage Project Knowledge) and (Monitor and Control).
 Return JSON with:
 - decisions (array of {
     id (string): DEC001…
@@ -1116,7 +1104,7 @@ Return JSON with:
 
     // ── MONITORING & CONTROLLING ───────────────────────────────────────────────
 
-    weekly_status: `Generate a Weekly Status Report per PMBOK Processes 4.5 (Monitor and Control Project Work) and 10.2 (Manage Communications).
+    weekly_status: `Generate a Weekly Status Report per PMBOK (Monitor and Control Project Work) and (Manage Communications).
 Apply EVM principles where data is available.
 Return JSON with:
 - reportingPeriod (string): e.g. "Week of 07 Jul 2026"
@@ -1141,7 +1129,7 @@ Return JSON with:
 - decisions (array of strings): decisions made or needed from leadership
 - nextPeriodDependencies (array of strings): what is needed to proceed`,
 
-    monthly_status: `Generate a Monthly Status Report per PMBOK 4.5 (Monitor and Control) and 10.2 (Manage Communications).
+    monthly_status: `Generate a Monthly Status Report per PMBOK (Monitor and Control) and (Manage Communications).
 Include EVM metrics and benefits tracking.
 Return JSON with:
 - reportingPeriod (string): e.g. "July 2026"
@@ -1179,7 +1167,7 @@ Return JSON with:
 - escalations (array of strings): items requiring leadership intervention
 - changeRequests (array of {id, description, status})`,
 
-    change_log: `Generate a Change Control Register per PMBOK Process 4.6 (Perform Integrated Change Control).
+    change_log: `Generate a Change Control Register per PMBOK (Perform Integrated Change Control).
 A change must never touch a baseline without an approved CR.
 Return JSON with:
 - projectName (string)
@@ -1214,7 +1202,7 @@ Return JSON with:
 
     // ── CLOSING ───────────────────────────────────────────────────────────────
 
-    lessons_learned: `Generate a Lessons Learned Register per PMBOK Process 4.7 (Close Project or Phase) and 4.4 (Manage Project Knowledge).
+    lessons_learned: `Generate a Lessons Learned Register per PMBOK (Close Project or Phase) and (Manage Project Knowledge).
 Return JSON with:
 - projectName (string)
 - facilitatedBy (string)
@@ -1269,7 +1257,7 @@ Return JSON with:
 - clientActions (array of {action, owner, dueDate})
 - closingNotes (string)`,
 
-    closure_report: `Generate a Project Closure Report per PMBOK Process 4.7 (Close Project or Phase).
+    closure_report: `Generate a Project Closure Report per PMBOK (Close Project or Phase).
 Confirm benefits against the business case, not just on-time/on-budget.
 Return JSON with:
 - projectName (string)
