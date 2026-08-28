@@ -71,10 +71,14 @@ export async function POST(
     }
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16000,
-    system: `You are a senior business analyst. Extract ALL discrete requirements from the source document corpus provided.
+  let extracted: ExtractedRequirement[] = [];
+  try {
+    // 170s SDK timeout — leaves headroom within the 220s maxDuration for DB work.
+    const message = await anthropic.messages.create(
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 8000,
+        system: `You are a senior business analyst. Extract ALL discrete requirements from the source document corpus provided.
 A "requirement" is any statement that specifies:
 - A functional need (what the system/project must do)
 - A non-functional need (performance, security, compliance)
@@ -88,24 +92,25 @@ Rules:
 - Return JSON only
 
 Return JSON: { "requirements": [ { "requirementKey": "REQ-001", "statement": "...", "type": "functional|non-functional|constraint|assumption", "category": "scope|budget|timeline|quality|security|compliance|technical|resource|other", "confidence": 0.0-1.0, "sourceQuote": "exact verbatim text from source" } ] }`,
-    messages: [{
-      role: "user",
-      content: `Project: ${project.name}\n\nSource corpus:\n${corpus}\n\nExtract all requirements. Return JSON only.`,
-    }],
-  });
+        messages: [{
+          role: "user",
+          content: `Project: ${project.name}\n\nSource corpus:\n${corpus}\n\nExtract all requirements. Return JSON only.`,
+        }],
+      },
+      { timeout: 170_000 }
+    );
 
-  const text = message.content[0].type === "text" ? message.content[0].text : "{}";
-  let extracted: ExtractedRequirement[] = [];
-  try {
-    // Try fenced code block first, then bare JSON object (handles preamble text)
+    const text = message.content[0].type === "text" ? message.content[0].text : "{}";
     const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
     const candidate = fenced ? fenced[1] : (text.match(/\{[\s\S]*\}/) ?? [text])[0];
     const parsed = JSON.parse(candidate);
     extracted = parsed.requirements ?? [];
-  } catch {
-    console.error("[extract] AI response not valid JSON:", text.slice(0, 600));
-    // Treat as 0 results rather than a hard error so the UI shows a retry prompt
-    extracted = [];
+  } catch (err: any) {
+    console.error("[extract] AI call failed:", err?.message ?? err);
+    return NextResponse.json(
+      { error: `Requirement extraction failed: ${err?.message ?? "AI did not respond in time"}` },
+      { status: 500 }
+    );
   }
 
   // Find chunk IDs that best match each sourceQuote
