@@ -73,10 +73,12 @@ export async function POST(
 
   let extracted: ExtractedRequirement[] = [];
   try {
-    // 170s SDK timeout — leaves headroom within the 220s maxDuration for DB work.
+    // Haiku: ~10× faster than Sonnet for structured extraction — keeps well within
+    // the 220s maxDuration even for large corpora (60k chars).
+    // 170s SDK timeout as a safety net for the DB work that follows.
     const message = await anthropic.messages.create(
       {
-        model: "claude-sonnet-4-6",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 8000,
         system: `You are a senior business analyst. Extract ALL discrete requirements from the source document corpus provided.
 A "requirement" is any statement that specifies:
