@@ -1825,36 +1825,36 @@ function ScheduleTab({ project }: { project: any }) {
   }
 
   function computeKpiFromTasks(taskList: any[]) {
-    const today = Date.now();
-    let totalPV = 0, totalEV = 0, totalAC = 0, totalActualEffort = 0;
+    // ZERO_HUNDRED method — matches server computeEVM. See schedule/route.ts for rationale.
+    const todayMs = (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d.getTime(); })();
+    let totalPV = 0, totalEV = 0, totalAC = 0;
     let totalHours = 0, weightedPct = 0;
     for (const t of taskList) {
-      const weight = t.estimatedHours != null ? t.estimatedHours : (t.baselineDays || 0) * 8;
+      const weight = (t.estimatedHours != null && t.estimatedHours > 0) ? Number(t.estimatedHours) : (t.baselineDays || 0) * 8;
       const actualHrs = t.actualHours != null ? Number(t.actualHours) : 0;
-      if (!weight || !t.baselineStart || !t.baselineFinish) continue;
-      const s = new Date(t.baselineStart).getTime();
-      const f = new Date(t.baselineFinish).getTime();
-      if (isNaN(s) || isNaN(f) || f <= s) continue;
-      const plannedPct = today <= s ? 0 : today >= f ? 1 : (today - s) / (f - s);
-      totalPV += weight * plannedPct;
-      if (t.percentComplete === 100) {
-        totalEV += weight;
-        totalAC += actualHrs;
-        totalActualEffort += actualHrs;
-      }
+      if (!weight || !t.baselineFinish) continue;
+      const finishMs = new Date(t.baselineFinish).getTime();
+      if (isNaN(finishMs)) continue;
+      // PV: ZERO_HUNDRED — full credit if planned finish is today or earlier
+      if (finishMs <= todayMs) totalPV += weight;
+      // EV: ZERO_HUNDRED — full credit only on 100% complete tasks
+      if ((t.percentComplete ?? 0) >= 100) totalEV += weight;
+      // AC: all actual hours regardless of status
+      totalAC += actualHrs;
       totalHours += weight;
-      weightedPct += weight * (t.percentComplete / 100);
+      weightedPct += weight * ((t.percentComplete ?? 0) / 100);
     }
     const spi = totalPV > 0 ? Math.round((totalEV / totalPV) * 100) / 100 : null;
     const completionPct = totalHours > 0 ? Math.round((weightedPct / totalHours) * 100) : null;
+    const r = (n: number) => Math.round(n * 10) / 10;
     return {
-      pv: Math.round(totalPV * 10) / 10,
-      ev: Math.round(totalEV * 10) / 10,
-      ac: Math.round(totalAC * 10) / 10,
-      sv: Math.round((totalEV - totalPV) * 10) / 10,
+      pv: r(totalPV),
+      ev: r(totalEV),
+      ac: r(totalAC),
+      sv: r(totalEV - totalPV),
       spi,
       completionPct,
-      totalActualEffort: Math.round(totalActualEffort * 10) / 10,
+      totalActualEffort: r(totalAC),
     };
   }
 

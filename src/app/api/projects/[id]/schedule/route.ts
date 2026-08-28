@@ -5,37 +5,53 @@ import { requireProjectAccess } from "@/lib/project-access";
 
 export const dynamic = "force-dynamic";
 
+// EVM engine — ZERO_HUNDRED method (per PMI spec and PMO policy):
+//   PV: credit full BAC for each task whose planned finish is today or in the past.
+//   EV: credit full BAC for each task that is 100 % complete (date-independent).
+//   AC: total actual hours logged across ALL tasks, regardless of completion status.
+// Both PV and EV use the same method — method mismatch would measure the reporting
+// convention rather than the project, violating the fundamental EV invariant.
 function computeEVM(tasks: any[]) {
-  const today = Date.now();
-  let totalPV = 0;
-  let totalEV = 0;
+  // End of today in ms so tasks finishing today count as "due".
+  const todayMs = (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d.getTime(); })();
+
+  let pv = 0, ev = 0, ac = 0;
 
   for (const t of tasks) {
-    const weight = t.baselineDays || 0;
-    if (!weight || !t.baselineStart || !t.baselineFinish) continue;
+    // BAC: prefer estimatedHours; fall back to baselineDays × 8 for effort-less tasks.
+    const bac = (t.estimatedHours != null && t.estimatedHours > 0)
+      ? Number(t.estimatedHours)
+      : (t.baselineDays ?? 0) * 8;
 
-    const s = new Date(t.baselineStart).getTime();
-    const f = new Date(t.baselineFinish).getTime();
-    if (isNaN(s) || isNaN(f) || f <= s) continue;
+    if (!bac || !t.baselineFinish) continue;
 
-    let plannedPct: number;
-    if (today <= s) plannedPct = 0;
-    else if (today >= f) plannedPct = 1;
-    else plannedPct = (today - s) / (f - s);
+    const finishMs = new Date(t.baselineFinish).getTime();
+    if (isNaN(finishMs)) continue;
 
-    totalPV += weight * plannedPct;
-    // 0/100 rule: only credit full weight when task is 100% complete
-    totalEV += (t.percentComplete === 100 ? weight : 0);
+    // PV — ZERO_HUNDRED planned fraction
+    if (finishMs <= todayMs) pv += bac;
+
+    // EV — ZERO_HUNDRED earned fraction (date-free)
+    if ((t.percentComplete ?? 0) >= 100) ev += bac;
+
+    // AC — all logged hours irrespective of task status
+    ac += Number(t.actualHours ?? 0);
   }
 
-  const spi = totalPV > 0 ? totalEV / totalPV : null;
-  const sv = totalEV - totalPV;
+  const r = (n: number) => Math.round(n * 10) / 10;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const safeDiv = (num: number, den: number): number | null => den === 0 ? null : num / den;
+
+  const spi = safeDiv(ev, pv);
+  const sv  = ev - pv;
 
   return {
-    pv: Math.round(totalPV * 10) / 10,
-    ev: Math.round(totalEV * 10) / 10,
-    sv: Math.round(sv * 10) / 10,
-    spi: spi !== null ? Math.round(spi * 100) / 100 : null,
+    pv:  r(pv),
+    ev:  r(ev),
+    ac:  r(ac),
+    sv:  r(sv),
+    spi: spi !== null ? r2(spi) : null,
+    totalActualEffort: r(ac),
   };
 }
 
