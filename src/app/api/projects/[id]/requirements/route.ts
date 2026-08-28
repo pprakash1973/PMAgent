@@ -48,7 +48,12 @@ async function extractFileText(file: File): Promise<string> {
   if (ext === "pdf") {
     try {
       const pdfParse = require("pdf-parse/lib/pdf-parse");
-      const result = await pdfParse(buffer);
+      const result = await Promise.race([
+        pdfParse(buffer) as Promise<{ text: string }>,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("pdf-parse timeout after 15 s")), 15_000)
+        ),
+      ]);
       return result.text;
     } catch (pdfParseErr: any) {
       console.warn("[requirements/upload] pdf-parse failed, falling back to pdfjs markdown:", pdfParseErr?.message);

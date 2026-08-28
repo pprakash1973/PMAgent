@@ -37,14 +37,18 @@ export async function POST(req: NextRequest) {
     let text = "";
 
     if (ext === "pdf") {
-      // Primary: pdf-parse (simple wrapper, handles most PDFs).
-      // Fallback: pdfjs-dist@3.11.174 legacy build — handles PDFs with long
-      // PostScript tokens that trigger "Command token too long" in pdf-parse's
-      // bundled pdfjs (e.g. some InDesign-exported or PostScript-converted PDFs).
+      // Primary: pdf-parse with a 15 s timeout — some PDFs cause it to hang
+      // indefinitely rather than throw (e.g. certain InDesign/PostScript exports).
+      // Fallback: pdfjs-dist@3.11.174 legacy build, which handles those cases.
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const pdfParse = require("pdf-parse/lib/pdf-parse");
-        const result = await pdfParse(buffer);
+        const result = await Promise.race([
+          pdfParse(buffer) as Promise<{ text: string }>,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("pdf-parse timeout after 15 s")), 15_000)
+          ),
+        ]);
         text = result.text;
       } catch (pdfParseErr: any) {
         console.warn("[parse-requirements] pdf-parse failed, falling back to pdfjs markdown:", pdfParseErr?.message);
