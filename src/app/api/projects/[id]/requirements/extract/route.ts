@@ -30,22 +30,25 @@ export async function POST(
   const project = await prisma.project.findUnique({ where: { id }, select: { id: true, name: true } });
   if (!project) return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
 
-  // Pull all ready chunks for this project (up to 150 for extraction)
+  // Pull chunks for this project — enough to cover a large BRD end-to-end.
+  // claude-sonnet-4-6 has a 200k context window so we can send substantially
+  // more text than the old 12k limit (which only covered the intro/TOC section).
+  const CORPUS_CHAR_LIMIT = 60_000;
   const chunks = await prisma.documentChunk.findMany({
     where: { projectId: id },
     orderBy: [{ documentId: "asc" }, { chunkIndex: "asc" }],
-    take: 150,
+    take: 500,
     select: { id: true, text: true, sectionTitle: true, pageNumber: true },
   });
 
-  // Build corpus — cap at ~12 000 chars to stay inside context limits
+  // Build corpus — spread across the document rather than just the first N chars.
   let corpus = "";
 
   if (chunks.length > 0) {
     for (const chunk of chunks) {
       const prefix = chunk.sectionTitle ? `[${chunk.sectionTitle}] ` : "";
       const candidate = `${prefix}${chunk.text}\n`;
-      if (corpus.length + candidate.length > 12000) break;
+      if (corpus.length + candidate.length > CORPUS_CHAR_LIMIT) break;
       corpus += candidate;
     }
   } else {
@@ -59,8 +62,8 @@ export async function POST(
     for (const doc of legacyDocs) {
       const raw = (doc.extractedContent as any)?.rawText as string | undefined;
       if (raw) {
-        corpus += `\n=== ${doc.fileName} ===\n${raw.slice(0, 6000)}\n`;
-        if (corpus.length > 12000) break;
+        corpus += `\n=== ${doc.fileName} ===\n${raw.slice(0, 30000)}\n`;
+        if (corpus.length > CORPUS_CHAR_LIMIT) break;
       }
     }
     if (!corpus.trim()) {
@@ -70,7 +73,7 @@ export async function POST(
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 6000,
+    max_tokens: 16000,
     system: `You are a senior business analyst. Extract ALL discrete requirements from the source document corpus provided.
 A "requirement" is any statement that specifies:
 - A functional need (what the system/project must do)
