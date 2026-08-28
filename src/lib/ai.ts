@@ -257,7 +257,12 @@ export async function generateArtifact(
 
   const userContent = content.map((b) => b.text).join("\n\n");
 
-  const response = await streamLLM(
+  // Use callLLM (non-streaming messages.create) rather than streamLLM for
+  // background artifact generation. Streaming (stream.finalMessage) can hang
+  // indefinitely on long generations because the server-sent-events connection
+  // stays open and the SDK has no built-in per-stream timeout. callLLM uses a
+  // standard HTTP request which respects the client-level REQUEST_TIMEOUT_MS.
+  const response = await callLLM(
     { model: config.model, maxTokens: ARTIFACT_MAX_TOKENS, system: systemText, messages: [{ role: "user", content: userContent }] },
     config
   );

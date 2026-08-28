@@ -2,9 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { LLMCallOptions, LLMResponse } from "./types";
 import { getApiKey } from "./get-api-key";
 
+// 110s gives the AI enough time to generate large artifacts but stays safely
+// under both the Azure 230s route limit and the 120s stream timeout defined below.
+const REQUEST_TIMEOUT_MS = 110_000;
+
 async function getClient(): Promise<Anthropic> {
   const apiKey = await getApiKey("anthropic");
-  return new Anthropic({ apiKey });
+  return new Anthropic({ apiKey, timeout: REQUEST_TIMEOUT_MS });
 }
 
 export async function callAnthropic(opts: LLMCallOptions): Promise<LLMResponse> {
@@ -27,32 +31,18 @@ export async function callAnthropic(opts: LLMCallOptions): Promise<LLMResponse> 
 
 export async function streamAnthropic(opts: LLMCallOptions): Promise<LLMResponse> {
   const client = await getClient();
+  // The client is constructed with REQUEST_TIMEOUT_MS so the SDK cancels the
+  // underlying TCP connection when the timeout fires and throws APITimeoutError.
+  // This is more reliable than Promise.race because the error propagates while
+  // the DB connection is still alive, allowing the after() catch clause to write
+  // the error to the artifact record before the Prisma pool recycles.
   const stream = client.messages.stream({
     model: opts.model,
     max_tokens: opts.maxTokens,
     system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
     messages: opts.messages,
   });
-
-  // Guard against streams that start but never send end-of-stream. Without a
-  // timeout, stream.finalMessage() hangs indefinitely and the after() task is
-  // killed silently with no error stored in the DB.
-  const STREAM_TIMEOUT_MS = 120_000;
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      // Reject the race FIRST so the error message is ours, then try to abort.
-      reject(new Error(`Anthropic stream timed out after ${STREAM_TIMEOUT_MS / 1000}s`));
-      try { stream.abort(); } catch { /* ignore SDK abort errors */ }
-    }, STREAM_TIMEOUT_MS);
-  });
-
-  let message: Awaited<ReturnType<typeof stream.finalMessage>>;
-  try {
-    message = await Promise.race([stream.finalMessage(), timeoutPromise]);
-  } finally {
-    if (timeoutHandle !== null) clearTimeout(timeoutHandle);
-  }
+  const message = await stream.finalMessage();
 
   const content = message.content[0];
   if (!content || content.type !== "text") throw new Error("Unexpected Anthropic stream response type");
