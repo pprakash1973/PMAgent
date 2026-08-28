@@ -254,56 +254,47 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       const newHash = hashArtifactContent(content);
 
-      if (existingForUpsert) {
-        const currentHash = (existingForUpsert.versions[0] as any)?.contentHash ?? null;
-        const newVersion = existingForUpsert.currentVersion + 1;
-        const parentVersionId = existingForUpsert.versions[0]?.id ?? null;
+      // Re-read current artifact state at write time (not the request-time snapshot).
+      // This gives us the correct hash and parent version regardless of how many
+      // concurrent generations are in flight.
+      const currentArtifact = await prisma.artifact.findUnique({
+        where: { id: pendingArtifact.id },
+        include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+      });
+      const currentHash = (currentArtifact?.versions[0] as any)?.contentHash ?? null;
+      const parentVersionId = currentArtifact?.versions[0]?.id ?? null;
 
-        if (currentHash && currentHash === newHash) {
-          // Content identical — just clear generating status
-          await prisma.artifact.update({
-            where: { id: pendingArtifact.id },
-            data: { status: "draft", generationStartedAt: null },
-          });
-          return;
-        }
-
+      if (currentHash && currentHash === newHash) {
+        // Content identical — just clear generating status
         await prisma.artifact.update({
           where: { id: pendingArtifact.id },
-          data: { content, currentVersion: newVersion, status: "draft", generationStartedAt: null },
+          data: { status: "draft", generationStartedAt: null },
         });
-        await (prisma.artifactVersion as any).create({
-          data: {
-            artifactId: pendingArtifact.id,
-            versionNumber: newVersion,
-            content,
-            contentHash: newHash,
-            source: "ai_regenerated",
-            approvalStatus: "unreviewed",
-            parentVersionId,
-            editedById: user.id,
-            appliedTemplateId: templateOverride?.templateId ?? null,
-          },
-        });
-      } else {
-        await prisma.artifact.update({
-          where: { id: pendingArtifact.id },
-          data: { content, currentVersion: 1, status: "draft", generationStartedAt: null },
-        });
-        await (prisma.artifactVersion as any).create({
-          data: {
-            artifactId: pendingArtifact.id,
-            versionNumber: 1,
-            content,
-            contentHash: newHash,
-            source: "ai_generated",
-            approvalStatus: "unreviewed",
-            parentVersionId: null,
-            editedById: user.id,
-            appliedTemplateId: templateOverride?.templateId ?? null,
-          },
-        });
+        return;
       }
+
+      // Atomic increment — each concurrent generation gets a unique versionNumber,
+      // preventing the unique constraint violation on (artifactId, versionNumber).
+      const updatedArt = await prisma.artifact.update({
+        where: { id: pendingArtifact.id },
+        data: { content, currentVersion: { increment: 1 }, status: "draft", generationStartedAt: null },
+        select: { currentVersion: true },
+      });
+      const newVersion = updatedArt.currentVersion;
+
+      await (prisma.artifactVersion as any).create({
+        data: {
+          artifactId: pendingArtifact.id,
+          versionNumber: newVersion,
+          content,
+          contentHash: newHash,
+          source: newVersion === 1 ? "ai_generated" : "ai_regenerated",
+          approvalStatus: "unreviewed",
+          parentVersionId,
+          editedById: user.id,
+          appliedTemplateId: templateOverride?.templateId ?? null,
+        },
+      });
 
       // Mark selection as active
       await prisma.artifactSelection.upsert({
