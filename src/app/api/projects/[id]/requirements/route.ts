@@ -1,5 +1,5 @@
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 220;
 
 import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@/lib/auth";
@@ -102,7 +102,7 @@ export async function POST(
 
   // AI extraction of structured content
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-haiku-4-5-20251001",
     max_tokens: 4096,
     system: `You are a PMO AI assistant. Extract structured project information from requirements documents.
 Return ONLY valid JSON in this exact shape:

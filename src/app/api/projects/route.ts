@@ -33,7 +33,16 @@ const createSchema = z.object({
   endDate: z.string().optional(),
   description: z.string().optional(),
   externalExecutionTool: z.string().optional(),
-  // Requirements doc fields (from file upload flow)
+  // Requirements doc fields — two shapes accepted:
+  //   requirementsDocs (array): one entry per uploaded file → one DB row each
+  //   flat fields (legacy): single-doc path kept for backward compat
+  requirementsDocs: z.array(z.object({
+    requirementsText: z.string().optional(),
+    requirementsFullText: z.string().optional(),
+    requirementsFileName: z.string().optional(),
+    requirementsFileFormat: z.string().optional(),
+    requirementsExtracted: z.record(z.string(), z.unknown()).optional(),
+  })).optional(),
   requirementsText: z.string().optional(),
   requirementsFullText: z.string().optional(),
   requirementsFileName: z.string().optional(),
@@ -76,6 +85,18 @@ export async function GET() {
   });
 
   return NextResponse.json(projects);
+}
+
+function inferDocClass(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.includes("brd") || lower.includes("business requirement")) return "brd";
+  if (lower.includes("sow") || lower.includes("statement of work")) return "sow";
+  if (lower.includes("srs") || lower.includes("software requirement")) return "srs";
+  if (lower.includes("estimat")) return "estimation";
+  if (lower.includes("proposal")) return "proposal";
+  if (lower.includes("contract")) return "contract";
+  if (lower.includes("change request") || lower.includes(" cr ") || lower.includes("cr_") || lower.includes("_cr")) return "cr";
+  return "other";
 }
 
 export async function POST(req: NextRequest) {
@@ -189,19 +210,33 @@ export async function POST(req: NextRequest) {
       })),
     });
 
-    // Save requirements document + chunks if file was uploaded.
-    // Prefer the full extracted text for chunking (covers entire document);
-    // requirementsText is AI-truncated to 12 000 chars and only used as fallback.
-    if (data.requirementsText && data.requirementsFileName) {
-      const rawText = data.requirementsFullText ?? data.requirementsText;
+    // Save one RequirementsDocument row per uploaded file.
+    // Normalise both payload shapes into a flat list first, then loop.
+    const docsToSave = data.requirementsDocs?.length
+      ? data.requirementsDocs
+      : data.requirementsText && data.requirementsFileName
+        ? [{
+            requirementsText: data.requirementsText,
+            requirementsFullText: data.requirementsFullText,
+            requirementsFileName: data.requirementsFileName,
+            requirementsFileFormat: data.requirementsFileFormat,
+            requirementsExtracted: data.requirementsExtracted,
+          }]
+        : [];
+
+    for (const docData of docsToSave) {
+      if (!docData.requirementsText || !docData.requirementsFileName) continue;
+      const rawText = docData.requirementsFullText ?? docData.requirementsText;
       const chunks = chunkText(rawText);
+      const docClass = inferDocClass(docData.requirementsFileName);
       const doc = await db.requirementsDocument.create({
         data: {
           projectId: project.id,
-          fileName: data.requirementsFileName,
-          fileFormat: data.requirementsFileFormat || "txt",
+          fileName: docData.requirementsFileName,
+          fileFormat: docData.requirementsFileFormat || "txt",
           storageUri: `inline:${project.id}`,
-          extractedContent: { ...(data.requirementsExtracted ?? {}), rawText } as object,
+          extractedContent: { ...(docData.requirementsExtracted ?? {}), rawText } as object,
+          docClass,
           pmConfirmed: true,
           uploadedById: user.id,
           ingestionState: "ready",

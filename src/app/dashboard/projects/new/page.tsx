@@ -282,11 +282,14 @@ export default function NewProjectPage() {
       };
       const doneDocs = docs.filter((d) => d.status === "done" && d.parsed);
       if (doneDocs.length > 0) {
-        payload.requirementsText = doneDocs.map((d) => d.parsed!.requirementsText).join("\n\n---\n\n");
-        payload.requirementsFullText = doneDocs.map((d) => d.parsed!.requirementsFullText).join("\n\n---\n\n");
-        payload.requirementsFileName = doneDocs.map((d) => d.parsed!.requirementsFileName).join(", ");
-        payload.requirementsFileFormat = doneDocs[0].parsed!.requirementsFileFormat;
-        payload.requirementsExtracted = doneDocs.reduce((acc, d) => ({ ...acc, ...d.parsed!.requirementsExtracted }), {});
+        // Send one entry per document so each gets its own DB row in scope control.
+        payload.requirementsDocs = doneDocs.map((d) => ({
+          requirementsText: d.parsed!.requirementsText,
+          requirementsFullText: d.parsed!.requirementsFullText,
+          requirementsFileName: d.parsed!.requirementsFileName,
+          requirementsFileFormat: d.parsed!.requirementsFileFormat,
+          requirementsExtracted: d.parsed!.requirementsExtracted,
+        }));
       }
     }
     try {
