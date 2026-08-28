@@ -114,10 +114,13 @@ Return ONLY valid JSON in this exact shape:
   "stakeholders": [{ "name": string, "role": string }],
   "constraints": string[],
   "assumptions": string[],
+  "dependencies": string[],
   "acceptanceCriteria": string[],
   "keyRequirements": string[]
 }
-Extract as much detail as possible. Use null/empty arrays for missing sections.`,
+Extract as much detail as possible. Use null/empty arrays for missing sections.
+For "assumptions": list every stated assumption in the document (technical, business, resource, timeline assumptions).
+For "dependencies": list every dependency on external teams, systems, vendors, or decisions mentioned in the document.`,
     messages: [{
       role: "user",
       content: `Project: ${project.name}\n\nDocument content:\n${rawText.slice(0, 15000)}`,
@@ -170,6 +173,41 @@ Extract as much detail as possible. Use null/empty arrays for missing sections.`
 
   // Recompute evidence readiness
   const readiness = await computeAndSaveReadiness(id);
+
+  // Sync extracted assumptions and dependencies to their dedicated tables.
+  // Source is tagged "sow_extract" so the UI can distinguish from manual entries.
+  // Existing sow_extract rows for this project are cleared first to avoid duplicates
+  // when the same document is re-uploaded or a newer version replaces it.
+  const extractedAssumptions: string[] = Array.isArray((extractedContent as any).assumptions)
+    ? (extractedContent as any).assumptions.filter((a: unknown) => typeof a === "string" && a.trim())
+    : [];
+  const extractedDependencies: string[] = Array.isArray((extractedContent as any).dependencies)
+    ? (extractedContent as any).dependencies.filter((d: unknown) => typeof d === "string" && d.trim())
+    : [];
+
+  if (extractedAssumptions.length > 0) {
+    await prisma.$executeRaw`DELETE FROM assumptions WHERE "projectId" = ${id} AND source = 'sow_extract'`;
+    const now = new Date();
+    for (let i = 0; i < extractedAssumptions.length; i++) {
+      const aId = `${Date.now().toString(36)}-a${i}-${Math.random().toString(36).slice(2, 6)}`;
+      await prisma.$executeRaw`
+        INSERT INTO assumptions (id, "projectId", statement, category, source, status, "sortOrder", "createdAt", "updatedAt")
+        VALUES (${aId}, ${id}, ${extractedAssumptions[i].trim()}, 'general', 'sow_extract', 'open', ${i}, ${now}, ${now})
+      `;
+    }
+  }
+
+  if (extractedDependencies.length > 0) {
+    await prisma.$executeRaw`DELETE FROM dependencies WHERE "projectId" = ${id} AND source = 'sow_extract'`;
+    const now = new Date();
+    for (let i = 0; i < extractedDependencies.length; i++) {
+      const dId = `${Date.now().toString(36)}-d${i}-${Math.random().toString(36).slice(2, 6)}`;
+      await prisma.$executeRaw`
+        INSERT INTO dependencies (id, "projectId", description, type, owner, "dueDate", status, source, "sortOrder", "createdAt", "updatedAt")
+        VALUES (${dId}, ${id}, ${extractedDependencies[i].trim()}, 'external', null, null, 'open', 'sow_extract', ${i}, ${now}, ${now})
+      `;
+    }
+  }
 
   // ── Background: embed the new chunks for semantic retrieval ───────────────
   // Detached from the response so upload latency is unchanged. The document is
