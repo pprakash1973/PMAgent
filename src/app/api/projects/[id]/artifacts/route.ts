@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { generateArtifact, type ArtifactTemplateOverride } from "@/lib/ai";
@@ -210,8 +210,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     artifactType
   );
 
-  // ── Upsert artifact as "generating" and return 202 immediately ────────────
-  // Generation runs in the background via after() — the client polls for completion.
+  // ── Upsert artifact as "generating" ────────────────────────────────────────
   const existingForUpsert = await prisma.artifact.findFirst({
     where: { projectId: id, artifactType },
     include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
@@ -237,103 +236,122 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
-  // ── Background: domain pre-flight + AI generation + save ──────────────────
-  after(async () => {
-    try {
-      // Evidence retrieval + domain pre-flight. `requirements` (a summary of the
-      // single most recent document) is only consulted by generateArtifact when
-      // retrieval came back empty — see the evidenceBlock branch in lib/ai.ts.
-      const { evidence, domainContext } = await assembleGenerationContext(
-        id, artifactType, project
-      );
+  // ── SSE stream: generate synchronously, stream progress to UI ─────────────
+  // after() is not used — background execution is unreliable on Azure App Service
+  // and the UI expects a live SSE stream (data: {chunk}  …  data: {done, artifact}).
+  const encoder = new TextEncoder();
+  const sseStream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const content: any = await generateArtifact(
-        artifactType, projectContext, requirements, evidence, domainContext, templateOverride
-      );
+      // SSE heartbeat — keeps the TCP connection alive during AI generation so
+      // Azure's idle-connection timeout does not close the stream prematurely.
+      const heartbeat = setInterval(() => {
+        try { controller.enqueue(encoder.encode(": heartbeat\n\n")); } catch { /* stream closed */ }
+      }, 10_000);
 
-      const newHash = hashArtifactContent(content);
+      try {
+        const { evidence, domainContext } = await assembleGenerationContext(
+          id, artifactType, project
+        );
 
-      // Re-read current artifact state at write time (not the request-time snapshot).
-      // This gives us the correct hash and parent version regardless of how many
-      // concurrent generations are in flight.
-      const currentArtifact = await prisma.artifact.findUnique({
-        where: { id: pendingArtifact.id },
-        include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
-      });
-      const currentHash = (currentArtifact?.versions[0] as any)?.contentHash ?? null;
-      const parentVersionId = currentArtifact?.versions[0]?.id ?? null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const content: any = await generateArtifact(
+          artifactType, projectContext, requirements, evidence, domainContext, templateOverride
+        );
 
-      if (currentHash && currentHash === newHash) {
-        // Content identical — just clear generating status
+        const newHash = hashArtifactContent(content);
+
+        // Re-read current artifact state at write time (not the request-time snapshot).
+        const currentArtifact = await prisma.artifact.findUnique({
+          where: { id: pendingArtifact.id },
+          include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+        });
+        const currentHash = (currentArtifact?.versions[0] as any)?.contentHash ?? null;
+        const parentVersionId = currentArtifact?.versions[0]?.id ?? null;
+
+        if (!(currentHash && currentHash === newHash)) {
+          // Atomic increment — prevents unique constraint on (artifactId, versionNumber).
+          const updatedArt = await prisma.artifact.update({
+            where: { id: pendingArtifact.id },
+            data: { content, currentVersion: { increment: 1 }, status: "draft", generationStartedAt: null },
+            select: { currentVersion: true },
+          });
+          const newVersion = updatedArt.currentVersion;
+
+          await (prisma.artifactVersion as any).create({
+            data: {
+              artifactId: pendingArtifact.id,
+              versionNumber: newVersion,
+              content,
+              contentHash: newHash,
+              source: newVersion === 1 ? "ai_generated" : "ai_regenerated",
+              approvalStatus: "unreviewed",
+              parentVersionId,
+              editedById: user.id,
+              appliedTemplateId: templateOverride?.templateId ?? null,
+            },
+          });
+
+          await prisma.artifactSelection.upsert({
+            where: { projectId_artifactType: { projectId: id, artifactType } },
+            create: { projectId: id, artifactType, selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
+            update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
+          });
+
+          await syncArtifactToTables(id, artifactType, content).catch((err) => {
+            console.error(`[artifact-sync] generate sync failed for ${artifactType}:`, err);
+          });
+
+          const latestVersion = await (prisma.artifactVersion as any).findFirst({
+            where: { artifactId: pendingArtifact.id },
+            orderBy: { versionNumber: "desc" },
+            select: { id: true },
+          });
+          if (latestVersion) {
+            extractAndStoreItems(latestVersion.id, artifactType, content).catch((e) => {
+              console.error("[item-extractor]", e);
+            });
+          }
+        } else {
+          // Content identical — just clear generating status
+          await prisma.artifact.update({
+            where: { id: pendingArtifact.id },
+            data: { status: "draft", generationStartedAt: null },
+          });
+        }
+
+        const artifact = await prisma.artifact.findUnique({
+          where: { id: pendingArtifact.id },
+          include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+        });
+
+        console.log(`[artifact] generation complete: ${artifactType}`);
+        send({ done: true, artifact });
+      } catch (err: any) {
+        const errMsg: string = err?.message ?? String(err);
+        console.error(`[artifact] generation failed for ${artifactType}:`, errMsg, err?.stack ?? "");
         await prisma.artifact.update({
           where: { id: pendingArtifact.id },
-          data: { status: "draft", generationStartedAt: null },
-        });
-        return;
+          data: { status: "failed", generationStartedAt: null, content: { _error: errMsg } as object },
+        }).catch(() => {});
+        send({ error: errMsg });
+      } finally {
+        clearInterval(heartbeat);
+        controller.close();
       }
-
-      // Atomic increment — each concurrent generation gets a unique versionNumber,
-      // preventing the unique constraint violation on (artifactId, versionNumber).
-      const updatedArt = await prisma.artifact.update({
-        where: { id: pendingArtifact.id },
-        data: { content, currentVersion: { increment: 1 }, status: "draft", generationStartedAt: null },
-        select: { currentVersion: true },
-      });
-      const newVersion = updatedArt.currentVersion;
-
-      await (prisma.artifactVersion as any).create({
-        data: {
-          artifactId: pendingArtifact.id,
-          versionNumber: newVersion,
-          content,
-          contentHash: newHash,
-          source: newVersion === 1 ? "ai_generated" : "ai_regenerated",
-          approvalStatus: "unreviewed",
-          parentVersionId,
-          editedById: user.id,
-          appliedTemplateId: templateOverride?.templateId ?? null,
-        },
-      });
-
-      // Mark selection as active
-      await prisma.artifactSelection.upsert({
-        where: { projectId_artifactType: { projectId: id, artifactType } },
-        create: { projectId: id, artifactType, selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
-        update: { selectionStatus: "active", selectedById: user.id, selectedAt: new Date() },
-      });
-
-      // Sync into live DB tables
-      await syncArtifactToTables(id, artifactType, content).catch((err) => {
-        console.error(`[artifact-sync] generate sync failed for ${artifactType}:`, err);
-      });
-
-      // Extract canonical items (non-blocking)
-      const latestVersion = await (prisma.artifactVersion as any).findFirst({
-        where: { artifactId: pendingArtifact.id },
-        orderBy: { versionNumber: "desc" },
-        select: { id: true },
-      });
-      if (latestVersion) {
-        extractAndStoreItems(latestVersion.id, artifactType, content).catch((e) => {
-          console.error("[item-extractor]", e);
-        });
-      }
-
-      console.log(`[artifact] background generation complete: ${artifactType}`);
-    } catch (err: any) {
-      const errMsg: string = err?.message ?? String(err);
-      console.error(`[artifact] background generation failed for ${artifactType}:`, errMsg, err?.stack ?? "");
-      await prisma.artifact.update({
-        where: { id: pendingArtifact.id },
-        // Store error message in content so the UI can show it instead of a blank "failed" state
-        data: { status: "failed", generationStartedAt: null, content: { _error: errMsg } as object },
-      }).catch(() => {});
-    }
+    },
   });
 
-  return NextResponse.json(
-    { status: "generating", artifactId: pendingArtifact.id, artifactType },
-    { status: 202 }
-  );
+  return new Response(sseStream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
