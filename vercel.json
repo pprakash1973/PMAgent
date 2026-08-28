@@ -6,6 +6,8 @@
   "functions": {
     "src/app/api/projects/[id]/risks/regenerate/route.ts": { "maxDuration": 120 },
     "src/app/api/projects/[id]/artifacts/route.ts": { "maxDuration": 300 },
-    "src/app/api/projects/[id]/requirements/route.ts": { "maxDuration": 220 }
+    "src/app/api/projects/[id]/requirements/route.ts": { "maxDuration": 220 },
+    "src/app/api/projects/[id]/requirements/extract/route.ts": { "maxDuration": 220 },
+    "src/app/api/projects/[id]/requirements/impact/route.ts": { "maxDuration": 220 }
   }
 }
