@@ -55,16 +55,23 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params;
 
-  // Reset stale "generating" artifacts (> 10 min) — guards against crashed instances
+  // Reset stale "generating" artifacts (> 10 min) — guards against crashed instances.
+  // Store a human-readable _error so the UI shows something useful instead of a blank failure.
   const staleThreshold = new Date(Date.now() - 10 * 60 * 1000);
-  await prisma.artifact.updateMany({
-    where: {
-      projectId: id,
-      status: "generating",
-      generationStartedAt: { lt: staleThreshold },
-    },
-    data: { status: "failed", generationStartedAt: null },
+  const staleArtifacts = await prisma.artifact.findMany({
+    where: { projectId: id, status: "generating", generationStartedAt: { lt: staleThreshold } },
+    select: { id: true },
   });
+  for (const stale of staleArtifacts) {
+    await prisma.artifact.update({
+      where: { id: stale.id },
+      data: {
+        status: "failed",
+        generationStartedAt: null,
+        content: { _error: "Generation timed out — the AI did not respond within 10 minutes. Please try again." } as object,
+      },
+    }).catch(() => {});
+  }
 
   const artifacts = await prisma.artifact.findMany({
     where: { projectId: id },
