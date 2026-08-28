@@ -37,23 +37,10 @@ export async function POST(req: NextRequest) {
     let text = "";
 
     if (ext === "pdf") {
-      // Primary: pdf-parse with a 15 s timeout — some PDFs cause it to hang
-      // indefinitely rather than throw (e.g. certain InDesign/PostScript exports).
-      // Fallback: pdfjs-dist@3.11.174 legacy build, which handles those cases.
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const pdfParse = require("pdf-parse/lib/pdf-parse");
-        const result = await Promise.race([
-          pdfParse(buffer) as Promise<{ text: string }>,
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("pdf-parse timeout after 15 s")), 15_000)
-          ),
-        ]);
-        text = result.text;
-      } catch (pdfParseErr: any) {
-        console.warn("[parse-requirements] pdf-parse failed, falling back to pdfjs markdown:", pdfParseErr?.message);
-        text = await pdfToMarkdown(buffer);
-      }
+      // Use pdfjs-dist directly via pdfToMarkdown — produces structured markdown
+      // with heading detection for better chunking, and handles all PDF types
+      // including InDesign/PostScript exports that block pdf-parse.
+      text = await pdfToMarkdown(buffer);
     } else if (ext === "docx") {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mammoth = require("mammoth");

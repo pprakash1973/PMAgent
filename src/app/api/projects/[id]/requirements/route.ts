@@ -46,19 +46,7 @@ async function extractFileText(file: File): Promise<string> {
   const buffer = Buffer.from(arrayBuffer);
 
   if (ext === "pdf") {
-    try {
-      const pdfParse = require("pdf-parse/lib/pdf-parse");
-      const result = await Promise.race([
-        pdfParse(buffer) as Promise<{ text: string }>,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("pdf-parse timeout after 15 s")), 15_000)
-        ),
-      ]);
-      return result.text;
-    } catch (pdfParseErr: any) {
-      console.warn("[requirements/upload] pdf-parse failed, falling back to pdfjs markdown:", pdfParseErr?.message);
-      return pdfToMarkdown(buffer);
-    }
+    return pdfToMarkdown(buffer);
   }
   if (ext === "docx") {
     const mammoth = require("mammoth");
