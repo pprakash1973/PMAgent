@@ -57,9 +57,23 @@ export async function GET(
     include: { resource: { select: { id: true, name: true, role: true, email: true } } },
   });
 
-  const kpi = computeEVM(tasks);
+  // Aggregate actual hours from the ledger — ScheduleTask has no actualHours column,
+  // so we derive it here from all hoursWorked entries per task.
+  const ledgerTotals = await prisma.taskActualsLedger.groupBy({
+    by: ["taskId"],
+    where: { taskId: { in: tasks.map(t => t.id) } },
+    _sum: { hoursWorked: true },
+  });
+  const actualHoursMap = new Map(ledgerTotals.map(r => [r.taskId, r._sum.hoursWorked ?? 0]));
 
-  return NextResponse.json({ tasks, kpi });
+  const tasksWithActuals = tasks.map(t => ({
+    ...t,
+    actualHours: actualHoursMap.get(t.id) ?? 0,
+  }));
+
+  const kpi = computeEVM(tasksWithActuals);
+
+  return NextResponse.json({ tasks: tasksWithActuals, kpi });
 }
 
 export async function POST(

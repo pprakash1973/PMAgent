@@ -202,6 +202,7 @@ export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   stakeholder_register:  "stakeholders (array of {id, name, role, organization, email, power, interest, currentEngagement, desiredEngagement, communicationNeeds, notes})",
   assumption_log:        "assumptions (array of {id, description, category, impact, owner, dateLogged, status})",
   benefits_register:     "benefits (array of {id, description, type, owner, targetDate, measure, baselineValue, targetValue, status, notes})",
+  project_mgmt_plan:     "projectOverview {name, code, sponsor, pm, startDate, endDate, budget}, scopeManagement {approach, changeControlProcess, wbsDictionary}, changeManagement {process, ccbMembers (array), approvalLevels (array)}, riskManagement {approach, riskOwner, reviewFrequency, escalationThreshold}, costManagement {approach, currency, contingencyReserve, evm}, qualityManagement {policy, standards (array), audits (array)}, scheduleManagement {methodology, tool, baselineDate, reportingCadence}, resourceManagement {approach, onboardingProcess, roles (array of {role, responsibilities})}, communicationsManagement {approach, cadence (array of {audience, format, frequency, owner})}, stakeholderManagement {engagementApproach, keyStakeholders (array)}, keyAssumptions (array), keyDependencies (array), keyConstraints (array), approvalSignatures (array of {role, name})",
   scope_statement:       "projectScope, inScope (array), outOfScope (array), deliverables (array), acceptanceCriteria (array), constraints (array), assumptions (array)",
   wbs:                   "projectName, wbsCode, structuringApproach, phases (array of {id, name, componentType (Discrete|LoE), 100percentCheck, deliverables (array of {id, name, componentType, 100percentCheck, owner, workPackages (array of {id, name, componentType: 'Discrete', isWorkPackage: true, description, estimatedDays, owner, acceptanceCriteria, outOfScope, dependencies})})}), scopeBaselineSummary {totalComponents, totalWorkPackages, totalEstimatedDays, maxDepth, controlAccounts, structuringApproach}, qualityAudit (array of {check, description, result, evidence})",
   milestone_plan:        "milestones (array of {id, name, plannedDate, forecastDate, status, owner, deliverables, description})",
@@ -947,6 +948,52 @@ Return JSON with:
 - qcCheckpoints (array of {phase, checkpoint, criteria, method, owner, deliverable})
 - defectManagement (object): {process (string), severity levels (array of {level, definition, responseTime}), tools (string)}
 - continuousImprovement (string)`,
+
+    project_mgmt_plan: `Generate an Integrated Project Management Plan (PMP) per PMBOK (Develop Project Management Plan — process 4.2).
+The PMP is the master planning document that defines HOW the project will be executed, monitored, and controlled across all knowledge areas.
+Return JSON with:
+- projectOverview (object): {name, code, sponsor, pm, methodology, startDate, endDate, budget, currency, description}
+- scopeManagement (object):
+    approach (string): how scope is defined, validated, and controlled
+    changeControlProcess (string): step-by-step process for raising and approving scope changes
+    wbsDictionary (string): description of how the WBS dictionary is maintained
+- changeManagement (object):
+    process (string): integrated change control process narrative
+    ccbMembers (array of {role, name}): Change Control Board membership
+    approvalLevels (array of {threshold, approver, turnaroundDays}): tiered approval by impact
+- riskManagement (object):
+    approach (string): risk identification and response methodology
+    riskOwner (string): role responsible for the risk register
+    reviewFrequency (string): how often risks are reviewed (e.g. weekly)
+    escalationThreshold (string): criteria to escalate a risk to sponsor
+- costManagement (object):
+    approach (string): cost estimating and tracking methodology
+    currency (string)
+    contingencyReserve (string): % or amount
+    evm (string): whether EVM is applied and how
+- qualityManagement (object):
+    policy (string): project quality policy statement
+    standards (array of strings): applicable quality standards or frameworks
+    audits (array of {activity, frequency, owner})
+- scheduleManagement (object):
+    methodology (string): e.g. Critical Path Method, Agile sprint cycles
+    tool (string): scheduling tool in use
+    baselineDate (string): when the schedule baseline was or will be set
+    reportingCadence (string): how schedule status is reported
+- resourceManagement (object):
+    approach (string): how team members are sourced, managed, and released
+    onboardingProcess (string): new team member onboarding steps
+    roles (array of {role, responsibilities (string)}): key project roles and their responsibilities
+- communicationsManagement (object):
+    approach (string): communication philosophy and principles
+    cadence (array of {audience, format, frequency, channel, owner})
+- stakeholderManagement (object):
+    engagementApproach (string): how stakeholders are engaged and managed
+    keyStakeholders (array of {name, role, engagementLevel, strategy})
+- keyAssumptions (array of strings)
+- keyDependencies (array of strings)
+- keyConstraints (array of strings)
+- approvalSignatures (array of {role, name})`,
 
     // ── EXECUTION ─────────────────────────────────────────────────────────────
 

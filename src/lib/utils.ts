@@ -50,6 +50,7 @@ export const ARTIFACT_CATALOG = [
   { type: "closure_report",            label: "Closure Report",                     phase: "closure",    mandatory: true  },
   // ── Optional ─────────────────────────────────────────────────────────────────
   { type: "business_case",             label: "Business Case",                      phase: "initiation", mandatory: false },
+  { type: "project_mgmt_plan",         label: "Project Management Plan",           phase: "planning",   mandatory: false },
   { type: "scope_statement",           label: "Scope Statement",                    phase: "planning",   mandatory: false },
   { type: "communication_plan",        label: "Communication Plan",                 phase: "planning",   mandatory: false },
   { type: "raci_matrix",               label: "RACI Matrix",                        phase: "planning",   mandatory: false },

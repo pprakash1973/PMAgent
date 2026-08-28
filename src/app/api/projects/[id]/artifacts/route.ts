@@ -210,6 +210,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     artifactType
   );
 
+  // Capture current scope baseline so the artifact is stamped once generation succeeds.
+  const activeScopeBaseline = await (prisma as any).scopeBaseline.findFirst({
+    where: { projectId: id },
+    orderBy: { version: "desc" },
+    select: { id: true },
+  });
+  const activeScopeBaselineId: string | null = activeScopeBaseline?.id ?? null;
+
   // ── Upsert artifact as "generating" ────────────────────────────────────────
   const existingForUpsert = await prisma.artifact.findFirst({
     where: { projectId: id, artifactType },
@@ -276,7 +284,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           // Atomic increment — prevents unique constraint on (artifactId, versionNumber).
           const updatedArt = await prisma.artifact.update({
             where: { id: pendingArtifact.id },
-            data: { content, currentVersion: { increment: 1 }, status: "draft", generationStartedAt: null },
+            data: { content, currentVersion: { increment: 1 }, status: "draft", generationStartedAt: null, ...(activeScopeBaselineId ? { scopeBaselineId: activeScopeBaselineId } : {}) },
             select: { currentVersion: true },
           });
           const newVersion = updatedArt.currentVersion;
@@ -316,10 +324,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             });
           }
         } else {
-          // Content identical — just clear generating status
+          // Content identical — just clear generating status (still stamp baseline)
           await prisma.artifact.update({
             where: { id: pendingArtifact.id },
-            data: { status: "draft", generationStartedAt: null },
+            data: { status: "draft", generationStartedAt: null, ...(activeScopeBaselineId ? { scopeBaselineId: activeScopeBaselineId } : {}) },
           });
         }
 
