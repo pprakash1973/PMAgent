@@ -717,7 +717,7 @@ function ProjectFormFields({ form, update, role }: { form: typeof emptyForm; upd
 
           <div className="space-y-2">
             <Label>Engagement Type</Label>
-            <Select value={(form as any).engagementType ?? ""} onValueChange={(v) => update("engagementType" as any, v || undefined)}>
+            <Select value={(form as any).engagementType ?? ""} onValueChange={(v) => update("engagementType" as any, v)}>
               <SelectTrigger><SelectValue placeholder="Select type…" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="application_development">Application Development</SelectItem>
