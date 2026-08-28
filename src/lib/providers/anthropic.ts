@@ -2,9 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { LLMCallOptions, LLMResponse } from "./types";
 import { getApiKey } from "./get-api-key";
 
-// 110s gives the AI enough time to generate large artifacts but stays safely
-// under both the Azure 230s route limit and the 120s stream timeout defined below.
-const REQUEST_TIMEOUT_MS = 110_000;
+// 180s gives the AI enough time to generate the largest artifacts (WBS, complex
+// risk registers) while staying safely under the Azure 230s route hard limit.
+const REQUEST_TIMEOUT_MS = 180_000;
 
 async function getClient(): Promise<Anthropic> {
   const apiKey = await getApiKey("anthropic");

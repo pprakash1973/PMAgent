@@ -196,7 +196,7 @@ ${GUARDRAIL_SYSTEM_ADDENDUM}`;
  * when there is no existing artifact to infer the schema from.
  */
 export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
-  project_charter:       "projectTitle, projectCode, version, status, preparedBy, reviewedBy, approvedBy, date, executiveSummary, projectPurpose, strategicAlignment (string[]), businessCase {problemStatement, proposedSolution, financialJustification, costOfInaction}, objectives [{id, objective, measure, target, timeline}], successCriteria [{criterion, measure, target}], kpis [{kpi, target, measurementFrequency}], scope {inScope (string[]), outOfScope (string[]), scopeBoundaryNotes}, projectApproach, deliverables [{id, deliverable, phase, owner, acceptanceCriteria}], timeline {startDate, endDate, duration}, milestones [{id, name, targetDate, isCritical}], budget {total, currency, fundingSource, contingencyReserve, budgetApprovalStatus, breakdown [{category, amount}]}, projectTeam {sponsor, pm, steeringCommittee (string[]), coreTeam [{name, role, allocation}]}, governance {escalationPath, reportingCadence, changeControlProcess}, stakeholders [{id, name, role, power, interest, influenceStrategy}], risks [{id, risk, category, probability, impact, mitigation, owner}], assumptions [{id, assumption}], constraints [{id, constraint, type}], dependencies [{id, description, type, dependentOn}], pmAuthority {procurementAuthority, resourceAuthority, scopeChangeAuthority, escalationThreshold}, approvalSignatures [{role, name}]",
+  project_charter:       "projectTitle, projectDescription, projectCode, version, status, preparedBy, date, projectPurpose, businessCase {problemStatement, proposedSolution, financialJustification, costOfInaction, strategicAlignment (string[])}, objectives [{id, objective, measure, target, timeline}], successCriteria [{criterion, measure, target}], scope {inScope (string[]), outOfScope (string[]), projectApproach}, highLevelRequirements [{id, category, requirement}], timeline {startDate, endDate, duration}, milestones [{id, name, targetDate, isCritical, description}], budget {total, currency, fundingSource, contingencyReserve, budgetApprovalStatus, breakdown [{category, amount}]}, projectTeam {sponsor, pm, steeringCommittee (string[]), coreTeam [{name, role, allocation, authorityLevel}]}, stakeholders [{id, name, role, organization, power, interest}], assumptions [{id, assumption}], constraints [{id, constraint, type}], dependencies [{id, description, type}], risks [{id, risk, probability, impact, mitigation}], approvalRequirements {successDefinition, approvalCriteria (string[]), closureApprovals (string[])}, pmAuthority {procurementAuthority, resourceAuthority, scopeChangeAuthority}, approvalSignatures [{role, name}]",
   business_case:         "title, executiveSummary, problemStatement, proposedSolution, objectives, benefits, costs, risks, alternatives, recommendation, roi",
   stakeholder_register:  "stakeholders (array of {id, name, role, organization, email, power, interest, currentEngagement, desiredEngagement, communicationNeeds, notes})",
   assumption_log:        "assumptions (array of {id, description, category, impact, owner, dateLogged, status})",
@@ -524,55 +524,52 @@ function buildArtifactContent(
 
     // ── INITIATING ────────────────────────────────────────────────────────────
 
-    project_charter: `Generate a Project Charter per PMBOK Process 4.1 (Develop Project Charter) and 13.1 (Identify Stakeholders).
-CONCISENESS RULE: every text field ≤2 sentences; every array ≤5 items unless a stricter limit is noted below.
+    project_charter: `Generate a Project Charter aligned to PMI's 12 Core Charter Components (PMBOK® Process 4.1 — Develop Project Charter).
+CONCISENESS RULE: every text field ≤2 sentences; every array ≤5 items unless a stricter limit is noted.
 Return JSON with exactly the following keys — no extra keys, no markdown outside the JSON block:
 
-SECTION 1 — Document Control
-projectTitle, projectCode (e.g. "PROJ-001"), version ("1.0"), status ("Draft"), preparedBy, reviewedBy, approvedBy, date (ISO)
+SECTION 1 — Project Title and Description
+projectTitle (string), projectDescription (string): brief high-level summary of what the project will deliver,
+projectCode (string, e.g. "PROJ-001"), version ("1.0"), status ("Draft"), preparedBy (string), date (ISO date)
 
-SECTION 2 — Executive Summary
-executiveSummary (string), projectPurpose (string), strategicAlignment (string[])
+SECTION 2 — Project Purpose and Business Case
+projectPurpose (string): the strategic or business need this project addresses
+businessCase: { problemStatement, proposedSolution, financialJustification, costOfInaction, strategicAlignment (string[] ≤3) }
 
-SECTION 3 — Business Case
-businessCase: { problemStatement, proposedSolution, financialJustification, costOfInaction }
-
-SECTION 4 — Objectives & Success Criteria
-objectives (array ≤4): [{ id, objective, measure, target, timeline }]
+SECTION 3 — Measurable Objectives
+objectives (array ≤5 SMART objectives): [{ id, objective, measure, target, timeline }]
 successCriteria (array ≤4): [{ criterion, measure, target }]
-kpis (array ≤4): [{ kpi, target, measurementFrequency }]
 
-SECTION 5 — Scope
-scope: { inScope (string[] ≤6), outOfScope (string[] ≤5), scopeBoundaryNotes }
-projectApproach (string)
+SECTION 4 — Project Scope
+scope: { inScope (string[] ≤6), outOfScope (string[] ≤5), projectApproach (string) }
 
-SECTION 6 — Deliverables
-deliverables (array ≤5): [{ id, deliverable, phase, owner, acceptanceCriteria }]
+SECTION 5 — High-Level Requirements
+highLevelRequirements (array ≤6): [{ id, category (Functional|Non-Functional|Constraint|Compliance), requirement }]
 
-SECTION 7 — Schedule & Milestones
+SECTION 6 — Milestone Schedule
 timeline: { startDate, endDate, duration }
-milestones (array ≤6): [{ id, name, targetDate, isCritical (boolean) }]
+milestones (array ≤6): [{ id, name, targetDate, isCritical (boolean), description }]
 
-SECTION 8 — Budget
+SECTION 7 — Pre-Approved Financial Resources / Budget
 budget: { total, currency, fundingSource, contingencyReserve, budgetApprovalStatus, breakdown (array ≤5): [{ category, amount }] }
 
-SECTION 9 — Team & Governance
-projectTeam: { sponsor, pm, steeringCommittee (string[] ≤4), coreTeam (array ≤6): [{ name, role, allocation }] }
-governance: { escalationPath, reportingCadence, changeControlProcess }
+SECTION 8 — Key Stakeholders and Roles
+projectTeam: { sponsor, pm, steeringCommittee (string[] ≤4), coreTeam (array ≤6): [{ name, role, allocation, authorityLevel }] }
+stakeholders (array ≤5): [{ id, name, role, organization, power (High|Medium|Low), interest (High|Medium|Low) }]
 
-SECTION 10 — Stakeholders
-stakeholders (array ≤6): [{ id, name, role, power (High|Medium|Low), interest (High|Medium|Low), influenceStrategy }]
-
-SECTION 11 — Risks
-risks (array ≤5): [{ id, risk, category (Schedule|Budget|Scope|Resource|Technical|External), probability (High|Medium|Low), impact (High|Medium|Low), mitigation, owner }]
-
-SECTION 12 — Assumptions, Constraints & Dependencies
+SECTION 9 — Assumptions and Constraints
 assumptions (array ≤5): [{ id, assumption }]
 constraints (array ≤5): [{ id, constraint, type (Budget|Schedule|Resource|Regulatory|Technical) }]
-dependencies (array ≤4): [{ id, description, type (Internal|External), dependentOn }]
+dependencies (array ≤4): [{ id, description, type (Internal|External) }]
 
-SECTION 13 — PM Authority & Signatures
-pmAuthority: { procurementAuthority, resourceAuthority, scopeChangeAuthority, escalationThreshold }
+SECTION 10 — High-Level Risks
+risks (array ≤5): [{ id, risk, probability (High|Medium|Low), impact (High|Medium|Low), mitigation }]
+
+SECTION 11 — Project Approval Requirements
+approvalRequirements: { successDefinition (string), approvalCriteria (string[] ≤4), closureApprovals (string[] ≤3) }
+
+SECTION 12 — Authorization Signatures
+pmAuthority: { procurementAuthority, resourceAuthority, scopeChangeAuthority }
 approvalSignatures (array ≤3): [{ role, name }]`,
 
     business_case: `Generate a Business Case per PMBOK initiating inputs (Business Documents).
@@ -612,7 +609,8 @@ Return JSON with:
 - powerInterestSummary (string): overall stakeholder landscape narrative`,
 
     initiation_deck: `Generate a Project Initiation Deck for CXO stakeholder presentation per PMBOK 4.1 and PMI charter best practices.
-Structure the output as individual slides so each section maps directly to a PowerPoint slide.
+CONCISENESS RULE: every text field ≤2 sentences; every array ≤4 items unless a stricter limit is noted below.
+Structure the output as individual slides — one JSON object per slide.
 Return JSON with:
 - projectTitle (string)
 - projectCode (string)
@@ -623,73 +621,66 @@ Return JSON with:
     SLIDE 1 — Cover
     { slideNumber: 1, title: "Cover", layout: "cover",
       projectTitle (string), tagline (string): one-sentence value proposition,
-      sponsor (string), pm (string), date (string), confidentiality (string): e.g. "Confidential — For Steering Committee" }
+      sponsor (string), pm (string), date (string), confidentiality (string) }
 
     SLIDE 2 — Agenda
     { slideNumber: 2, title: "Agenda", layout: "agenda",
-      items (array of strings): slide titles in order }
+      items (string[] ≤12): slide titles in order }
 
     SLIDE 3 — Executive Summary
     { slideNumber: 3, title: "Executive Summary", layout: "summary",
       headline (string): one punchy sentence,
-      problemStatement (string): the business problem or opportunity,
-      proposedSolution (string): what this project will deliver,
-      strategicAlignment (array of strings): how it aligns to org strategy,
-      expectedOutcome (string): what success looks like }
+      problemStatement (string), proposedSolution (string),
+      strategicAlignment (string[] ≤3), expectedOutcome (string) }
 
     SLIDE 4 — Business Case & Objectives
     { slideNumber: 4, title: "Business Case & Objectives", layout: "objectives",
-      businessCase (string): why now, why this investment,
-      objectives (array of {objective (string), measure (string), target (string)}): 3–5 SMART objectives,
-      successCriteria (array of strings) }
+      businessCase (string),
+      objectives (array ≤4): [{ objective, measure, target }],
+      successCriteria (string[] ≤3) }
 
     SLIDE 5 — Project Scope
     { slideNumber: 5, title: "Project Scope", layout: "scope",
-      inScope (array of strings): key deliverables explicitly included,
-      outOfScope (array of strings): explicit exclusions,
-      assumptions (array of strings),
-      constraints (array of strings) }
+      inScope (string[] ≤5), outOfScope (string[] ≤4),
+      assumptions (string[] ≤3), constraints (string[] ≤3) }
 
     SLIDE 6 — Key Deliverables
     { slideNumber: 6, title: "Key Deliverables", layout: "deliverables",
-      deliverables (array of {name (string), description (string), phase (string), owner (string)}) }
+      deliverables (array ≤5): [{ name, description, phase, owner }] }
 
     SLIDE 7 — Timeline & Milestones
     { slideNumber: 7, title: "Timeline & Milestones", layout: "timeline",
-      startDate (string), endDate (string), duration (string): e.g. "9 months",
-      phases (array of {name (string), startDate (string), endDate (string)}),
-      milestones (array of {id (string): M1…, name (string), targetDate (string), description (string), isCritical (boolean)}) }
+      startDate (string), endDate (string), duration (string),
+      phases (array ≤4): [{ name, startDate, endDate }],
+      milestones (array ≤5): [{ id, name, targetDate, isCritical (boolean) }] }
 
     SLIDE 8 — Budget & Resources
     { slideNumber: 8, title: "Budget & Resources", layout: "budget",
       totalBudget (string): with currency,
-      budgetBreakdown (array of {category (string), amount (string), percentage (string)}),
-      teamSize (number),
-      keyRoles (array of {role (string), count (number), notes (string)}),
-      fundingSource (string),
-      contingencyReserve (string) }
+      budgetBreakdown (array ≤5): [{ category, amount, percentage }],
+      teamSize (number), keyRoles (array ≤4): [{ role, count, notes }],
+      fundingSource (string), contingencyReserve (string) }
 
     SLIDE 9 — Stakeholders & Governance
     { slideNumber: 9, title: "Stakeholders & Governance", layout: "governance",
-      stakeholders (array of {name (string), role (string), organization (string), power (string): High|Medium|Low, interest (string): High|Medium|Low, engagementLevel (string)}),
-      governance (object): {sponsor (string), pm (string), steeringCommittee (string), escalationPath (string), reportingCadence (string), decisionAuthority (string)} }
+      stakeholders (array ≤5): [{ name, role, power (High|Medium|Low), interest (High|Medium|Low) }],
+      governance: { sponsor, pm, escalationPath (string), reportingCadence (string), decisionAuthority (string) } }
 
-    SLIDE 10 — Risks & Mitigation
+    SLIDE 10 — Top Risks & Mitigation
     { slideNumber: 10, title: "Top Risks & Mitigation", layout: "risks",
-      risks (array of {id (string): R1…, risk (string), probability (string): High|Medium|Low, impact (string): High|Medium|Low, mitigation (string), owner (string)}) — top 5 risks only }
+      risks (array ≤5): [{ id, risk, probability (High|Medium|Low), impact (High|Medium|Low), mitigation, owner }] }
 
-    SLIDE 11 — Benefits & ROI
+    SLIDE 11 — Expected Benefits & ROI
     { slideNumber: 11, title: "Expected Benefits & ROI", layout: "benefits",
-      quantitativeBenefits (array of {benefit (string), value (string), timeframe (string)}),
-      qualitativeBenefits (array of strings),
-      roi (string): estimated ROI or payback period,
-      kpis (array of {kpi (string), baseline (string), target (string), owner (string)}) }
+      quantitativeBenefits (array ≤4): [{ benefit, value, timeframe }],
+      qualitativeBenefits (string[] ≤4), roi (string),
+      kpis (array ≤4): [{ kpi, baseline, target }] }
 
     SLIDE 12 — Next Steps & Approvals
     { slideNumber: 12, title: "Next Steps & Approvals", layout: "approval",
-      immediateActions (array of {action (string), owner (string), dueDate (string)}),
+      immediateActions (array ≤4): [{ action, owner, dueDate }],
       decisionRequired (string): what the steering committee must decide today,
-      approvalSignatures (array of {role (string), name (string)}) }`,
+      approvalSignatures (array ≤3): [{ role, name }] }`,
 
     assumption_log: `Generate an Assumption Log per PMBOK (Initiating — used across all process groups).
 Return JSON with:
@@ -747,20 +738,21 @@ Return JSON with:
     wbs: `Generate a Work Breakdown Structure per PMBOK Process 5.4 (Create WBS).
 Use deliverable-oriented decomposition: every element is a noun/noun-phrase outcome, never a verb or activity.
 Include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
+CONCISENESS RULE: ≤5 phases; ≤4 deliverables per phase; ≤4 work packages per deliverable; every text field ≤1 sentence.
 
 Return JSON with:
 - projectName (string)
-- phases (array of phases):
+- phases (array ≤5):
   {
     id (string): "1.1", "1.2" …
     name (string): deliverable-oriented phase name
     owner (string): team or role
-    deliverables (array):
+    deliverables (array ≤4):
       {
         id (string): "1.1.1" …
         name (string): deliverable name
         owner (string)
-        workPackages (array):
+        workPackages (array ≤4):
           {
             id (string): "1.1.1.1" …
             name (string): work package name
@@ -859,8 +851,10 @@ Return JSON with:
 - fundingRequirements (array of {period (string), amount (number), cumulativeAmount (number)})`,
 
     raid_register: `Generate a RAID Register per PMBOK Risk Management (11.1–11.7), covering Risks, Assumptions, Issues, and Dependencies.
+CONCISENESS RULE: risks ≤6; assumptions ≤5; issues ≤5; dependencies ≤5; responseActions ≤3 per risk; every text field ≤1 sentence.
 Return JSON with:
-- risks (array of {
+- risks (array ≤6):
+  {
     id (string): R001, R002…
     category (string): Technical | Schedule | Cost | Resource | External | Organizational | Quality
     statement (string): "If [cause], then [event], causing [effect]" — cause→event→effect format
@@ -872,14 +866,15 @@ Return JSON with:
     severity (string): Low (1-4) | Medium (5-9) | High (10-19) | Critical (20-25)
     type (string): Threat | Opportunity
     strategy (string): for Threat: Avoid/Transfer/Mitigate/Escalate/Accept; for Opportunity: Exploit/Share/Enhance/Escalate/Accept
-    responseActions (array of strings)
+    responseActions (string[] ≤3)
     contingencyPlan (string)
     owner (string)
     trigger (string): condition that indicates risk is occurring
     status (string): Open | In Progress | Closed | Occurred | Accepted
     dueDate (string)
-  })
-- assumptions (array of {
+  }
+- assumptions (array ≤5):
+  {
     id (string): A001…
     description (string)
     category (string): Technical | Business | Resource | External
@@ -887,8 +882,9 @@ Return JSON with:
     validationDate (string)
     status (string): Open | Validated | Invalid
     impactIfWrong (string)
-  })
-- issues (array of {
+  }
+- issues (array ≤5):
+  {
     id (string): I001…
     description (string)
     category (string): Scope | Schedule | Cost | Quality | Resource | Technical | Vendor
@@ -898,8 +894,9 @@ Return JSON with:
     resolutionPlan (string)
     targetResolutionDate (string)
     status (string): Open | In Progress | Escalated | Resolved | Closed
-  })
-- dependencies (array of {
+  }
+- dependencies (array ≤5):
+  {
     id (string): D001…
     description (string)
     type (string): Internal | External | Technical | Organizational
@@ -908,14 +905,16 @@ Return JSON with:
     expectedDate (string)
     impactIfDelayed (string)
     status (string): On Track | At Risk | Delayed | Resolved
-  })`,
+  }`,
 
     risk_register: `Generate a Risk Register per PMBOK Processes 11.1–11.7 (full risk management lifecycle).
+CONCISENESS RULE: ≤8 risks; responseActions ≤3 per risk; every text field ≤1 sentence.
 Return JSON with:
 - projectName (string)
 - riskAppetite (string): Low | Medium | High
 - escalationThreshold (string): what P×I score triggers escalation to sponsor
-- risks (array of {
+- risks (array ≤8):
+  {
     id (string): R001, R002…
     category (string): Technical | Schedule | Cost | Resource | External | Organizational | Quality | Procurement
     statement (string): "If [cause], then [event], causing [effect]" — ALWAYS use cause→event→effect format
@@ -928,7 +927,7 @@ Return JSON with:
     severity (string): Low (1-4) | Medium (5-9) | High (10-19) | Critical (20-25)
     velocity (string): Immediate | Short-term | Medium-term | Long-term
     strategy (string): Threats → Avoid/Transfer/Mitigate/Escalate/Accept; Opportunities → Exploit/Share/Enhance/Escalate/Accept
-    responseActions (array of strings): specific, actionable steps
+    responseActions (string[] ≤3): specific, actionable steps
     contingencyPlan (string): if risk occurs
     contingencyReserve (string): budget reserve allocated
     owner (string): single named owner
@@ -936,7 +935,7 @@ Return JSON with:
     residualRiskScore (number): P×I after response
     status (string): Open | In Progress | Closed | Occurred | Accepted
     dueDate (string)
-  })
+  }
 - riskExposureSummary (object): {totalRisks, criticalCount, highCount, mediumCount, lowCount, topRisk (string)}`,
 
     communication_plan: `Generate a Communications Management Plan per PMBOK Process 10.1 (Plan Communications Management).
