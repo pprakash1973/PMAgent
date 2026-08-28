@@ -522,7 +522,62 @@ function buildCharter(pptx: any, content: any, projectName: string) {
     s6.addTable([tHeader, ...tRows], { x: 6.1, y: 0.88, w: 6.93, colW: [1.8, 1.8, 1.0, 1.0, 1.33], border: { color: MID_WASH } });
   }
 
-  // ── Slide 7: Risks — severity-banded cards + 5×5 heat map ──
+  // ── Slide 7: RACI Matrix ──
+  const raciData = content.raci;
+  if (raciData?.activities?.length && raciData?.roles?.length) {
+    const s7r = contentSlide(pptx, "RACI Matrix — Roles & Responsibilities", projectName, page++);
+    const roles: string[] = raciData.roles.slice(0, 5);
+    const activities: any[] = raciData.activities.slice(0, 8);
+    const raciColors: Record<string, string> = { R: TEAL, A: RED, C: "FFC000", I: DARK_GRAY };
+    const raciLabel: Record<string, string> = { R: "Responsible", A: "Accountable", C: "Consulted", I: "Informed" };
+    // Legend
+    (["R", "A", "C", "I"] as const).forEach((k, li) => {
+      s7r.addShape(pptx.ShapeType.roundRect, { x: 0.3 + li * 1.85, y: 0.88, w: 1.6, h: 0.32, fill: { color: raciColors[k] }, rectRadius: 0.05 });
+      s7r.addText(`${k} = ${raciLabel[k]}`, { x: 0.3 + li * 1.85, y: 0.88, w: 1.6, h: 0.32, fontSize: 8.5, bold: true, color: WHITE, align: "center", valign: "middle", fontFace: FONT_BODY });
+    });
+    // Table header
+    const colW = 12.73 / (roles.length + 1);
+    const headerRow = [
+      { text: "Activity / Deliverable", options: { bold: true, color: WHITE, fill: { color: PETROL }, fontSize: 9, fontFace: FONT_BODY } },
+      ...roles.map((r) => ({ text: r, options: { bold: true, color: WHITE, fill: { color: PETROL }, fontSize: 9, align: "center", fontFace: FONT_BODY } })),
+    ];
+    const dataRows = activities.map((act: any, ri: number) => {
+      const asgn = act.assignments ?? {};
+      return [
+        { text: safeStr(act.activity).slice(0, 40), options: { fontSize: 9, color: SOFT_BLACK, fill: { color: ri % 2 === 0 ? WHITE : WASH }, fontFace: FONT_BODY } },
+        ...roles.map((r) => {
+          const val = safeStr(asgn[r] ?? "").toUpperCase();
+          const bg = raciColors[val] ?? (ri % 2 === 0 ? WHITE : WASH);
+          const fg = raciColors[val] ? WHITE : DARK_GRAY;
+          return { text: val, options: { bold: !!raciColors[val], fontSize: 11, color: fg, fill: { color: bg }, align: "center", valign: "middle", fontFace: FONT_BODY } };
+        }),
+      ];
+    });
+    s7r.addTable([headerRow, ...dataRows], { x: 0.3, y: 1.35, w: 12.73, colW: [12.73 - roles.length * colW, ...roles.map(() => colW)], border: { color: MID_WASH } });
+  }
+
+  // ── Slide 8: Escalation Matrix ──
+  const escalation: any[] = content.escalationMatrix ?? [];
+  if (escalation.length) {
+    const s8e = contentSlide(pptx, "Escalation Matrix", projectName, page++);
+    const escColors = ["92D050", "FFC000", RED, "7030A0"];
+    const escHeader = ["Level", "Threshold / Trigger", "Owner", "Response Timeframe"].map((h) => ({
+      text: h, options: { bold: true, color: WHITE, fill: { color: PETROL }, fontSize: 10, fontFace: FONT_BODY },
+    }));
+    const escRows = escalation.slice(0, 4).map((e: any, ri: number) => {
+      const lvl = Math.max(1, Math.min(4, Number(e.level ?? ri + 1))) - 1;
+      const bg = escColors[lvl] ?? TEAL_L;
+      return [
+        { text: `L${e.level ?? ri + 1}`, options: { bold: true, fontSize: 13, color: WHITE, fill: { color: bg }, align: "center", valign: "middle", fontFace: FONT_HEADING } },
+        { text: safeStr(e.threshold).slice(0, 120), options: { fontSize: 10, color: SOFT_BLACK, fill: { color: ri % 2 === 0 ? WHITE : WASH }, wrap: true, fontFace: FONT_BODY } },
+        { text: safeStr(e.owner).slice(0, 40), options: { fontSize: 10, color: SOFT_BLACK, fill: { color: ri % 2 === 0 ? WHITE : WASH }, fontFace: FONT_BODY } },
+        { text: safeStr(e.timeframe).slice(0, 40), options: { fontSize: 10, color: SOFT_BLACK, fill: { color: ri % 2 === 0 ? WHITE : WASH }, fontFace: FONT_BODY } },
+      ];
+    });
+    s8e.addTable([escHeader, ...escRows], { x: 0.3, y: 0.88, w: 12.73, colW: [1.0, 6.5, 3.0, 2.23], rowH: 1.0, border: { color: MID_WASH } });
+  }
+
+  // ── Slide 9: Risks — severity-banded cards + 5×5 heat map ──
   const risks = content.risks ?? [];
   const s7 = contentSlide(pptx, "Top Risks at Initiation", projectName, page++);
   // Risk cards (left)

@@ -196,6 +196,7 @@ ${GUARDRAIL_SYSTEM_ADDENDUM}`;
  */
 export const ARTIFACT_SCHEMA_HINTS: Record<string, string> = {
   project_charter:       "projectTitle, projectDescription, projectCode, version, status, preparedBy, date, projectPurpose, businessCase (string), objectives (string[]), successCriteria [{criterion, measure, target}], scope {inScope (string[]), outOfScope (string[]), projectApproach}, highLevelRequirements (string[]), timeline {startDate, endDate, duration}, milestones [{name, targetDate, isCritical}], budget {total, currency, fundingSource, contingencyReserve, budgetApprovalStatus}, projectTeam {sponsor, pm, steeringCommittee (string[]), coreTeam (string[])}, stakeholders [{name, role, power, interest}], assumptions (string[]), constraints (string[]), dependencies (string[]), risks [{risk, probability, impact, mitigation}], approvalRequirements (string), pmAuthority (string), approvalSignatures [{role, name}]",
+  initiation_deck:       "projectTitle, projectCode, projectDescription, date, sponsor, pm, objectives (string[]), successCriteria [{criterion, measure, target}], scope {inScope (string[]), outOfScope (string[])}, milestones [{name, targetDate}], stakeholders [{name, role, power, interest}], budget {total, currency, contingencyReserve, fundingSource}, risks [{risk, probability, impact}], assumptions (string[]), constraints (string[]), raci {roles (string[]), activities [{activity, assignments (object: role→R|A|C|I)}]}, escalationMatrix [{level, threshold, owner, timeframe}], approvalRequirements (string), approvalSignatures [{role, name}]",
   business_case:         "title, executiveSummary, problemStatement, proposedSolution, objectives, benefits, costs, risks, alternatives, recommendation, roi",
   stakeholder_register:  "stakeholders (array of {id, name, role, organization, email, power, interest, currentEngagement, desiredEngagement, communicationNeeds, notes})",
   assumption_log:        "assumptions (array of {id, description, category, impact, owner, dateLogged, status})",
@@ -607,7 +608,7 @@ Return JSON with:
 - powerInterestSummary (string): overall stakeholder landscape narrative`,
 
     initiation_deck: `Generate a Project Initiation Deck summary for CXO presentation per PMI charter best practices.
-CONCISENESS: every text field ≤1 sentence; every array ≤4 items.
+CONCISENESS: every text field ≤1 sentence; every array ≤4 items unless stated otherwise.
 Return JSON:
 - projectTitle (string)
 - projectCode (string)
@@ -616,21 +617,20 @@ Return JSON:
 - sponsor (string)
 - pm (string)
 - objectives (string[] ≤4): SMART objectives
+- successCriteria (array ≤3): [{ criterion, measure, target }]
 - scope: { inScope (string[] ≤5), outOfScope (string[] ≤4) }
-- deliverables (string[] ≤5): key project deliverables
 - milestones (array ≤5): [{ name, targetDate }]
 - stakeholders (array ≤5): [{ name, role, power (High|Medium|Low), interest (High|Medium|Low) }]
-- budget (string): total budget with currency
-- budgetBreakdown (array ≤4): [{ category, amount }]
-- timeline (string): "StartDate to EndDate (N months)"
-- risks (string[] ≤5): top risks
+- budget: { total (string), currency (string), contingencyReserve (string), fundingSource (string) }
+- risks (array ≤4): [{ risk (string), probability (High|Medium|Low), impact (High|Medium|Low) }]
 - assumptions (string[] ≤4)
 - constraints (string[] ≤4)
-- governance: { sponsor, pm, steeringCommittee (string), reportingCadence (string) }
-- benefits (string[] ≤4): expected quantitative and qualitative benefits
-- roi (string): estimated ROI or payback period
-- approvalRequirements (string): what decision is needed from the steering committee
-- nextSteps (string[] ≤4): immediate actions post-approval
+- raci: {
+    roles (string[] ≤5): key role names (e.g. Sponsor, PM, Tech Lead, Business Lead, QA)
+    activities (array ≤5): [{ activity (string), assignments (object keyed by role: "R"|"A"|"C"|"I") }]
+  }
+- escalationMatrix (array ≤4): [{ level (number 1-4), threshold (string): condition that triggers escalation, owner (string): who handles it, timeframe (string): response time }]
+- approvalRequirements (string)
 - approvalSignatures (array ≤3): [{ role, name }]`,
 
     assumption_log: `Generate an Assumption Log per PMBOK (Initiating — used across all process groups).
