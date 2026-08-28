@@ -187,6 +187,7 @@ Generate concise, PMBOK-aligned project management artifacts.
 Return ONLY valid JSON — no prose, no markdown outside the JSON block.
 Arrays should have 3–8 items unless the schema requires more.
 Base all figures and content strictly on the provided project context — do not fabricate numbers.
+GLOBAL ROLE RULE: All owner/role fields across every artifact must use ONLY generic project roles (Project Manager, Business Analyst, Solution Architect, Technical Lead, Developer, QA Engineer, Data Engineer, DevOps Engineer, Change Manager, PMO Analyst). Never use company names, vendor names, or org-specific titles (e.g. "PACS Engagement Lead", "Accenture BA"). Resource plans may use placeholder names like "Resource 1".
 ${GUARDRAIL_SYSTEM_ADDENDUM}`;
 
 /**
@@ -690,6 +691,7 @@ Return JSON with:
 Use deliverable-oriented decomposition: every element is a noun/noun-phrase outcome, never a verb or activity.
 Include a "Project Management" phase covering: Project Charter, Project Management Plan, Project Schedule, Risk Register, Status Reports, Lessons Learned.
 CONCISENESS RULE: ≤5 phases; ≤4 deliverables per phase; ≤4 work packages per deliverable; every text field ≤1 sentence.
+OWNER RULE: ALL owner fields must use ONLY generic project roles — Project Manager, Business Analyst, Solution Architect, Technical Lead, Developer, QA Engineer, Data Engineer, DevOps Engineer, Change Manager, PMO Analyst. Never use company names, client names, or org-specific titles.
 
 Return JSON with:
 - projectName (string)
@@ -697,19 +699,19 @@ Return JSON with:
   {
     id (string): "1.1", "1.2" …
     name (string): deliverable-oriented phase name
-    owner (string): team or role
+    owner (string): generic role only
     deliverables (array ≤4):
       {
         id (string): "1.1.1" …
         name (string): deliverable name
-        owner (string)
+        owner (string): generic role only
         workPackages (array ≤4):
           {
             id (string): "1.1.1.1" …
             name (string): work package name
             description (string): what this deliverable contains
             estimatedDays (number)
-            owner (string)
+            owner (string): generic role only
             acceptanceCriteria (string)
           }
       }
@@ -723,6 +725,7 @@ Return JSON with:
 
     milestone_plan: `Generate a Milestone Plan per PMBOK (Define Activities) and (Develop Schedule).
 CONCISENESS RULE: ≤8 milestones; every text field ≤1 sentence; deliverables ≤3 per milestone.
+OWNER RULE: owner fields must use ONLY generic project roles — Project Manager, Business Analyst, Solution Architect, Technical Lead, Developer, QA Engineer, DevOps Engineer, PMO Analyst. Never use company names or org-specific titles.
 Return JSON with:
 - projectName (string)
 - startDate (string)
@@ -735,18 +738,19 @@ Return JSON with:
     status (string): Not Started | On Track | At Risk | Slipped | Complete
     isCritical (boolean)
     deliverables (string[] ≤3)
-    owner (string)
+    owner (string): generic role only
   })
 - criticalPathSummary (string)`,
 
     resource_plan: `Generate a Resource Management Plan per PMBOK (Plan Resource Management) and (Estimate Activity Resources).
 CONCISENESS RULE: ≤8 team members; skills ≤4 per member; skillsMatrix ≤6 rows; trainingNeeds ≤4; resourceConstraints ≤4; every text field ≤1 sentence.
+ROLE RULE: ALL role and name fields must use ONLY generic project roles — Project Manager, Business Analyst, Solution Architect, Technical Lead, Developer, QA Engineer, Data Engineer, DevOps Engineer, Change Manager, PMO Analyst. Use placeholder names like "Resource 1", "Resource 2" or leave name blank. Never use company names, client names, or org-specific titles.
 Return JSON with:
 - projectName (string)
 - teamDirectory (array ≤8 of {
     id (string): R001, R002…
-    name (string)
-    role (string)
+    name (string): generic placeholder e.g. "Resource 1"
+    role (string): generic role only
     department (string)
     skills (string[] ≤4)
     allocationPercent (number): 0-100
@@ -901,6 +905,7 @@ Return JSON with:
 
     raci_matrix: `Generate a RACI Matrix per PMBOK (Plan Resource Management) — Responsibility Assignment Matrix.
 CRITICAL RULES: (1) Exactly ONE Accountable (A) per activity — two A's means none. (2) At least one Responsible (R) per activity. (3) R/A/C/I only in role cells.
+ROLE RULE: Column headers (roles) must use ONLY generic project roles — Project Manager, Business Analyst, Solution Architect, Technical Lead, Developer, QA Engineer, DevOps Engineer, Change Manager, PMO Analyst. Never use company names or org-specific titles.
 Return JSON with:
 - projectName (string)
 - roles (array of strings): all project roles e.g. ["Sponsor", "PM", "BA", "Tech Lead", "Developer", "QA Lead", "Change Manager", "Steering Committee"]
